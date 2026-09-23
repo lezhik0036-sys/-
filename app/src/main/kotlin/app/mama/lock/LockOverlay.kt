@@ -101,7 +101,7 @@ class LockOverlay(private val service: LockService) {
         answer.visibility = if (call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
         footer.text = "MAMA ${Texts.version(service)} · защита шторки: " +
             if (GuardService.running) {
-                "включена (SystemUI: ${GuardService.systemUiEvents}, закрыто: ${GuardService.panelsClosed}, экран блокировки: ${GuardService.keyguardSkips})"
+                "включена (SystemUI: ${GuardService.systemUiEvents}, закрыто: ${GuardService.panelsClosed}, экран блокировки: ${GuardService.keyguardSkips}/${GuardService.keyguardPanelsClosed} ${GuardService.lastPanelIds})"
             } else {
                 "ВЫКЛЮЧЕНА (Настройки → Спец. возможности → MAMA)"
             }

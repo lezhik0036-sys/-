@@ -47,7 +47,24 @@ class GuardService : AccessibilityService() {
         @Volatile var keyguardSkips = 0
             private set
 
+        @Volatile var keyguardPanelsClosed = 0
+            private set
+
+        /** Last System UI view ids that identified quick settings (diagnostics). */
+        @Volatile var lastPanelIds = ""
+            private set
+
+        /** View ids (substrings) that exist only in expanded quick settings. */
+        private val QUICK_SETTINGS_IDS = listOf("brightness", "quick_settings", "quick_panel", "quickpanel", "qs_")
+
+        /** View ids of PIN / pattern entry and the emergency button: never interfere. */
+        private val BOUNCER_IDS = listOf(
+            "bouncer", "pin_view", "pinentry", "password", "pattern", "keyguard_pin", "keyguard_sim",
+            "emergency", "digit_text", "key_enter",
+        )
+
         private const val SYSTEM_UI = "com.android.systemui"
+        private const val MAX_NODES = 600
     }
 
     private val homePackage: String? by lazy {
@@ -126,9 +143,18 @@ class GuardService : AccessibilityService() {
      */
     fun closeSystemPanels(fromSystemUi: Boolean) {
         if (!Mama.state(this).isLocked || LockService.overlayMayStepAside) return
-        // Never fight the system lock screen: PIN entry and its emergency button live there.
         if (getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true) {
+            // Over the system lock screen only expanded quick settings are closed.
+            // PIN entry and the emergency button must keep working.
             keyguardSkips++
+            if (quickSettingsOverKeyguard()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+                } else {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                }
+                keyguardPanelsClosed++
+            }
             return
         }
 
@@ -168,6 +194,33 @@ class GuardService : AccessibilityService() {
         }
         val overlayHidden = LockService.overlayShowing && ourLayer == null
         if (appAbove || overlayHidden) performGlobalAction(GLOBAL_ACTION_HOME)
+    }
+
+    /**
+     * True when System UI shows expanded quick settings on top of the system
+     * lock screen and no PIN/pattern entry is visible. Looks at view ids only.
+     */
+    private fun quickSettingsOverKeyguard(): Boolean {
+        val roots = windows.mapNotNull { it.root }.filter { it.packageName?.toString() == SYSTEM_UI }
+        var quickSettings = false
+        val found = mutableListOf<String>()
+        val queue = ArrayDeque(roots)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < MAX_NODES) {
+            val node = queue.removeFirst()
+            visited++
+            val id = node.viewIdResourceName?.substringAfter(":id/")?.lowercase()
+            if (id != null && node.isVisibleToUser) {
+                if (BOUNCER_IDS.any { it in id }) return false
+                if (QUICK_SETTINGS_IDS.any { it in id }) {
+                    quickSettings = true
+                    if (found.size < 3 && id !in found) found += id
+                }
+            }
+            for (i in 0 until node.childCount) node.getChild(i)?.let(queue::addLast)
+        }
+        if (found.isNotEmpty()) lastPanelIds = found.joinToString(",")
+        return quickSettings
     }
 
     override fun onInterrupt() = Unit
