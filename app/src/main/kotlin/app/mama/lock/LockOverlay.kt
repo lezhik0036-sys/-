@@ -100,7 +100,11 @@ class LockOverlay(private val service: LockService) {
         callInfo.text = if (call == Calls.CallState.RINGING) "Входящий звонок" else "Идёт звонок"
         answer.visibility = if (call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
         footer.text = "MAMA ${Texts.version(service)} · защита шторки: " +
-            if (GuardService.running) "включена" else "ВЫКЛЮЧЕНА (Настройки → Спец. возможности → MAMA)"
+            if (GuardService.running) {
+                "включена (SystemUI: ${GuardService.systemUiEvents}, закрыто: ${GuardService.panelsClosed}, экран блокировки: ${GuardService.keyguardSkips})"
+            } else {
+                "ВЫКЛЮЧЕНА (Настройки → Спец. возможности → MAMA)"
+            }
 
         val challenge = s.challenge
         codeSection.visibility = if (challenge != null) View.VISIBLE else View.GONE

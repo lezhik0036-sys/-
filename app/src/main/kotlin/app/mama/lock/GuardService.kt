@@ -37,6 +37,16 @@ class GuardService : AccessibilityService() {
         /** Whether the guard is connected right now (shown on the lock screen). */
         val running: Boolean get() = instance != null
 
+        /** Diagnostics shown on the lock screen: System UI events seen / panels closed. */
+        @Volatile var systemUiEvents = 0
+            private set
+
+        @Volatile var panelsClosed = 0
+            private set
+
+        @Volatile var keyguardSkips = 0
+            private set
+
         private const val SYSTEM_UI = "com.android.systemui"
     }
 
@@ -78,6 +88,7 @@ class GuardService : AccessibilityService() {
 
     private fun onWindowState(pkg: String, className: String?) {
         if (pkg == SYSTEM_UI) {
+            systemUiEvents++
             closeSystemPanels(fromSystemUi = true)
             return
         }
@@ -116,7 +127,16 @@ class GuardService : AccessibilityService() {
     fun closeSystemPanels(fromSystemUi: Boolean) {
         if (!Mama.state(this).isLocked || LockService.overlayMayStepAside) return
         // Never fight the system lock screen: PIN entry and its emergency button live there.
-        if (getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true) return
+        if (getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true) {
+            keyguardSkips++
+            return
+        }
+
+        // The expanded shade / quick settings take input focus: the active
+        // window then belongs to System UI. Works where size checks do not.
+        val activePkg = rootInActiveWindow?.packageName?.toString()
+            ?: windows.firstOrNull { it.isActive }?.root?.packageName?.toString()
+        val systemUiActive = activePkg == SYSTEM_UI
 
         val all = windows
         val ourLayer = all.filter { it.root?.packageName?.toString() == packageName }.maxOfOrNull { it.layer }
@@ -136,12 +156,16 @@ class GuardService : AccessibilityService() {
             }
         }
 
-        if (panelOpen || fromSystemUi) {
+        val shadeOpen = panelOpen || systemUiActive
+        if (shadeOpen || fromSystemUi) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
             }
         }
-        if (panelOpen) performGlobalAction(GLOBAL_ACTION_BACK)
+        if (shadeOpen) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            panelsClosed++
+        }
         val overlayHidden = LockService.overlayShowing && ourLayer == null
         if (appAbove || overlayHidden) performGlobalAction(GLOBAL_ACTION_HOME)
     }
