@@ -73,6 +73,30 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
         }
     }
 
+    /** Runtime permissions of this item (asked in one system dialog), or empty for a settings screen. */
+    val runtimePermissions: Array<String>
+        get() = when (this) {
+            SMS -> smsPermissions
+            NOTIFICATIONS -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                emptyArray()
+            }
+            else -> emptyArray()
+        }
+
+    /** What to do on the settings screen this item opens (shown as a hint). */
+    val hint: String?
+        get() = when (this) {
+            OVERLAY -> "Включите «MAMA» в списке."
+            GUARD -> "Установленные приложения → «MAMA — защита блокировки» → включить. " +
+                "Если серое: Приложения → MAMA → ⋮ → «Разрешить ограниченные настройки»."
+            ADMIN -> "Нажмите «Активировать»."
+            EXACT_ALARMS -> "Включите разрешение для MAMA."
+            BATTERY -> "Нажмите «Разрешить»."
+            else -> null
+        }
+
     companion object {
         private val smsPermissions = arrayOf(
             Manifest.permission.SEND_SMS,

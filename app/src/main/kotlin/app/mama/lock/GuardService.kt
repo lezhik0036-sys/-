@@ -5,6 +5,7 @@ import android.app.KeyguardManager
 import android.content.Intent
 import android.graphics.Rect
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
@@ -49,6 +50,13 @@ class GuardService : AccessibilityService() {
 
         @Volatile var keyguardPanelsClosed = 0
             private set
+
+        /** Times the screen was switched off because a panel would not close. */
+        @Volatile var screenOffs = 0
+            private set
+
+        /** A panel that is still open this long after the first attempt gets the screen switched off. */
+        private const val ESCALATE_AFTER_MS = 1_500L
 
         /** Last System UI view ids that identified quick settings (diagnostics). */
         @Volatile var lastPanelIds = ""
@@ -148,12 +156,10 @@ class GuardService : AccessibilityService() {
             // PIN entry and the emergency button must keep working.
             keyguardSkips++
             if (quickSettingsOverKeyguard()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
-                } else {
-                    performGlobalAction(GLOBAL_ACTION_BACK)
-                }
                 keyguardPanelsClosed++
+                collapseOrEscalate()
+            } else {
+                panelOpenSince = 0L
             }
             return
         }
@@ -183,17 +189,39 @@ class GuardService : AccessibilityService() {
         }
 
         val shadeOpen = panelOpen || systemUiActive
-        if (shadeOpen || fromSystemUi) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (shadeOpen) {
+            panelsClosed++
+            collapseOrEscalate()
+        } else {
+            panelOpenSince = 0L
+            if (fromSystemUi && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
             }
         }
-        if (shadeOpen) {
-            performGlobalAction(GLOBAL_ACTION_BACK)
-            panelsClosed++
-        }
         val overlayHidden = LockService.overlayShowing && ourLayer == null
         if (appAbove || overlayHidden) performGlobalAction(GLOBAL_ACTION_HOME)
+    }
+
+    /** Elapsed time when the currently open panel was first seen, or 0. */
+    private var panelOpenSince = 0L
+
+    /**
+     * Tries to collapse an open shade / quick settings. Some vendors (Samsung
+     * over the lock screen) ignore that; if the panel is still open after
+     * [ESCALATE_AFTER_MS], the screen is switched off like a power-button press.
+     */
+    private fun collapseOrEscalate() {
+        val now = SystemClock.elapsedRealtime()
+        if (panelOpenSince == 0L) panelOpenSince = now
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+        }
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        if (now - panelOpenSince >= ESCALATE_AFTER_MS && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+            screenOffs++
+            panelOpenSince = 0L
+        }
     }
 
     /**

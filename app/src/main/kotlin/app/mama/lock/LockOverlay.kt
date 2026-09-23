@@ -10,6 +10,8 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
@@ -65,6 +67,7 @@ class LockOverlay(private val service: LockService) {
             root = view
             view.requestFocus()
         }
+        hideSystemBars()
         bind(session, now)
     }
 
@@ -81,11 +84,35 @@ class LockOverlay(private val service: LockService) {
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
         PixelFormat.OPAQUE,
     ).apply {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Cover the status and navigation bar areas too.
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
+
+    /** Full screen: no navigation buttons and no status bar while locked. */
+    @Suppress("DEPRECATION")
+    private fun hideSystemBars() {
+        val view = root ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            view.windowInsetsController?.let {
+                it.hide(WindowInsets.Type.navigationBars() or WindowInsets.Type.statusBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            view.systemUiVisibility = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
         }
     }
 
@@ -101,7 +128,7 @@ class LockOverlay(private val service: LockService) {
         answer.visibility = if (call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
         footer.text = "MAMA ${Texts.version(service)} · защита шторки: " +
             if (GuardService.running) {
-                "включена (SystemUI: ${GuardService.systemUiEvents}, закрыто: ${GuardService.panelsClosed}, экран блокировки: ${GuardService.keyguardSkips}/${GuardService.keyguardPanelsClosed} ${GuardService.lastPanelIds})"
+                "включена (SystemUI: ${GuardService.systemUiEvents}, закрыто: ${GuardService.panelsClosed}, экран блокировки: ${GuardService.keyguardSkips}/${GuardService.keyguardPanelsClosed}, гашений: ${GuardService.screenOffs} ${GuardService.lastPanelIds})"
             } else {
                 "ВЫКЛЮЧЕНА (Настройки → Спец. возможности → MAMA)"
             }

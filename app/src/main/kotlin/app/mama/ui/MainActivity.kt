@@ -20,6 +20,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import app.mama.core.DailyWindow
 import app.mama.core.LockPlan
 import app.mama.core.LockState
@@ -63,6 +64,72 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         render()
+        if (setupAllActive) window.decorView.post { continueSetupAll() }
+    }
+
+    // --- "grant everything" wizard ---
+
+    /** True while the one-button setup walks through the missing permissions. */
+    private var setupAllActive = false
+
+    /** Whether this screen was covered since the last runtime-permission request. */
+    private var pausedSinceRequest = false
+
+    override fun onPause() {
+        super.onPause()
+        pausedSinceRequest = true
+    }
+
+    /** Items already offered in this run, so a refusal does not loop forever. */
+    private val setupAllOffered = mutableSetOf<Requirement>()
+
+    private fun startSetupAll() {
+        setupAllActive = true
+        setupAllOffered.clear()
+        continueSetupAll()
+    }
+
+    /**
+     * Android does not let an app grant these itself: each needs a tap from the
+     * user. The wizard asks all runtime permissions in one dialog, then opens
+     * each settings screen in turn and comes back here after every one.
+     */
+    private fun continueSetupAll() {
+        if (!setupAllActive) return
+        val missing = Requirement.entries.filter { !it.isGranted(this) && it !in setupAllOffered }
+        val runtime = missing.filter { it.runtimePermissions.isNotEmpty() }
+        if (runtime.isNotEmpty()) {
+            setupAllOffered += runtime
+            pausedSinceRequest = false
+            requestPermissions(runtime.flatMap { it.runtimePermissions.toList() }.toTypedArray(), SETUP_ALL)
+            return
+        }
+        val next = missing.firstOrNull()
+        if (next == null) {
+            setupAllActive = false
+            val left = Requirement.missingRequired(this)
+            if (left.isEmpty()) {
+                Toast.makeText(this, "Все разрешения выданы", Toast.LENGTH_SHORT).show()
+            } else {
+                alert("Остались разрешения", left.joinToString("\n") { "• ${it.title}" } +
+                    "\n\nНажмите «Выдать все разрешения» ещё раз.")
+            }
+            render()
+            return
+        }
+        setupAllOffered += next
+        next.hint?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+        next.request(this)
+    }
+
+    @Deprecated("Framework Activity API")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        @Suppress("DEPRECATION")
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        render()
+        // If a system dialog was shown, onResume continues the wizard. If Android
+        // answered without a dialog (denied for good earlier), continue here.
+        if (requestCode == SETUP_ALL && !pausedSinceRequest) continueSetupAll()
     }
 
     private fun saveForm() {
@@ -150,6 +217,10 @@ class MainActivity : Activity() {
         column.addView(button("Выбрать из контактов") { pickContact() })
 
         column.addView(section("Разрешения"))
+        if (Requirement.entries.any { !it.isGranted(this) }) {
+            column.addView(button("Выдать все разрешения", primary = true) { startSetupAll() })
+            column.addView(label("MAMA по очереди откроет каждый экран: включите переключатель и вернитесь назад.", 13f, MUTED))
+        }
         Requirement.entries.forEach { req ->
             val ok = req.isGranted(this)
             val mark = if (ok) "✓" else if (req.required) "✗" else "○"
@@ -340,6 +411,7 @@ class MainActivity : Activity() {
 
     private companion object {
         const val PICK_CONTACT = 10
+        const val SETUP_ALL = 20
         val FG = Color.rgb(0x1A, 0x1D, 0x22)
         val MUTED = Color.rgb(0x6B, 0x72, 0x7C)
         val ACCENT = Color.rgb(0x2B, 0x5C, 0xB8)
