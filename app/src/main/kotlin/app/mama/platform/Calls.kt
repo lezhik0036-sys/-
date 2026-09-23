@@ -3,17 +3,20 @@ package app.mama.platform
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.telecom.TelecomManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import app.mama.lock.LockService
 
 /**
  * Calls stay possible during a lock, but only these: the trusted contact
  * (dialled directly, no editable keypad), emergency numbers, and incoming calls.
- * Only the in-call screen itself is allowed on top; minimising it brings the
- * lock back.
+ * The lock screen stays on top during every call and carries the call
+ * controls itself (answer / hang up), so there is no call screen to escape through.
  */
 object Calls {
     const val EMERGENCY_NUMBER = "112"
@@ -46,6 +49,45 @@ object Calls {
         }
     }
 
+    enum class CallState { NONE, RINGING, ACTIVE }
+
+    fun callState(context: Context): CallState {
+        if (!isInCall(context)) return CallState.NONE
+        val ringing = try {
+            @Suppress("DEPRECATION")
+            context.getSystemService(TelephonyManager::class.java)?.callState == TelephonyManager.CALL_STATE_RINGING
+        } catch (e: SecurityException) {
+            false
+        }
+        return if (ringing) CallState.RINGING else CallState.ACTIVE
+    }
+
+    @SuppressLint("MissingPermission")
+    fun answer(context: Context) {
+        if (!granted(context, Manifest.permission.ANSWER_PHONE_CALLS)) return
+        try {
+            @Suppress("DEPRECATION")
+            context.getSystemService(TelecomManager::class.java)?.acceptRingingCall()
+        } catch (e: SecurityException) {
+            Log.w("MAMA", "Cannot answer", e)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun hangUp(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        if (!granted(context, Manifest.permission.ANSWER_PHONE_CALLS)) return
+        try {
+            @Suppress("DEPRECATION")
+            context.getSystemService(TelecomManager::class.java)?.endCall()
+        } catch (e: SecurityException) {
+            Log.w("MAMA", "Cannot hang up", e)
+        }
+    }
+
+    private fun granted(context: Context, permission: String) =
+        context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+
     fun isInCall(context: Context): Boolean {
         if (context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
             return false
@@ -62,7 +104,6 @@ object Calls {
         if (context.checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
             return false
         }
-        LockService.beginDialPass(emergency = false)
         return start(context, Intent(Intent.ACTION_CALL, Uri.parse("tel:$number")))
     }
 
@@ -77,18 +118,6 @@ object Calls {
             .setData(Uri.parse("tel:$EMERGENCY_NUMBER"))
         if (start(context, emergencyDialer)) return
         start(context, Intent(Intent.ACTION_DIAL, Uri.parse("tel:$EMERGENCY_NUMBER")))
-    }
-
-    /** Brings the ongoing call's screen back to the front. */
-    fun showCallScreen(context: Context) {
-        if (context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-        try {
-            context.getSystemService(TelecomManager::class.java)?.showInCallScreen(false)
-        } catch (e: SecurityException) {
-            Log.w("MAMA", "Cannot show in-call screen", e)
-        }
     }
 
     private fun start(context: Context, intent: Intent): Boolean = try {

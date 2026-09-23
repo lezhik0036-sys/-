@@ -85,7 +85,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(32), dp(20), dp(32))
         }
-        column.addView(label("MAMA", 30f, bold = true))
+        column.addView(label("MAMA  ${Texts.version(this)}", 30f, bold = true))
         column.addView(label("Добровольная блокировка телефона на выбранное время", 15f, MUTED))
         column.addView(space(16))
         when (state) {

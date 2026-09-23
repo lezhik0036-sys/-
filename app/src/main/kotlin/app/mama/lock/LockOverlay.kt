@@ -50,7 +50,10 @@ class LockOverlay(private val service: LockService) {
     private lateinit var requestEnd: Button
     private lateinit var requestEmergency: Button
     private lateinit var callContact: Button
-    private lateinit var backToCall: Button
+    private lateinit var callSection: LinearLayout
+    private lateinit var callInfo: TextView
+    private lateinit var answer: Button
+    private lateinit var footer: TextView
 
     private var session: Session? = null
 
@@ -90,7 +93,12 @@ class LockOverlay(private val service: LockService) {
         countdown.text = Texts.countdown(Duration.between(now, s.plan.end))
         until.text = "до ${Texts.time(s.plan.end, zone)} · ${Texts.zone(zone, now)}"
         callContact.text = "Позвонить: ${s.contact.name}"
-        backToCall.visibility = if (LockService.inCall) View.VISIBLE else View.GONE
+        val call = LockService.callState
+        callSection.visibility = if (call != Calls.CallState.NONE) View.VISIBLE else View.GONE
+        callInfo.text = if (call == Calls.CallState.RINGING) "Входящий звонок" else "Идёт звонок"
+        answer.visibility = if (call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
+        footer.text = "MAMA ${Texts.version(service)} · защита шторки: " +
+            if (GuardService.running) "включена" else "ВЫКЛЮЧЕНА"
 
         val challenge = s.challenge
         codeSection.visibility = if (challenge != null) View.VISIBLE else View.GONE
@@ -172,6 +180,18 @@ class LockOverlay(private val service: LockService) {
             setPadding(dp(24), dp(48), dp(24), dp(32))
         }
         title = text(18f, MUTED).also(column::addView)
+
+        // Calls are handled right here: the lock never steps aside for a call screen.
+        callSection = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(16), 0, 0)
+        }
+        callInfo = text(20f, ACCENT, bold = true).also(callSection::addView)
+        answer = button("Ответить") { Calls.answer(service) }
+        callSection.addView(answer)
+        callSection.addView(button("Завершить звонок", danger = true) { Calls.hangUp(service) })
+        column.addView(callSection)
+
         countdown = text(52f, FG, bold = true).also { it.setPadding(0, dp(24), 0, 0); column.addView(it) }
         until = text(15f, MUTED).also(column::addView)
         status = text(15f, ACCENT).also { it.setPadding(0, dp(20), 0, 0); column.addView(it) }
@@ -202,7 +222,6 @@ class LockOverlay(private val service: LockService) {
         requestSection.addView(requestEmergency)
         column.addView(requestSection)
 
-        backToCall = button("Вернуться к звонку") { Calls.showCallScreen(service) }
         callContact = button("Позвонить") {
             val s = session ?: return@button
             if (!Calls.callContact(service, s.contact.phone)) {
@@ -211,11 +230,11 @@ class LockOverlay(private val service: LockService) {
             }
         }
         column.addView(spacer(24))
-        column.addView(backToCall)
         column.addView(callContact)
         column.addView(button("Экстренный вызов ${Calls.EMERGENCY_NUMBER}", danger = true) {
             Calls.callEmergency(service)
         })
+        footer = text(12f, MUTED).also { it.setPadding(0, dp(24), 0, 0); column.addView(it) }
 
         val scroll = ScrollView(ctx).apply {
             isFillViewport = true

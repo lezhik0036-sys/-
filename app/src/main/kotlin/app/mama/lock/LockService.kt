@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import app.mama.core.LockState
@@ -26,8 +27,8 @@ import java.time.Duration
 class LockService : Service() {
 
     companion object {
-        /** True while the phone is ringing / in a call. */
-        @Volatile var inCall = false
+        /** Ringing / ongoing call; the overlay then shows call controls. */
+        @Volatile var callState = Calls.CallState.NONE
             private set
 
         /** What the guard last saw in front (see [Calls.classify]). */
@@ -37,21 +38,20 @@ class LockService : Service() {
         @Volatile private var dialPassUntil = 0L
         @Volatile private var dialPassEmergency = false
 
-        /** Short window after tapping "call" on the lock screen, until the call starts. */
+        /** Short window after tapping 112 on the lock screen, until the call starts. */
         val dialPassActive: Boolean get() = SystemClock.elapsedRealtime() < dialPassUntil
 
         /**
          * Whether the overlay may step aside for what is in front right now.
-         * Only call screens qualify; a call alone never unlocks the phone —
-         * minimise the call screen and the lock is back.
+         * Only for dialling an emergency number. Calls themselves never lift
+         * the overlay: it shows answer / hang-up buttons instead.
          */
         val overlayMayStepAside: Boolean
-            get() = when (foreground) {
+            get() = callState == Calls.CallState.NONE && when (foreground) {
                 Calls.Screen.EMERGENCY -> true
-                Calls.Screen.IN_CALL -> inCall || dialPassActive
                 // Only when the emergency dialer is unavailable and 112 was opened in the regular one.
                 Calls.Screen.DIALER -> dialPassActive && dialPassEmergency
-                Calls.Screen.OTHER -> false
+                Calls.Screen.IN_CALL, Calls.Screen.OTHER -> false
             }
 
         @Volatile private var instance: LockService? = null
@@ -98,9 +98,10 @@ class LockService : Service() {
     private val tick = object : Runnable {
         override fun run() {
             ticks++
-            val wasInCall = inCall
-            inCall = Calls.isInCall(this@LockService)
-            if (inCall && !wasInCall) endDialPass()
+            val previous = callState
+            callState = Calls.callState(this@LockService)
+            if (callState != Calls.CallState.NONE) endDialPass()
+            if (callState != previous) updateProximityLock()
             // Keep closing the shade / quick settings / power menu while locked.
             if (state is LockState.Locked && !overlayMayStepAside) GuardService.enforceNow()
             if (ticks % SYNC_EVERY_TICKS == 0) refresh() else render()
@@ -127,6 +128,7 @@ class LockService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(tick)
+        proximityLock?.takeIf { it.isHeld }?.release()
         overlay.hide()
         if (instance === this) instance = null
         super.onDestroy()
@@ -170,6 +172,25 @@ class LockService : Service() {
                 )
             }
             else -> overlay.hide()
+        }
+    }
+
+    private val proximityLock: PowerManager.WakeLock? by lazy {
+        val pm = getSystemService(PowerManager::class.java)
+        if (pm != null && pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+            pm.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "mama:call")
+        } else {
+            null
+        }
+    }
+
+    /** During a call the overlay stays on screen: switch it off at the ear, like the call screen does. */
+    private fun updateProximityLock() {
+        val lock = proximityLock ?: return
+        if (callState == Calls.CallState.ACTIVE && !lock.isHeld) {
+            lock.acquire(4 * 60 * 60 * 1000L)
+        } else if (callState != Calls.CallState.ACTIVE && lock.isHeld) {
+            lock.release()
         }
     }
 

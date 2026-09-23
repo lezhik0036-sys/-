@@ -1,5 +1,6 @@
 package app.mama.ui
 
+import android.content.Context
 import app.mama.core.CorePolicy
 import app.mama.core.ExitKind
 import app.mama.core.FinishReason
@@ -16,6 +17,10 @@ object Texts {
     private val ru = Locale.forLanguageTag("ru")
     private val time = DateTimeFormatter.ofPattern("HH:mm", ru)
     private val dayTime = DateTimeFormatter.ofPattern("EEE, d MMM, HH:mm", ru)
+
+    fun version(context: Context): String = runCatching {
+        "v" + context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.getOrDefault("")
 
     fun mode(mode: SessionMode) = when (mode) {
         SessionMode.SLEEP -> "Сон"

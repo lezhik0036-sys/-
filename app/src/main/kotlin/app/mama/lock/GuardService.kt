@@ -26,8 +26,11 @@ class GuardService : AccessibilityService() {
 
         /** Called every second by the lock service while the overlay is up. */
         fun enforceNow() {
-            instance?.closeSystemPanels()
+            instance?.closeSystemPanels(fromSystemUi = false)
         }
+
+        /** Whether the guard is connected right now (shown on the lock screen). */
+        val running: Boolean get() = instance != null
 
         private const val SYSTEM_UI = "com.android.systemui"
     }
@@ -55,13 +58,13 @@ class GuardService : AccessibilityService() {
                 val pkg = event.packageName?.toString() ?: return
                 onWindowState(pkg, event.className?.toString())
             }
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> closeSystemPanels()
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> closeSystemPanels(fromSystemUi = false)
         }
     }
 
     private fun onWindowState(pkg: String, className: String?) {
         if (pkg == SYSTEM_UI) {
-            closeSystemPanels()
+            closeSystemPanels(fromSystemUi = true)
             return
         }
         if (pkg == packageName) {
@@ -77,21 +80,27 @@ class GuardService : AccessibilityService() {
         if (!Mama.state(this).isLocked) return
         if (LockService.overlayMayStepAside) return
         if (pkg == homePackage) return // the overlay covers the launcher and recents
+        if (screen == Calls.Screen.IN_CALL) return // under the overlay; the call keeps going
         // Anything else — another app, the dialer keypad, a minimised call's app
         // switch, an app launched over the lock screen — goes home.
         performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
-    /** Closes the shade / quick settings / power menu if one is open during a lock. */
-    fun closeSystemPanels() {
+    /**
+     * Closes the shade / quick settings / power menu during a lock. A window
+     * change reported by System UI itself is taken as "the shade may be open"
+     * even when the window-size check cannot see it (varies by vendor).
+     */
+    fun closeSystemPanels(fromSystemUi: Boolean) {
         if (!Mama.state(this).isLocked || LockService.overlayMayStepAside) return
         // Never fight the system lock screen: PIN entry and its emergency button live there.
         if (getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true) return
-        if (!systemPanelOpen()) return
+        val panelOpen = systemPanelOpen()
+        if (!panelOpen && !fromSystemUi) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
         }
-        performGlobalAction(GLOBAL_ACTION_BACK)
+        if (panelOpen) performGlobalAction(GLOBAL_ACTION_BACK)
     }
 
     /**
