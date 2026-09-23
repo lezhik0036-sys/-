@@ -25,7 +25,7 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
         true,
     ),
     ADMIN("Администратор устройства", "Нельзя удалить MAMA во время блокировки.", true),
-    SMS("SMS и состояние звонка", "Код уходит доверенному контакту по SMS; звонки не прерываются.", true),
+    SMS("SMS и звонки", "Код уходит доверенному контакту по SMS; звонок контакту — без набора номера.", true),
     EXACT_ALARMS("Будильники и напоминания", "Блокировка начинается и заканчивается точно вовремя.", true),
     BATTERY("Без ограничений батареи", "Система не усыпит MAMA ночью.", false),
     NOTIFICATIONS("Уведомления", "Статус блокировки в шторке.", false),
@@ -72,7 +72,11 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
     }
 
     companion object {
-        private val smsPermissions = arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.READ_PHONE_STATE)
+        private val smsPermissions = arrayOf(
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.CALL_PHONE,
+        )
 
         fun missingRequired(context: Context) = entries.filter { it.required && !it.isGranted(context) }
     }

@@ -50,6 +50,7 @@ class LockOverlay(private val service: LockService) {
     private lateinit var requestEnd: Button
     private lateinit var requestEmergency: Button
     private lateinit var callContact: Button
+    private lateinit var backToCall: Button
 
     private var session: Session? = null
 
@@ -89,6 +90,7 @@ class LockOverlay(private val service: LockService) {
         countdown.text = Texts.countdown(Duration.between(now, s.plan.end))
         until.text = "до ${Texts.time(s.plan.end, zone)} · ${Texts.zone(zone, now)}"
         callContact.text = "Позвонить: ${s.contact.name}"
+        backToCall.visibility = if (LockService.inCall) View.VISIBLE else View.GONE
 
         val challenge = s.challenge
         codeSection.visibility = if (challenge != null) View.VISIBLE else View.GONE
@@ -200,11 +202,19 @@ class LockOverlay(private val service: LockService) {
         requestSection.addView(requestEmergency)
         column.addView(requestSection)
 
-        callContact = button("Позвонить") { session?.let { Calls.dial(service, it.contact.phone) } }
+        backToCall = button("Вернуться к звонку") { Calls.showCallScreen(service) }
+        callContact = button("Позвонить") {
+            val s = session ?: return@button
+            if (!Calls.callContact(service, s.contact.phone)) {
+                message = "Нет разрешения на звонки. Позвонить можно через экстренный вызов."
+                rebind()
+            }
+        }
         column.addView(spacer(24))
+        column.addView(backToCall)
         column.addView(callContact)
         column.addView(button("Экстренный вызов ${Calls.EMERGENCY_NUMBER}", danger = true) {
-            Calls.dial(service, Calls.EMERGENCY_NUMBER)
+            Calls.callEmergency(service)
         })
 
         val scroll = ScrollView(ctx).apply {

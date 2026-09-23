@@ -26,26 +26,53 @@ import java.time.Duration
 class LockService : Service() {
 
     companion object {
-        /** True while the phone is ringing / in a call: the overlay steps aside. */
+        /** True while the phone is ringing / in a call. */
         @Volatile var inCall = false
             private set
 
-        @Volatile private var dialPassUntil = 0L
+        /** What the guard last saw in front (see [Calls.classify]). */
+        @Volatile var foreground: Calls.Screen = Calls.Screen.OTHER
+            private set
 
-        /** Short window after tapping "call" in which the dialer may be on screen. */
+        @Volatile private var dialPassUntil = 0L
+        @Volatile private var dialPassEmergency = false
+
+        /** Short window after tapping "call" on the lock screen, until the call starts. */
         val dialPassActive: Boolean get() = SystemClock.elapsedRealtime() < dialPassUntil
 
-        val callPassActive: Boolean get() = inCall || dialPassActive
+        /**
+         * Whether the overlay may step aside for what is in front right now.
+         * Only call screens qualify; a call alone never unlocks the phone —
+         * minimise the call screen and the lock is back.
+         */
+        val overlayMayStepAside: Boolean
+            get() = when (foreground) {
+                Calls.Screen.EMERGENCY -> true
+                Calls.Screen.IN_CALL -> inCall || dialPassActive
+                // Only when the emergency dialer is unavailable and 112 was opened in the regular one.
+                Calls.Screen.DIALER -> dialPassActive && dialPassEmergency
+                Calls.Screen.OTHER -> false
+            }
+
+        @Volatile private var instance: LockService? = null
 
         private const val DIAL_PASS_MS = 60_000L
         private const val SYNC_EVERY_TICKS = 15
 
-        fun beginDialPass() {
+        fun beginDialPass(emergency: Boolean) {
+            dialPassEmergency = emergency
             dialPassUntil = SystemClock.elapsedRealtime() + DIAL_PASS_MS
         }
 
         fun endDialPass() {
             dialPassUntil = 0
+            dialPassEmergency = false
+        }
+
+        /** Called by the guard on every foreground change. */
+        fun onForeground(screen: Calls.Screen) {
+            foreground = screen
+            instance?.let { it.handler.post { it.render() } }
         }
 
         fun start(context: Context) {
@@ -63,7 +90,7 @@ class LockService : Service() {
         }
     }
 
-    private val handler = Handler(Looper.getMainLooper())
+    internal val handler = Handler(Looper.getMainLooper())
     private lateinit var overlay: LockOverlay
     private var ticks = 0
     private var state: LockState = LockState.Free
@@ -73,7 +100,9 @@ class LockService : Service() {
             ticks++
             val wasInCall = inCall
             inCall = Calls.isInCall(this@LockService)
-            if (wasInCall && !inCall) endDialPass()
+            if (inCall && !wasInCall) endDialPass()
+            // Keep closing the shade / quick settings / power menu while locked.
+            if (state is LockState.Locked && !overlayMayStepAside) GuardService.enforceNow()
             if (ticks % SYNC_EVERY_TICKS == 0) refresh() else render()
             handler.postDelayed(this, 1_000)
         }
@@ -84,6 +113,7 @@ class LockService : Service() {
     override fun onCreate() {
         super.onCreate()
         overlay = LockOverlay(this)
+        instance = this
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -98,6 +128,7 @@ class LockService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(tick)
         overlay.hide()
+        if (instance === this) instance = null
         super.onDestroy()
     }
 
@@ -111,7 +142,7 @@ class LockService : Service() {
         render()
     }
 
-    private fun render() {
+    internal fun render() {
         val s = state
         val session = Mama.session(this)
         val now = Mama.trustedNow(this)
@@ -121,7 +152,7 @@ class LockService : Service() {
                     refresh()
                     return
                 }
-                if (callPassActive || !Settings.canDrawOverlays(this)) {
+                if (overlayMayStepAside || !Settings.canDrawOverlays(this)) {
                     overlay.hide()
                 } else {
                     overlay.show(session, now)
