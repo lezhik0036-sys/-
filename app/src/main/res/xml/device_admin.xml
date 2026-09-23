@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin>
+    <!-- No powers are used; being an active admin alone blocks uninstalling. -->
+    <uses-policies />
+</device-admin>

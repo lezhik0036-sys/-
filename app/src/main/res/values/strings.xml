@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MAMA</string>
+    <string name="guard_label">MAMA — защита блокировки</string>
+    <string name="guard_description">Пока идёт блокировка, MAMA возвращает экран блокировки, если открыть другое приложение, шторку или настройки. Вне блокировки служба ничего не делает и ничего не читает.</string>
+    <string name="admin_description">Не даёт удалить MAMA во время блокировки.</string>
+</resources>
