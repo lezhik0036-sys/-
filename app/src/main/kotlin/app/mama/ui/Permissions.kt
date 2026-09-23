@@ -20,8 +20,9 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
     OVERLAY("Поверх других приложений", "Экран блокировки закрывает всё остальное.", true),
     GUARD(
         "Специальные возможности: MAMA",
-        "Закрывает шторку и настройки во время блокировки. " +
-            "Если пункт неактивен (Android 13+): О приложении → ⋮ → «Разрешить доступ к ограниченным настройкам».",
+        "Закрывает шторку, «Недавние» и настройки во время блокировки. Без неё блокировка не строгая. " +
+            "Если переключатель серый: Настройки → Приложения → MAMA → ⋮ → «Разрешить ограниченные настройки». " +
+            "Если включено, но здесь ✗ — выключите и снова включите.",
         true,
     ),
     ADMIN("Администратор устройства", "Нельзя удалить MAMA во время блокировки.", true),
@@ -38,7 +39,8 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
                 context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
             ).orEmpty()
             val me = ComponentName(context, GuardService::class.java)
-            enabled.split(':').any { ComponentName.unflattenFromString(it) == me }
+            // Switched on in Settings is not enough: it must actually be running.
+            enabled.split(':').any { ComponentName.unflattenFromString(it) == me } && GuardService.running
         }
         ADMIN -> context.getSystemService(DevicePolicyManager::class.java)!!
             .isAdminActive(ComponentName(context, MamaDeviceAdmin::class.java))

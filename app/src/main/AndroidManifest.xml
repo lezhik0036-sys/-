@@ -20,6 +20,8 @@
     <!-- Answer / hang up from the lock screen, which stays on top during calls. -->
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Screen off at the ear during a call (the lock screen stays on top of the call). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 

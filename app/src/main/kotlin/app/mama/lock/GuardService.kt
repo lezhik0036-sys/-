@@ -5,6 +5,7 @@ import android.app.KeyguardManager
 import android.content.Intent
 import android.graphics.Rect
 import android.os.Build
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import app.mama.platform.Calls
@@ -26,7 +27,11 @@ class GuardService : AccessibilityService() {
 
         /** Called every second by the lock service while the overlay is up. */
         fun enforceNow() {
-            instance?.closeSystemPanels(fromSystemUi = false)
+            try {
+                instance?.closeSystemPanels(fromSystemUi = false)
+            } catch (e: RuntimeException) {
+                Log.e("MAMA", "Guard enforce failed", e)
+            }
         }
 
         /** Whether the guard is connected right now (shown on the lock screen). */
@@ -53,6 +58,15 @@ class GuardService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        try {
+            handle(event)
+        } catch (e: RuntimeException) {
+            // A crash here would unbind the guard for the rest of the lock.
+            Log.e("MAMA", "Guard event failed", e)
+        }
+    }
+
+    private fun handle(event: AccessibilityEvent) {
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 val pkg = event.packageName?.toString() ?: return

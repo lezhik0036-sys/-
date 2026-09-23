@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import app.mama.core.LockState
 import app.mama.platform.Alarms
 import app.mama.platform.Calls
@@ -101,15 +102,21 @@ class LockService : Service() {
 
     private val tick = object : Runnable {
         override fun run() {
-            ticks++
-            val previous = callState
-            callState = Calls.callState(this@LockService)
-            if (callState != Calls.CallState.NONE) endDialPass()
-            if (callState != previous) updateProximityLock()
-            // Keep closing the shade / quick settings / power menu while locked.
-            if (state is LockState.Locked && !overlayMayStepAside) GuardService.enforceNow()
-            if (ticks % SYNC_EVERY_TICKS == 0) refresh() else render()
-            handler.postDelayed(this, 1_000)
+            // Whatever fails in one tick must never take the lock down with it.
+            try {
+                ticks++
+                val previous = callState
+                callState = Calls.callState(this@LockService)
+                if (callState != Calls.CallState.NONE) endDialPass()
+                if (callState != previous) updateProximityLock()
+                // Keep closing the shade / quick settings / power menu while locked.
+                if (state is LockState.Locked && !overlayMayStepAside) GuardService.enforceNow()
+                if (ticks % SYNC_EVERY_TICKS == 0) refresh() else render()
+            } catch (e: RuntimeException) {
+                Log.e("MAMA", "Lock tick failed", e)
+            } finally {
+                handler.postDelayed(this, 1_000)
+            }
         }
     }
 
@@ -132,7 +139,7 @@ class LockService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(tick)
-        proximityLock?.takeIf { it.isHeld }?.release()
+        runCatching { proximityLock?.takeIf { it.isHeld }?.release() }
         overlay.hide()
         overlayShowing = false
         if (instance === this) instance = null
@@ -197,11 +204,16 @@ class LockService : Service() {
 
     /** During a call the overlay stays on screen: switch it off at the ear, like the call screen does. */
     private fun updateProximityLock() {
-        val lock = proximityLock ?: return
-        if (callState == Calls.CallState.ACTIVE && !lock.isHeld) {
-            lock.acquire(4 * 60 * 60 * 1000L)
-        } else if (callState != Calls.CallState.ACTIVE && lock.isHeld) {
-            lock.release()
+        try {
+            val lock = proximityLock ?: return
+            if (callState == Calls.CallState.ACTIVE && !lock.isHeld) {
+                lock.acquire(4 * 60 * 60 * 1000L)
+            } else if (callState != Calls.CallState.ACTIVE && lock.isHeld) {
+                lock.release()
+            }
+        } catch (e: RuntimeException) {
+            // Losing screen-off at the ear is acceptable; losing the lock is not.
+            Log.e("MAMA", "Proximity wake lock failed", e)
         }
     }
 
