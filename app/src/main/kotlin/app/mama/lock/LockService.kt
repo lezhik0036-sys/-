@@ -54,6 +54,10 @@ class LockService : Service() {
                 Calls.Screen.IN_CALL, Calls.Screen.OTHER -> false
             }
 
+        /** Whether the lock surface is currently attached (read by the guard). */
+        @Volatile var overlayShowing = false
+            private set
+
         @Volatile private var instance: LockService? = null
 
         private const val DIAL_PASS_MS = 60_000L
@@ -130,6 +134,7 @@ class LockService : Service() {
         handler.removeCallbacks(tick)
         proximityLock?.takeIf { it.isHeld }?.release()
         overlay.hide()
+        overlayShowing = false
         if (instance === this) instance = null
         super.onDestroy()
     }
@@ -138,6 +143,7 @@ class LockService : Service() {
         state = Mama.syncFromService(this).state
         if (state !is LockState.Locked && state !is LockState.EmergencyPass) {
             overlay.hide()
+            overlayShowing = false
             stopSelf()
             return
         }
@@ -145,6 +151,11 @@ class LockService : Service() {
     }
 
     internal fun render() {
+        renderInner()
+        overlayShowing = overlay.isShowing
+    }
+
+    private fun renderInner() {
         val s = state
         val session = Mama.session(this)
         val now = Mama.trustedNow(this)

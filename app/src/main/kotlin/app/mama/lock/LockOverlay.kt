@@ -68,6 +68,8 @@ class LockOverlay(private val service: LockService) {
         bind(session, now)
     }
 
+    val isShowing: Boolean get() = root != null
+
     fun hide() {
         root?.let { runCatching { wm.removeView(it) } }
         root = null
@@ -89,7 +91,7 @@ class LockOverlay(private val service: LockService) {
 
     private fun bind(s: Session, now: Instant) {
         val zone = s.plan.zone
-        title.text = "MAMA · ${Texts.mode(s.plan.mode)}"
+        title.text = "MAMA ${Texts.version(service)} · ${Texts.mode(s.plan.mode)}"
         countdown.text = Texts.countdown(Duration.between(now, s.plan.end))
         until.text = "до ${Texts.time(s.plan.end, zone)} · ${Texts.zone(zone, now)}"
         callContact.text = "Позвонить: ${s.contact.name}"

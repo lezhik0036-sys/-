@@ -79,44 +79,57 @@ class GuardService : AccessibilityService() {
 
         if (!Mama.state(this).isLocked) return
         if (LockService.overlayMayStepAside) return
-        if (pkg == homePackage) return // the overlay covers the launcher and recents
+        if (pkg == homePackage && className?.contains("recent", ignoreCase = true) != true) {
+            return // the overlay covers the launcher
+        }
         if (screen == Calls.Screen.IN_CALL) return // under the overlay; the call keeps going
-        // Anything else — another app, the dialer keypad, a minimised call's app
-        // switch, an app launched over the lock screen — goes home.
+        // Anything else — another app, Recents, the dialer keypad, an app
+        // launched over the lock screen — goes home.
         performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     /**
-     * Closes the shade / quick settings / power menu during a lock. A window
-     * change reported by System UI itself is taken as "the shade may be open"
-     * even when the window-size check cannot see it (varies by vendor).
+     * Keeps the lock surface the topmost thing on screen. Runs on every window
+     * change and every second while locked:
+     * - a large System UI window (shade, quick settings, power menu) is closed;
+     * - an app window above the lock surface (e.g. Samsung's Recents, which is
+     *   drawn over app overlays) is sent home;
+     * - if the lock surface is missing from the screen although it should be up
+     *   (the system hid it), home is pressed so it comes back.
+     * A window change reported by System UI itself is taken as "the shade may
+     * be open" even when the size check cannot see it (varies by vendor).
      */
     fun closeSystemPanels(fromSystemUi: Boolean) {
         if (!Mama.state(this).isLocked || LockService.overlayMayStepAside) return
         // Never fight the system lock screen: PIN entry and its emergency button live there.
         if (getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true) return
-        val panelOpen = systemPanelOpen()
-        if (!panelOpen && !fromSystemUi) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
-        }
-        if (panelOpen) performGlobalAction(GLOBAL_ACTION_BACK)
-    }
 
-    /**
-     * A large system window is on screen. The status and navigation bars and
-     * heads-up notifications are small; an expanded shade, quick settings or
-     * the power menu are not.
-     */
-    private fun systemPanelOpen(): Boolean {
+        val all = windows
+        val ourLayer = all.filter { it.root?.packageName?.toString() == packageName }.maxOfOrNull { it.layer }
         val screenHeight = resources.displayMetrics.heightPixels
         val bounds = Rect()
-        return windows.any { w ->
-            if (w.type != AccessibilityWindowInfo.TYPE_SYSTEM) return@any false
+        var panelOpen = false
+        var appAbove = false
+        for (w in all) {
+            val pkg = w.root?.packageName?.toString()
+            if (pkg == packageName) continue
             w.getBoundsInScreen(bounds)
-            if (bounds.height() < screenHeight / 3) return@any false
-            w.root?.packageName?.toString() != packageName
+            if (bounds.height() < screenHeight / 3) continue
+            when (w.type) {
+                AccessibilityWindowInfo.TYPE_SYSTEM -> panelOpen = true
+                AccessibilityWindowInfo.TYPE_APPLICATION ->
+                    if (ourLayer != null && w.layer > ourLayer) appAbove = true
+            }
         }
+
+        if (panelOpen || fromSystemUi) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+            }
+        }
+        if (panelOpen) performGlobalAction(GLOBAL_ACTION_BACK)
+        val overlayHidden = LockService.overlayShowing && ourLayer == null
+        if (appAbove || overlayHidden) performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     override fun onInterrupt() = Unit
