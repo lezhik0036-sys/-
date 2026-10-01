@@ -85,6 +85,20 @@ data class FlexPackage(
 
         /** Shortest FLEX period. */
         val MIN_DURATION: Duration = Duration.ofHours(3)
+
+        /** Longest FLEX period. */
+        val MAX_DURATION: Duration = Duration.ofHours(24)
+
+        /**
+         * Suggested end for "start now": [MIN_DURATION] after the real current
+         * moment, rounded UP to a whole minute (17:12:37 → 20:13), so the
+         * minute-precision picker never offers a period shorter than 3 hours.
+         */
+        fun defaultEndForStartNow(now: Instant): Instant {
+            val min = now + MIN_DURATION
+            val floor = min.truncatedTo(ChronoUnit.MINUTES)
+            return if (floor == min) min else floor.plus(1, ChronoUnit.MINUTES)
+        }
     }
 }
 
@@ -107,8 +121,11 @@ class FlexEngine(private val engine: LockEngine, private val policy: CorePolicy 
 
     /** Why a FLEX period could not be planned. */
     enum class PlanError {
-        /** No days left, package expired or over, or a period is already planned. */
+        /** No days left, package over, or a period is already planned/running. */
         NOT_AVAILABLE,
+
+        /** The package's validity has ended: no new period may start. */
+        PACKAGE_EXPIRED,
 
         /** The chosen start moment has already passed (it is never moved forward). */
         START_IN_PAST,
@@ -122,7 +139,7 @@ class FlexEngine(private val engine: LockEngine, private val policy: CorePolicy 
         /** Longer than the engine's maximum lock length. */
         TOO_LONG,
 
-        /** Would start after the package expired. */
+        /** The chosen start is at or after the package's expiry. */
         AFTER_EXPIRY,
     }
 
@@ -151,6 +168,7 @@ class FlexEngine(private val engine: LockEngine, private val policy: CorePolicy 
         now: Instant,
     ): PlanResult {
         fun reject(e: PlanError) = PlanResult.Rejected(e)
+        if (!p.over && !now.isBefore(p.expiresAt)) return reject(PlanError.PACKAGE_EXPIRED)
         if (!canStartPeriod(p, now)) return reject(PlanError.NOT_AVAILABLE)
         val currentMinute = now.truncatedTo(ChronoUnit.MINUTES)
         if (start != null && start.isBefore(currentMinute)) return reject(PlanError.START_IN_PAST)
@@ -158,7 +176,8 @@ class FlexEngine(private val engine: LockEngine, private val policy: CorePolicy 
         if (!end.isAfter(effectiveStart)) return reject(PlanError.END_BEFORE_START)
         val length = Duration.between(effectiveStart, end)
         if (length < FlexPackage.MIN_DURATION) return reject(PlanError.TOO_SHORT)
-        if (length > policy.maxDuration) return reject(PlanError.TOO_LONG)
+        if (length > FlexPackage.MAX_DURATION) return reject(PlanError.TOO_LONG)
+        // Validity limits when a period may START; its end may be after expiry.
         if (!effectiveStart.isBefore(p.expiresAt)) return reject(PlanError.AFTER_EXPIRY)
         val plan = LockPlan(effectiveStart, end, zone, mode)
         val created = engine.create(sessionId, plan, contact, now) as? LockEngine.CreateResult.Created

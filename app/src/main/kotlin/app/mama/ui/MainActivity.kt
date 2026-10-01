@@ -702,9 +702,14 @@ class MainActivity : Activity() {
     private fun renderFlexPlanner(column: LinearLayout) {
         val now = nowLocal()
         val start = if (flexStartNow) now else (flexStart ?: now.plusHours(1))
-        // "Now" carries seconds, so a default end exactly 3 h after the minute would be just short.
-        val end = flexEnd ?: start.plus(FlexPackage.MIN_DURATION).plusMinutes(if (flexStartNow) 1 else 0)
-        if (flexEnd == null) flexEnd = end
+        // Until the user picks an end, suggest the shortest valid one. For "start now" it is
+        // 3 h after the real moment rounded up to the minute (17:12:37 → 20:13). Once picked,
+        // the end is kept exactly as chosen: never moved, never shifted to another day.
+        val end = flexEnd ?: if (flexStartNow) {
+            LocalDateTime.ofInstant(FlexPackage.defaultEndForStartNow(Mama.trustedNow(this)), zone)
+        } else {
+            start.plus(FlexPackage.MIN_DURATION)
+        }
         if (!flexStartNow && flexStart == null) flexStart = start
 
         column.addView(section("Новый FLEX-период"))
@@ -725,25 +730,26 @@ class MainActivity : Activity() {
         )
         column.addView(modes, ui.gap(4))
 
+        val today = now.toLocalDate()
         if (flexStartNow) {
-            column.addView(label("Начало: сейчас (${Texts.localDayTime(now)})", 15f))
+            column.addView(label("Начало: сейчас · ${Texts.relativeDayTime(now, today)}", 15f))
         } else {
-            column.addView(button("Начало: ${Texts.localDayTime(start)}") {
+            column.addView(button("Начало: ${Texts.relativeDayTime(start, today)}") {
                 pickDateTime(start) { flexStart = it; render() }
             })
         }
-        column.addView(button("Окончание: ${Texts.localDayTime(end)}") {
+        column.addView(button("Окончание: ${Texts.relativeDayTime(end, today)}") {
             pickDateTime(end) { flexEnd = it; render() }
         })
-        val minutes = Duration.between(start, end).toMinutes()
-        if (minutes > 0) {
-            column.addView(label("Длительность: ${Texts.duration(Duration.ofMinutes(minutes))} · ${zone.id}", 13f, MUTED))
+        val length = Duration.between(start, end)
+        if (!length.isNegative && !length.isZero) {
+            column.addView(label("Продолжительность: ${Texts.flexDuration(length)} · ${zone.id}", 13f, MUTED))
         }
 
         column.addView(ui.primary("Включить FLEX-период") { submitFlexPeriod() }, ui.gap(16))
         column.addView(
             ui.small(
-                "FLEX-день расходуется в момент начала блокировки. Минимум — 3 часа. " +
+                "FLEX-день расходуется в момент начала блокировки. От 3 до 24 часов, можно через полночь. " +
                     "Доверенный контакт: ${contactName.text}.",
                 center = true,
             ),
@@ -753,8 +759,12 @@ class MainActivity : Activity() {
 
     private fun submitFlexPeriod() {
         val contact = readyContact() ?: return
-        val end = flexEnd ?: return
         val start = if (flexStartNow) null else flexStart
+        val end = flexEnd ?: if (flexStartNow) {
+            LocalDateTime.ofInstant(FlexPackage.defaultEndForStartNow(Mama.trustedNow(this)), zone)
+        } else {
+            (start ?: return).plus(FlexPackage.MIN_DURATION)
+        }
         val result = Mama.startFlexPeriod(
             this,
             start?.atZone(zone)?.toInstant(),

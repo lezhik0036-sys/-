@@ -37,11 +37,35 @@ object Texts {
         app.mama.core.FlexEngine.PlanError.START_IN_PAST ->
             "Время начала уже прошло.\nВыберите текущее или будущее время."
         app.mama.core.FlexEngine.PlanError.TOO_SHORT -> "Минимальный период FLEX — 3 часа."
-        app.mama.core.FlexEngine.PlanError.END_BEFORE_START -> "Окончание должно быть позже начала."
-        app.mama.core.FlexEngine.PlanError.TOO_LONG -> "Период FLEX не может быть длиннее 24 часов."
-        app.mama.core.FlexEngine.PlanError.AFTER_EXPIRY -> "К этому времени срок пакета FLEX уже закончится."
+        app.mama.core.FlexEngine.PlanError.TOO_LONG -> "Максимальный период FLEX — 24 часа."
+        app.mama.core.FlexEngine.PlanError.END_BEFORE_START -> "Время окончания должно быть позже времени начала."
+        app.mama.core.FlexEngine.PlanError.PACKAGE_EXPIRED ->
+            "Срок действия FLEX закончился.\nНачать новый период уже нельзя."
+        app.mama.core.FlexEngine.PlanError.AFTER_EXPIRY -> "Начало периода выходит за срок действия FLEX."
         app.mama.core.FlexEngine.PlanError.NOT_AVAILABLE ->
             "Сейчас FLEX-период начать нельзя: нет доступных дней или уже идёт другая блокировка."
+    }
+
+    /** "Сегодня · 17:12", "Завтра · 07:00", otherwise the full date. */
+    fun relativeDayTime(t: java.time.LocalDateTime, today: java.time.LocalDate): String = when (t.toLocalDate()) {
+        today -> "Сегодня · " + time.format(t)
+        today.plusDays(1) -> "Завтра · " + time.format(t)
+        else -> localDayTime(t)
+    }
+
+    /** "Продолжительность" value: "3 ч 1 мин", "6 часов", "24 часа". */
+    fun flexDuration(d: Duration): String {
+        val totalMin = maxOf(0, d.toMinutes())
+        val h = totalMin / 60
+        val m = totalMin % 60
+        if (m != 0L) return if (h == 0L) "$m мин" else "$h ч $m мин"
+        val word = when {
+            h % 100 in 11..14 -> "часов"
+            h % 10 == 1L -> "час"
+            h % 10 in 2..4 -> "часа"
+            else -> "часов"
+        }
+        return "$h $word"
     }
 
     /** "1 день", "2 дня", "5 дней". */

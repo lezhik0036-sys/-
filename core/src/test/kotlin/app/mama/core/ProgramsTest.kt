@@ -97,6 +97,89 @@ class ProgramsTest {
     }
 
     @Test
+    fun `start now never backdates and default end rounds up`() {
+        val now = msk("2026-10-01T17:12:00").plusSeconds(37)
+        val p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, now)
+        val end = FlexPackage.defaultEndForStartNow(now)
+        assertEquals(msk("2026-10-01T20:13"), end)
+        val ok = flex.planPeriod(p, null, end, MSK, MOM, SessionMode.SLEEP, id(), now) as FlexEngine.PlanResult.Planned
+        assertEquals(now, ok.session.plan.start)
+        assertTrue(Duration.between(ok.session.plan.start, ok.session.plan.end) >= Duration.ofHours(3))
+        // 20:12 would be 2 h 59 min 23 s from the real start.
+        assertEquals(
+            FlexEngine.PlanError.TOO_SHORT,
+            error(flex.planPeriod(p, null, msk("2026-10-01T20:12"), MSK, MOM, SessionMode.SLEEP, id(), now)),
+        )
+        // On an exact minute the default end is exactly 3 hours later.
+        assertEquals(msk("2026-10-01T20:12"), FlexPackage.defaultEndForStartNow(msk("2026-10-01T17:12")))
+    }
+
+    @Test
+    fun `current minute counts as now and starts at the real moment`() {
+        val now = msk("2026-10-01T17:12:00").plusSeconds(37)
+        val p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, now)
+        val r = flex.planPeriod(p, msk("2026-10-01T17:12"), msk("2026-10-01T20:13"), MSK, MOM, SessionMode.SLEEP, id(), now)
+        assertEquals(now, (r as FlexEngine.PlanResult.Planned).session.plan.start)
+    }
+
+    @Test
+    fun `crossing midnight up to 24 hours is valid, longer is not, no automatic next day`() {
+        val now = "2026-10-01T13:00"
+        assertTrue(plan("2026-10-01T14:00", "2026-10-02T08:00", now) is FlexEngine.PlanResult.Planned)
+        assertTrue(plan("2026-10-01T14:00", "2026-10-02T14:00", now) is FlexEngine.PlanResult.Planned)
+        assertEquals(FlexEngine.PlanError.TOO_LONG, error(plan("2026-10-01T14:00", "2026-10-02T14:01", now)))
+        // today 23:00 -> today 07:00 is not turned into tomorrow 07:00
+        assertEquals(FlexEngine.PlanError.END_BEFORE_START, error(plan("2026-10-01T23:00", "2026-10-01T07:00", now)))
+    }
+
+    @Test
+    fun `a period may end after expiry if it starts before`() {
+        val activated = msk("2026-10-01T00:00")
+        val p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, activated) // expires 31 Oct 00:00
+        val now = msk("2026-10-30T22:00")
+        val r = flex.planPeriod(p, msk("2026-10-30T23:00"), msk("2026-10-31T07:00"), MSK, MOM, SessionMode.SLEEP, id(), now)
+        val planned = r as FlexEngine.PlanResult.Planned
+        // runs past expiry and still counts as a successful day
+        val started = engine.advance(planned.session, planned.session.plan.start)
+        var pkg = flex.afterSession(planned.pkg, started, planned.session.plan.start).pkg
+        val midway = msk("2026-10-31T03:00")
+        pkg = flex.afterSession(pkg, engine.advance(started, midway), midway).pkg
+        assertFalse(pkg.over)
+        assertTrue(engine.stateOf(started, midway).isLocked)
+        val done = engine.advance(started, planned.session.plan.end)
+        pkg = flex.afterSession(pkg, done, planned.session.plan.end).pkg
+        assertEquals(1, pkg.successful)
+        assertTrue(pkg.over) // expired, no more periods
+    }
+
+    @Test
+    fun `expired package and start after expiry have distinct errors`() {
+        val p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, msk("2026-10-01T00:00"))
+        val beforeExpiry = msk("2026-10-30T20:00")
+        assertEquals(
+            FlexEngine.PlanError.AFTER_EXPIRY,
+            error(flex.planPeriod(p, msk("2026-10-31T00:00"), msk("2026-10-31T05:00"), MSK, MOM, SessionMode.SLEEP, id(), beforeExpiry)),
+        )
+        val afterExpiry = msk("2026-10-31T00:00")
+        assertEquals(
+            FlexEngine.PlanError.PACKAGE_EXPIRED,
+            error(flex.planPeriod(p, null, msk("2026-10-31T05:00"), MSK, MOM, SessionMode.SLEEP, id(), afterExpiry)),
+        )
+    }
+
+    @Test
+    fun `flex example - success then exit keeps the rest`() {
+        var p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, day0)
+        p = night(p, day0)
+        assertEquals(1, p.successful)
+        assertEquals(6, p.remaining)
+        p = night(p, day0 + Duration.ofDays(1), exitEarly = true)
+        assertEquals(1, p.successful)
+        assertEquals(5, p.remaining)
+        assertEquals(1, p.failed)
+    }
+
+    @Test
     fun `cannot start after the package expired`() {
         val now = "2026-10-01T17:00"
         assertEquals(
@@ -215,7 +298,7 @@ class ProgramsTest {
         )
         val late = day0 + Duration.ofDays(31)
         assertEquals(
-            FlexEngine.PlanError.NOT_AVAILABLE,
+            FlexEngine.PlanError.PACKAGE_EXPIRED,
             error(flex.planPeriod(p, null, late + Duration.ofHours(4), MSK, MOM, SessionMode.SLEEP, id(), late)),
         )
     }
