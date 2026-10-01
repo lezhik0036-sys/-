@@ -1,6 +1,7 @@
 package app.mama.core
 
 import java.time.Instant
+import java.time.LocalTime
 import java.time.ZoneId
 
 /** Everything MAMA must persist to survive a reboot or a process kill. */
@@ -8,6 +9,7 @@ data class Snapshot(
     val session: Session? = null,
     val anchor: ClockAnchor? = null,
     val lastTrusted: Instant? = null,
+    val series: Series? = null,
 )
 
 /**
@@ -25,6 +27,21 @@ object StateCodec {
             put("clock.anchor.wall", it.wall.toString())
             put("clock.anchor.elapsed", it.elapsedMs.toString())
             put("clock.anchor.boot", it.bootId)
+        }
+        snapshot.series?.let {
+            put("sr.id", it.id)
+            put("sr.kind", it.kind.name)
+            put("sr.start", it.window.start.toString())
+            put("sr.end", it.window.end.toString())
+            put("sr.zone", it.window.zone.id)
+            put("sr.contact.name", it.contact.name)
+            put("sr.contact.phone", it.contact.phone)
+            put("sr.mode", it.mode.name)
+            put("sr.startedAt", it.startedAt.toString())
+            put("sr.done", it.completedPeriods.toString())
+            put("sr.status", it.status.name)
+            it.endedAt?.let { e -> put("sr.endedAt", e.toString()) }
+            it.lastSessionId?.let { l -> put("sr.lastSession", l) }
         }
         val s = snapshot.session ?: return@buildMap
         put("s.id", s.id)
@@ -92,7 +109,25 @@ object StateCodec {
                 },
             )
         }
-        return Snapshot(session, anchor, lastTrusted)
+        val series = map["sr.id"]?.let { id ->
+            Series(
+                id = id,
+                kind = SeriesKind.valueOf(map.req("sr.kind")),
+                window = DailyWindow(
+                    LocalTime.parse(map.req("sr.start")),
+                    LocalTime.parse(map.req("sr.end")),
+                    ZoneId.of(map.req("sr.zone")),
+                ),
+                contact = TrustedContact(map.req("sr.contact.name"), map.req("sr.contact.phone")),
+                mode = SessionMode.valueOf(map.req("sr.mode")),
+                startedAt = Instant.parse(map.req("sr.startedAt")),
+                completedPeriods = map.req("sr.done").toInt(),
+                status = SeriesStatus.valueOf(map.req("sr.status")),
+                endedAt = map["sr.endedAt"]?.let(Instant::parse),
+                lastSessionId = map["sr.lastSession"],
+            )
+        }
+        return Snapshot(session, anchor, lastTrusted, series)
     }
 
     private fun Map<String, String>.req(key: String): String =

@@ -24,8 +24,7 @@ class Recovery(private val engine: LockEngine) {
         val running = snapshot.session?.status.let { it == SessionStatus.SCHEDULED || it == SessionStatus.ACTIVE }
         if (!running) {
             // Nothing to protect: the system clock is as good as any.
-            val fresh = Snapshot(
-                session = snapshot.session,
+            val fresh = snapshot.copy(
                 anchor = ClockGuard.reanchor(wallNow, elapsedNowMs, bootId),
                 lastTrusted = wallNow,
             )
@@ -37,7 +36,7 @@ class Recovery(private val engine: LockEngine) {
         val session = snapshot.session?.let { engine.advance(it, trusted) }
         val lastTrusted = snapshot.lastTrusted?.let { maxOf(it, trusted) } ?: trusted
         return Reconciliation(
-            snapshot = Snapshot(session, anchor, lastTrusted),
+            snapshot = snapshot.copy(session = session, anchor = anchor, lastTrusted = lastTrusted),
             state = engine.stateOf(session, trusted),
             trustedNow = trusted,
         )

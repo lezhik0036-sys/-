@@ -4,13 +4,18 @@ import android.content.Context
 import android.util.Log
 import app.mama.core.ClockGuard
 import app.mama.core.CorePolicy
+import app.mama.core.DailyWindow
 import app.mama.core.ExitKind
 import app.mama.core.LockEngine
 import app.mama.core.LockPlan
 import app.mama.core.LockState
 import app.mama.core.Reconciliation
 import app.mama.core.Recovery
+import app.mama.core.Series
+import app.mama.core.SeriesEngine
+import app.mama.core.SeriesKind
 import app.mama.core.Session
+import app.mama.core.SessionMode
 import app.mama.core.Snapshot
 import app.mama.core.TrustedContact
 import app.mama.lock.LockService
@@ -29,6 +34,7 @@ object Mama {
     val policy = CorePolicy()
     private val engine = LockEngine(policy)
     private val recovery = Recovery(engine)
+    private val seriesEngine = SeriesEngine(engine, policy)
 
     @Volatile private var cached: Reconciliation? = null
 
@@ -44,7 +50,19 @@ object Mama {
             Log.e(TAG, "Unreadable state, starting clean", e)
             Snapshot()
         }
-        val r = recovery.reconcile(snapshot, DeviceClock.wallNow(), DeviceClock.elapsedMs(), DeviceClock.bootId(app))
+        var r = recovery.reconcile(snapshot, DeviceClock.wallNow(), DeviceClock.elapsedMs(), DeviceClock.bootId(app))
+        // Series: count a finished night, plan the next one, or mark it broken.
+        val series = r.snapshot.series
+        if (series != null && series.active) {
+            val u = seriesEngine.afterSession(series, r.snapshot.session, UUID.randomUUID().toString(), r.trustedNow)
+            if (u.series != series || u.session != r.snapshot.session) {
+                r = r.copy(
+                    snapshot = r.snapshot.copy(series = u.series, session = u.session),
+                    state = engine.stateOf(u.session, r.trustedNow),
+                )
+                if (!u.series.active) History.record(app, u.series)
+            }
+        }
         store.save(r.snapshot)
         cached = r
         return r
@@ -80,6 +98,60 @@ object Mama {
         return ClockGuard.trustedNow(
             snap.anchor, snap.lastTrusted, DeviceClock.wallNow(), DeviceClock.elapsedMs(), DeviceClock.bootId(context),
         )
+    }
+
+    fun series(context: Context): Series? = (cached ?: reconcile(context)).snapshot.series
+
+    /** Starts a series. A fixed series locks tonight's window automatically. */
+    @Synchronized
+    fun startSeries(
+        context: Context,
+        kind: SeriesKind,
+        window: DailyWindow,
+        contact: TrustedContact,
+        mode: SessionMode,
+    ): Boolean {
+        val r = reconcile(context)
+        if (r.state != LockState.Free || r.snapshot.series?.active == true) return false
+        val u = seriesEngine.start(
+            UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, window, contact, mode, r.trustedNow,
+        )
+        SessionStore(context.applicationContext).save(r.snapshot.copy(series = u.series, session = u.session))
+        sync(context)
+        return true
+    }
+
+    /** FLEX: lock tonight's window (or right now, if inside it). */
+    @Synchronized
+    fun startFlexTonight(context: Context): Boolean {
+        val r = reconcile(context)
+        val series = r.snapshot.series ?: return false
+        if (r.state != LockState.Free) return false
+        val session = seriesEngine.startFlexPeriod(series, UUID.randomUUID().toString(), r.trustedNow) ?: return false
+        SessionStore(context.applicationContext).save(r.snapshot.copy(session = session))
+        sync(context)
+        return true
+    }
+
+    /** Starts a broken series again from zero, with the same settings. */
+    @Synchronized
+    fun restartSeries(context: Context): Boolean {
+        val r = reconcile(context)
+        val series = r.snapshot.series ?: return false
+        if (series.active || r.state != LockState.Free) return false
+        val u = seriesEngine.restart(series, UUID.randomUUID().toString(), UUID.randomUUID().toString(), r.trustedNow)
+        SessionStore(context.applicationContext).save(r.snapshot.copy(series = u.series, session = u.session))
+        sync(context)
+        return true
+    }
+
+    /** Forgets a finished (completed or broken) series, back to the start screen. */
+    @Synchronized
+    fun dismissSeries(context: Context) {
+        val r = reconcile(context)
+        if (r.snapshot.series?.active == true) return
+        SessionStore(context.applicationContext).save(r.snapshot.copy(series = null))
+        reconcile(context)
     }
 
     sealed interface StartResult {

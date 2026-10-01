@@ -5,6 +5,7 @@ import app.mama.core.CorePolicy
 import app.mama.core.ExitKind
 import app.mama.core.FinishReason
 import app.mama.core.LockEngine
+import app.mama.core.SeriesKind
 import app.mama.core.SessionMode
 import java.time.Duration
 import java.time.Instant
@@ -21,6 +22,26 @@ object Texts {
     fun version(context: Context): String = runCatching {
         "v" + context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrDefault("")
+
+    fun seriesName(kind: SeriesKind) = when (kind) {
+        SeriesKind.THREE -> "3 дня"
+        SeriesKind.FIVE -> "5 дней"
+        SeriesKind.SEVEN -> "7 дней"
+        SeriesKind.FLEX -> "FLEX"
+    }
+
+    fun price(rub: Int) = "$rub ₽"
+
+    /** "1 день", "2 дня", "5 дней". */
+    fun days(n: Int): String {
+        val word = when {
+            n % 100 in 11..14 -> "дней"
+            n % 10 == 1 -> "день"
+            n % 10 in 2..4 -> "дня"
+            else -> "дней"
+        }
+        return "$n $word"
+    }
 
     fun mode(mode: SessionMode) = when (mode) {
         SessionMode.SLEEP -> "Сон"
