@@ -137,7 +137,10 @@ class LockOverlay(private val service: LockService) {
         callInfo.text = if (call == Calls.CallState.RINGING) "Входящий звонок" else "Идёт звонок"
         answer.visibility = if (call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
         footer.text = "MAMA ${Texts.version(service)} · " + if (GuardService.running) {
-            "защита включена"
+            // Test builds: what the guard saw over the system lock screen, for tuning on real phones.
+            "защита включена\nдиагностика: выкл. экрана ${GuardService.screenOffs}" +
+                (GuardService.keyguardApps.takeIf { it.isNotEmpty() }?.let { " · приложения: $it" } ?: "") +
+                "\nэкран блокировки: ${GuardService.keyguardIds.joinToString(" ")}"
         } else {
             "защита ВЫКЛЮЧЕНА (Настройки → Спец. возможности → MAMA)"
         }

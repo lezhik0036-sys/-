@@ -108,16 +108,18 @@ object Calls {
     }
 
     /**
-     * Opens the system emergency dialer, which only calls emergency numbers.
-     * Where it cannot be opened, falls back to the regular dialer with 112
-     * filled in: emergency calls must never be blocked.
+     * Emergency call (112). Android never lets a regular app place an
+     * emergency call by itself: for ACTION_CALL to an emergency number the
+     * system (Telecom) opens the phone's own dialer with 112 already entered,
+     * and one tap on the call button dials it. That system path is used first
+     * because it works on every vendor; ACTION_DIAL is the fallback.
+     * Emergency calls must never be blocked.
      */
     fun callEmergency(context: Context) {
         LockService.beginDialPass(emergency = true)
-        val emergencyDialer = Intent("com.android.phone.EmergencyDialer.DIAL")
-            .setData(Uri.parse("tel:$EMERGENCY_NUMBER"))
-        if (start(context, emergencyDialer)) return
-        start(context, Intent(Intent.ACTION_DIAL, Uri.parse("tel:$EMERGENCY_NUMBER")))
+        val tel = Uri.parse("tel:$EMERGENCY_NUMBER")
+        if (granted(context, Manifest.permission.CALL_PHONE) && start(context, Intent(Intent.ACTION_CALL, tel))) return
+        start(context, Intent(Intent.ACTION_DIAL, tel))
     }
 
     private fun start(context: Context, intent: Intent): Boolean = try {

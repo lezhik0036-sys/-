@@ -58,6 +58,15 @@ class GuardService : AccessibilityService() {
         /** A panel that is still open this long after the first attempt gets the screen switched off. */
         private const val ESCALATE_AFTER_MS = 1_500L
 
+        /** Apps seen opening over the system lock screen during a lock (diagnostics, last 3). */
+        @Volatile var keyguardApps = ""
+            private set
+
+        /** Distinct System UI view ids seen over the system lock screen (diagnostics). */
+        val keyguardIds: Set<String> get() = seenKeyguardIds
+        private val seenKeyguardIds = java.util.concurrent.ConcurrentSkipListSet<String>()
+        private const val MAX_SEEN_IDS = 40
+
         /** Last System UI view ids that identified quick settings (diagnostics). */
         @Volatile var lastPanelIds = ""
             private set
@@ -129,6 +138,19 @@ class GuardService : AccessibilityService() {
 
         if (!Mama.state(this).isLocked) return
         if (LockService.overlayMayStepAside) return
+        if (screen == Calls.Screen.OTHER && overKeyguard() && pkg != homePackage && !isSystemSurface(pkg)) {
+            // An app opened on top of the system lock screen (e.g. settings from
+            // Samsung's lock screen widgets). Home does nothing there, so the
+            // screen is switched off like a power-button press, which closes it.
+            noteKeyguardApp(pkg)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+                screenOffs++
+            } else {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+            }
+            return
+        }
         if (pkg == homePackage && className?.contains("recent", ignoreCase = true) != true) {
             return // the overlay covers the launcher
         }
@@ -136,6 +158,17 @@ class GuardService : AccessibilityService() {
         // Anything else — another app, Recents, the dialer keypad, an app
         // launched over the lock screen — goes home.
         performGlobalAction(GLOBAL_ACTION_HOME)
+    }
+
+    private fun overKeyguard() = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+
+    /** Lock screen parts that are not apps: always-on display, face/fingerprint prompts. */
+    private fun isSystemSurface(pkg: String) =
+        "aodservice" in pkg || "biometrics" in pkg || pkg == "android"
+
+    private fun noteKeyguardApp(pkg: String) {
+        val list = (listOf(pkg) + keyguardApps.split(',').filter { it.isNotBlank() && it != pkg }).take(3)
+        keyguardApps = list.joinToString(",")
     }
 
     /**
@@ -239,6 +272,7 @@ class GuardService : AccessibilityService() {
             visited++
             val id = node.viewIdResourceName?.substringAfter(":id/")?.lowercase()
             if (id != null && node.isVisibleToUser) {
+                if (seenKeyguardIds.size < MAX_SEEN_IDS) seenKeyguardIds += id
                 if (BOUNCER_IDS.any { it in id }) return false
                 if (QUICK_SETTINGS_IDS.any { it in id }) {
                     quickSettings = true
