@@ -234,11 +234,11 @@ internal fun MainActivity.failureScreen(
 internal fun MainActivity.successScreen(series: Series): Pair<View, Boolean> {
     val k = nightKit
     val b = body(64).apply { gravity = Gravity.CENTER_HORIZONTAL }
-    b.addView(k.emblem(Icon.CHECK, MamaColors.ProgressGlow, 88))
-    b.addView(k.text("Серия пройдена!", MamaType.DISPLAY, MamaColors.OnNight, center = true), k.gap(22))
-    b.addView(k.text("${series.completedPeriods} из ${series.kind.periods} — решение выдержано до конца.", MamaType.BODY, MamaColors.OnNight, center = true), k.gap(10))
-    b.addView(k.dots(series.kind.periods, series.completedPeriods), k.gap(18))
-    b.addView(k.text("Платить не нужно: Restart бывает только после срыва.", MamaType.CAPTION, MamaColors.OnNightMuted, center = true), k.gap(18))
+    b.addView(k.emblem(Icon.CHECK, MamaColors.Emerald, 88))
+    b.addView(k.text("Серия пройдена!", MamaType.DISPLAY, MamaColors.Night, center = true), k.gap(22))
+    b.addView(k.text("${series.completedPeriods} из ${series.kind.periods} — решение выдержано до конца.", MamaType.BODY, MamaColors.Graphite, center = true), k.gap(10))
+    b.addView(kit.dots(series.kind.periods, series.completedPeriods), k.gap(18))
+    b.addView(k.text("Платить не нужно: Restart бывает только после срыва.", MamaType.CAPTION, MamaColors.TextSecondary, center = true), k.gap(18))
     val footer = k.column().apply {
         addView(k.primaryButton("Новая серия", Icon.ARROW_RIGHT) { Mama.dismissSeries(this@successScreen); render() }, k.fill())
     }
@@ -352,17 +352,17 @@ internal fun MainActivity.flexResultScreen(flex: FlexPackage): Pair<View, Boolea
     val k = nightKit
     val perfect = flex.earnedReward
     val b = body(56).apply { gravity = Gravity.CENTER_HORIZONTAL }
-    b.addView(k.emblem(if (perfect) Icon.CHECK else Icon.INFINITY, MamaColors.ProgressGlow, 84))
-    b.addView(k.text("FLEX завершён", MamaType.DISPLAY, MamaColors.OnNight, center = true), k.gap(22))
-    b.addView(k.text("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}", MamaType.BODY, MamaColors.OnNight, center = true), k.gap(10))
-    b.addView(k.dots(FlexPackage.PERIODS, flex.successful, flex.used - flex.successful), k.gap(16))
+    b.addView(k.emblem(if (perfect) Icon.CHECK else Icon.INFINITY, MamaColors.Emerald, 84))
+    b.addView(k.text("FLEX завершён", MamaType.DISPLAY, MamaColors.Night, center = true), k.gap(22))
+    b.addView(k.text("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}", MamaType.BODY, MamaColors.Graphite, center = true), k.gap(10))
+    b.addView(kit.dots(FlexPackage.PERIODS, flex.successful, flex.used - flex.successful), k.gap(16))
     val credits = Mama.entitlements(this).freeFlexCredits
     val footer = k.column()
     if (credits > 0) {
-        b.addView(k.text("Следующий FLEX — бесплатно.", MamaType.TITLE, MamaColors.ProgressGlow, center = true), k.gap(18))
+        b.addView(k.text("Следующий FLEX — бесплатно.", MamaType.TITLE, MamaColors.Emerald, center = true), k.gap(18))
         footer.addView(k.primaryButton("Активировать бесплатный FLEX") { Mama.dismissFlex(this); activateFlex(GrantSource.REWARD) }, k.fill())
     } else {
-        b.addView(k.text("Следующий бесплатный FLEX доступен только при результате 7 из 7.", MamaType.CAPTION, MamaColors.OnNightMuted, center = true), k.gap(18))
+        b.addView(k.text("Следующий бесплатный FLEX доступен только при результате 7 из 7.", MamaType.CAPTION, MamaColors.TextSecondary, center = true), k.gap(18))
         footer.addView(k.primaryButton("Новый FLEX — ${Texts.price(FlexPackage.PRICE_RUB)}") {
             Checkout.obtain(this, Product.FlexPackage, "MAMA FLEX") { source -> Mama.dismissFlex(this); activateFlex(source) }
         }, k.fill())

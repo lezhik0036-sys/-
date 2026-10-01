@@ -77,16 +77,13 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         gravity = Gravity.CENTER_HORIZONTAL
         setPadding(k.dp(28), k.dp(72), k.dp(28), k.dp(24))
     }
-    b.addView(k.text("MAMA", MamaType.WORDMARK_XL, MamaColors.OnNight, center = true).apply {
-        setShadowLayer(18f, 0f, 2f, Color.argb(0x50, 0, 0, 0))
-    }, k.centered())
-    b.addView(k.text("Ты уже решил.\nТеперь просто\nне меняй решение.", MamaType.H2, MamaColors.OnNight, center = true).apply {
+    b.addView(k.text("MAMA", MamaType.WORDMARK_XL, MamaColors.Night, center = true), k.centered())
+    b.addView(k.text("Ты уже решил.\nТеперь просто\nне меняй решение.", MamaType.H2, MamaColors.Graphite, center = true).apply {
         textSize = 21f
         typeface = MamaFonts.ui(context, 500)
         setLineSpacing(0f, 1.3f)
-        setShadowLayer(14f, 0f, 1f, Color.argb(0x60, 0, 0, 0))
     }, k.centered(22))
-    b.addView(View(this).apply { setBackgroundColor(Color.argb(0x90, 0xF3, 0xF1, 0xEA)) }, LinearLayout.LayoutParams(k.dp(48), 2).apply {
+    b.addView(View(this).apply { setBackgroundColor(Color.argb(0x80, 0x26, 0x2A, 0x27)) }, LinearLayout.LayoutParams(k.dp(48), 2).apply {
         topMargin = k.dp(26); gravity = Gravity.CENTER_HORIZONTAL
     })
     val footer = k.column().apply {
@@ -124,9 +121,11 @@ internal fun MainActivity.permissionsScreen(): Pair<View, Boolean> {
 internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
     val b = body()
     b.addView(kit.sectionHeader("Выбери свою серию", "Сколько дней ты готов не менять своё решение?"))
-    fun option(c: Choice, icon: Icon, title: String, subtitle: String, trailing: String? = null) =
-        b.addView(kit.selectableCard(icon, title, subtitle, choice == c, trailing) { choice = c; saveForm(); render() }, kit.gap(10))
-    b.addView(View(this), kit.gap(10))
+    var first = true
+    fun option(c: Choice, icon: Icon, title: String, subtitle: String, trailing: String? = null) {
+        b.addView(kit.selectableCard(icon, title, subtitle, choice == c, trailing) { choice = c; saveForm(); render() }, kit.gap(if (first) 22 else 10))
+        first = false
+    }
     if (FeatureFlags.TEST_MODE_ENABLED) {
         option(Choice.TEST, Icon.FLASK, "Тестовый режим — 15 минут", "Только для тестирования. Ровно 15 минут. Бесплатно.")
     }

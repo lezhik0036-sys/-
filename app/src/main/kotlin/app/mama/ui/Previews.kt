@@ -90,7 +90,7 @@ object Previews {
         view.bind(
             LockModel(
                 now = now, start = now.minus(Duration.ofMinutes(77)), end = now + Duration.ofSeconds(6 * 3600 + 42 * 60 + 17), zone = zone,
-                contactName = contact.name, contactPhone = contact.phone, dayLabel = Texts.dayOf(3, 7),
+                contactName = contact.name, contactPhone = Texts.phone(contact.phone), dayLabel = Texts.dayOf(3, 7),
                 phrase = Texts.lockPhrases[0], promise = "Хочу нормально высыпаться и чувствовать себя лучше утром.",
                 call = Calls.CallState.NONE, exitOpen = name != "lock", codeActive = name == "code",
                 attemptsLeft = 3, resendAt = if (name == "code") now + Duration.ofSeconds(57) else null, codeLength = 5,
