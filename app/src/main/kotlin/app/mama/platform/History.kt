@@ -1,6 +1,7 @@
 package app.mama.platform
 
 import android.content.Context
+import app.mama.core.FlexPackage
 import app.mama.core.Series
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
@@ -25,6 +26,14 @@ object History {
         val old = prefs(context).getString(KEY, "").orEmpty().lines().filter { it.isNotBlank() }
         prefs(context).edit().putString(KEY, (listOf(line) + old).take(MAX).joinToString("\n")).apply()
     }
+
+    fun recordFlex(context: Context, pkg: FlexPackage) {
+        val line = listOf((pkg.endedAt ?: Instant.now()).toEpochMilli(), "FLEX", pkg.successful, pkg.used).joinToString("|")
+        val old = prefs(context).getString(FLEX_KEY, "").orEmpty().lines().filter { it.isNotBlank() }
+        prefs(context).edit().putString(FLEX_KEY, (listOf(line) + old).take(MAX).joinToString("\n")).apply()
+    }
+
+    private const val FLEX_KEY = "flex"
 
     fun entries(context: Context): List<Entry> =
         prefs(context).getString(KEY, "").orEmpty().lines().mapNotNull { line ->

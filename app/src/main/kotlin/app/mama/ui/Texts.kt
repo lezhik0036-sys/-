@@ -27,7 +27,6 @@ object Texts {
         SeriesKind.THREE -> "3 дня"
         SeriesKind.FIVE -> "5 дней"
         SeriesKind.SEVEN -> "7 дней"
-        SeriesKind.FLEX -> "FLEX"
     }
 
     fun price(rub: Int) = "$rub ₽"

@@ -10,6 +10,7 @@ data class Snapshot(
     val anchor: ClockAnchor? = null,
     val lastTrusted: Instant? = null,
     val series: Series? = null,
+    val entitlements: Entitlements = Entitlements(),
 )
 
 /**
@@ -42,6 +43,21 @@ object StateCodec {
             put("sr.status", it.status.name)
             it.endedAt?.let { e -> put("sr.endedAt", e.toString()) }
             it.lastSessionId?.let { l -> put("sr.lastSession", l) }
+        }
+        val e = snapshot.entitlements
+        e.standardFailedAt?.let { put("en.stdFailedAt", it.toString()) }
+        put("en.freeFlex", e.freeFlexCredits.toString())
+        e.flex?.let {
+            put("fx.id", it.id)
+            put("fx.activatedAt", it.activatedAt.toString())
+            put("fx.source", it.source.name)
+            put("fx.used", it.used.toString())
+            put("fx.successful", it.successful.toString())
+            it.currentSessionId?.let { v -> put("fx.current", v) }
+            it.consumedSessionId?.let { v -> put("fx.consumed", v) }
+            it.settledSessionId?.let { v -> put("fx.settled", v) }
+            it.endedAt?.let { v -> put("fx.endedAt", v.toString()) }
+            it.lastBurntAt?.let { v -> put("fx.burntAt", v.toString()) }
         }
         val s = snapshot.session ?: return@buildMap
         put("s.id", s.id)
@@ -127,7 +143,26 @@ object StateCodec {
                 lastSessionId = map["sr.lastSession"],
             )
         }
-        return Snapshot(session, anchor, lastTrusted, series)
+        val flex = map["fx.id"]?.let { id ->
+            FlexPackage(
+                id = id,
+                activatedAt = Instant.parse(map.req("fx.activatedAt")),
+                source = GrantSource.valueOf(map.req("fx.source")),
+                used = map.req("fx.used").toInt(),
+                successful = map.req("fx.successful").toInt(),
+                currentSessionId = map["fx.current"],
+                consumedSessionId = map["fx.consumed"],
+                settledSessionId = map["fx.settled"],
+                endedAt = map["fx.endedAt"]?.let(Instant::parse),
+                lastBurntAt = map["fx.burntAt"]?.let(Instant::parse),
+            )
+        }
+        val entitlements = Entitlements(
+            standardFailedAt = map["en.stdFailedAt"]?.let(Instant::parse),
+            flex = flex,
+            freeFlexCredits = map["en.freeFlex"]?.toInt() ?: 0,
+        )
+        return Snapshot(session, anchor, lastTrusted, series, entitlements)
     }
 
     private fun Map<String, String>.req(key: String): String =

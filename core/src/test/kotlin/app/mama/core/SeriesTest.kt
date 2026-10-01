@@ -26,10 +26,9 @@ class SeriesTest {
     }
 
     @Test
-    fun `prices`() {
-        assertEquals(listOf(99, 199, 299, null), SeriesKind.entries.map { it.restartPriceRub })
-        assertEquals(listOf(null, null, null, 399), SeriesKind.entries.map { it.packagePriceRub })
-        assertEquals(30, SeriesKind.FLEX.withinDays)
+    fun `restart prices`() {
+        assertEquals(listOf(99, 199, 299), SeriesKind.entries.map { it.restartPriceRub })
+        assertEquals(listOf(3, 5, 7), SeriesKind.entries.map { it.periods })
     }
 
     @Test
@@ -89,39 +88,6 @@ class SeriesTest {
         val u = startSeven()
         val cancelled = (engine.cancelBeforeStart(u.session!!, evening) as LockEngine.CancelResult.Cancelled).session
         assertEquals(SeriesStatus.BROKEN, series.afterSession(u.series, cancelled, id(), evening).series.status)
-    }
-
-    @Test
-    fun `restart begins from zero with the same settings`() {
-        val broken = series.afterSession(
-            startSeven().series, null, id(), evening,
-        ).series.copy(status = SeriesStatus.BROKEN, completedPeriods = 4)
-        val r = series.restart(broken, "series2", id(), evening)
-        assertEquals(0, r.series.completedPeriods)
-        assertEquals(SeriesStatus.ACTIVE, r.series.status)
-        assertEquals(SeriesKind.SEVEN, r.series.kind)
-        assertNotNull(r.session)
-    }
-
-    @Test
-    fun `flex waits for the user and has a 30 day deadline`() {
-        val u = series.start("flex", id(), SeriesKind.FLEX, window, MOM, SessionMode.SLEEP, evening)
-        assertNull(u.session)
-        assertEquals(evening + Duration.ofDays(30), u.series.deadline)
-        val night = series.startFlexPeriod(u.series, id(), evening)
-        assertNotNull(night)
-        val done = engine.advance(night, night.plan.end)
-        val after = series.afterSession(u.series, done, id(), night.plan.end)
-        assertEquals(1, after.series.completedPeriods)
-        assertTrue(after.session!!.status == SessionStatus.FINISHED) // no auto-planned night
-    }
-
-    @Test
-    fun `flex past its deadline breaks`() {
-        val u = series.start("flex", id(), SeriesKind.FLEX, window, MOM, SessionMode.SLEEP, evening)
-        val late = evening + Duration.ofDays(31)
-        assertEquals(SeriesStatus.BROKEN, series.afterSession(u.series, null, id(), late).series.status)
-        assertNull(series.startFlexPeriod(u.series, id(), late))
     }
 
     @Test

@@ -26,16 +26,18 @@ import android.widget.TextView
 import android.widget.Toast
 import app.mama.core.DailyWindow
 import app.mama.core.LockPlan
+import app.mama.core.FlexPackage
+import app.mama.core.GrantSource
 import app.mama.core.LockState
 import app.mama.core.Series
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
+import app.mama.core.StandardRules
 import app.mama.core.SessionMode
 import app.mama.core.SessionStatus
 import app.mama.core.TrustedContact
-import app.mama.billing.Billing
+import app.mama.billing.Checkout
 import app.mama.billing.Product
-import app.mama.billing.PurchaseResult
 import app.mama.platform.Mama
 import java.time.Duration
 import java.time.Instant
@@ -63,7 +65,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         mode = runCatching { SessionMode.valueOf(prefs.getString("mode", null)!!) }.getOrDefault(SessionMode.SLEEP)
         seriesKind = runCatching { SeriesKind.valueOf(prefs.getString("series", null)!!) }
-            .getOrDefault(SeriesKind.SEVEN).takeIf { it.packagePriceRub == null } ?: SeriesKind.SEVEN
+            .getOrDefault(SeriesKind.SEVEN)
         start = runCatching { LocalTime.parse(prefs.getString("start", null)) }.getOrDefault(start)
         end = runCatching { LocalTime.parse(prefs.getString("end", null)) }.getOrDefault(end)
         zone = runCatching { ZoneId.of(prefs.getString("zone", null)) }.getOrDefault(zone)
@@ -170,10 +172,13 @@ class MainActivity : Activity() {
         column.addView(space(16))
         stopTicker()
         val series = Mama.series(this)
+        val flex = Mama.entitlements(this).flex
         when {
             series != null && series.status == SeriesStatus.BROKEN -> renderBroken(column, series)
             series != null && series.status == SeriesStatus.COMPLETED -> renderSuccess(column, series)
             series != null -> renderSeries(column, series, state)
+            flex != null && flex.over -> renderFlexResult(column, flex)
+            flex != null -> renderFlex(column, flex, state)
             state == LockState.Free -> renderForm(column)
             else -> renderSession(column, state)
         }
@@ -223,6 +228,17 @@ class MainActivity : Activity() {
         column.addView(section("Серия"))
         column.addView(label("Сколько дней подряд ты готов не менять своё решение?", 14f, MUTED))
         SeriesKind.entries.forEach { kind -> column.addView(seriesOption(kind), ui.gap(8)) }
+        val ent = Mama.entitlements(this)
+        val waitDays = StandardRules.daysUntilFreeStart(ent, Mama.trustedNow(this))
+        if (waitDays > 0) {
+            column.addView(ui.card().apply {
+                addView(ui.text("Бесплатная новая серия будет доступна через ${Texts.days(waitDays.toInt())}", 15f, bold = true))
+                addView(ui.small("Телефон при этом не заблокирован: ожидание касается только бесплатного старта новой серии."))
+            }, ui.gap(10))
+        }
+
+        column.addView(section("MAMA FLEX"))
+        column.addView(flexOffer(ent.freeFlexCredits), ui.gap(4))
 
         column.addView(section("Режим"))
         column.addView(button(Texts.mode(mode)) { pickMode() })
@@ -259,38 +275,73 @@ class MainActivity : Activity() {
 
     private val ui by lazy { Ui(this) }
 
-    /** One selectable series card. FLEX is shown but not sold yet. */
+    /** One selectable standard series card with its Restart price. */
     private fun seriesOption(kind: SeriesKind): View {
-        val flex = kind.packagePriceRub != null
-        val selected = !flex && kind == seriesKind
+        val selected = kind == seriesKind
         val fg = if (selected) Color.WHITE else Palette.INK
         val sub = if (selected) Palette.CHIP else Palette.MUTED
         return ui.card(selected).apply {
             val line = ui.row()
             line.addView(ui.text(Texts.seriesName(kind), 20f, fg, bold = true), ui.weight())
             if (selected) line.addView(ui.text("✓", 18f, Color.WHITE, bold = true))
-            if (flex) line.addView(ui.text(Texts.price(kind.packagePriceRub!!), 15f, Palette.INK, bold = true))
             addView(line)
-            addView(
-                ui.text(
-                    if (flex) {
-                        "${kind.periods} периодов в любые дни за ${kind.withinDays} дней · пакет, без подписки · скоро"
-                    } else {
-                        "Restart при срыве — ${Texts.price(kind.restartPriceRub!!)}"
-                    },
-                    13f, sub,
-                ),
-            )
-            if (flex) {
-                alpha = 0.55f
-            } else {
-                setOnClickListener {
-                    seriesKind = kind
-                    saveForm()
-                    render()
-                }
+            addView(ui.text("Restart при срыве — ${Texts.price(kind.restartPriceRub)}", 13f, sub))
+            setOnClickListener {
+                seriesKind = kind
+                saveForm()
+                render()
             }
         }
+    }
+
+    /** The FLEX offer: price, rules, and the free package if one was earned. */
+    private fun flexOffer(freeCredits: Int): View = ui.card().apply {
+        val line = ui.row()
+        line.addView(ui.text("FLEX", 20f, bold = true), ui.weight())
+        line.addView(
+            ui.text(if (freeCredits > 0) "бесплатно" else Texts.price(FlexPackage.PRICE_RUB), 16f, Palette.FOREST, bold = true),
+        )
+        addView(line)
+        addView(ui.small(
+            "${FlexPackage.PERIODS} периодов блокировки в любые выбранные дни, срок ${FlexPackage.VALIDITY.toDays()} дней. " +
+                "Разовый пакет, не подписка, без автопродления. Пройди 7 из 7 — следующий FLEX бесплатно.",
+        ))
+        if (freeCredits > 0) {
+            addView(ui.primary("Активировать бесплатный FLEX") { activateFlex(GrantSource.REWARD) }, ui.gap(10))
+        } else {
+            addView(ui.secondary("Купить FLEX — ${Texts.price(FlexPackage.PRICE_RUB)}") {
+                Checkout.obtain(this@MainActivity, Product.FlexPackage, "MAMA FLEX") { activateFlex(it) }
+            }, ui.gap(10))
+        }
+    }
+
+    private fun activateFlex(source: GrantSource) {
+        saveForm()
+        if (!Mama.activateFlex(this, source)) {
+            alert("Не получилось", "FLEX можно активировать, когда нет активной серии или блокировки.")
+        }
+        render()
+    }
+
+    /** Checks permissions, time and contact from the form; null (with a message) if something is missing. */
+    private fun readyContact(): TrustedContact? {
+        saveForm()
+        val missing = Requirement.missingRequired(this)
+        if (missing.isNotEmpty()) {
+            alert("Не хватает разрешений", missing.joinToString("\n") { "• ${it.title}" })
+            return null
+        }
+        if (start == end) {
+            alert("Проверьте время", "Начало и конец совпадают.")
+            return null
+        }
+        val name = contactName.text.toString().trim()
+        val phone = TrustedContact.normalizePhone(contactPhone.text.toString())
+        if (name.isEmpty() || phone == null) {
+            alert("Доверенный контакт", "Укажите имя и номер телефона в формате +7 900 123-45-67.")
+            return null
+        }
+        return TrustedContact(name, phone)
     }
 
     private fun plan(): LockPlan =
@@ -313,29 +364,25 @@ class MainActivity : Activity() {
     }
 
     private fun confirmStart() {
-        saveForm()
-        val missing = Requirement.missingRequired(this)
-        if (missing.isNotEmpty()) {
-            alert("Не хватает разрешений", missing.joinToString("\n") { "• ${it.title}" })
-            return
-        }
-        if (start == end) {
-            alert("Проверьте время", "Начало и конец совпадают.")
-            return
-        }
-        val name = contactName.text.toString().trim()
-        val phone = TrustedContact.normalizePhone(contactPhone.text.toString())
-        if (name.isEmpty() || phone == null) {
-            alert("Доверенный контакт", "Укажите имя и номер телефона в формате +7 900 123-45-67.")
-            return
-        }
-        val contact = TrustedContact(name, phone)
+        val contact = readyContact() ?: return
         val kind = seriesKind
-        val restart = Texts.price(kind.restartPriceRub!!)
+        val ent = Mama.entitlements(this)
+        val waitDays = StandardRules.daysUntilFreeStart(ent, Mama.trustedNow(this))
+        if (waitDays > 0) {
+            alert(
+                "Бесплатная серия пока недоступна",
+                "Бесплатная новая серия будет доступна через ${Texts.days(waitDays.toInt())}. " +
+                    "Телефон при этом не заблокирован.",
+            )
+            return
+        }
+        val restart = Texts.price(kind.restartPriceRub)
         val message = "Серия: ${Texts.seriesName(kind)}\n" +
             "Каждый день: $start → $end (${zone.id})\n" +
-            "Доверенный контакт: $name, $phone\n\n" +
-            "Если серия будет прервана:\nпрогресс обнулится.\nRestart серии — $restart.\n\n" +
+            "Доверенный контакт: ${contact.name}, ${contact.phone}\n\n" +
+            "Если серия будет прервана:\nпрогресс обнулится.\nRestart серии — $restart.\n" +
+            "Без Restart бесплатная новая серия будет доступна через " +
+            "${StandardRules.FREE_START_AFTER.toDays()} дней.\n\n" +
             "Выйти по коду доверенного контакта можно всегда, это бесплатно. " +
             "Если серия завершена успешно — платить не нужно."
         val agree = CheckBox(this).apply {
@@ -352,8 +399,12 @@ class MainActivity : Activity() {
             .setMessage(message)
             .setView(box)
             .setPositiveButton("Начать серию") { _, _ ->
-                if (!Mama.startSeries(this, kind, DailyWindow(start, end, zone), contact, mode)) {
-                    alert("Не получилось", "Серию сейчас начать нельзя. Проверьте, что нет активной блокировки.")
+                when (val r = Mama.startSeries(this, kind, DailyWindow(start, end, zone), contact, mode)) {
+                    Mama.SeriesStart.Started -> Unit
+                    Mama.SeriesStart.Busy ->
+                        alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
+                    is Mama.SeriesStart.Waiting ->
+                        alert("Бесплатная серия пока недоступна", "Будет доступна через ${Texts.days(r.days.toInt())}.")
                 }
                 render()
             }
@@ -445,12 +496,14 @@ class MainActivity : Activity() {
             addView(ui.small(series.contact.phone))
         }, ui.gap(12))
 
-        series.kind.restartPriceRub?.let { price ->
-            column.addView(
-                ui.small("Если серия будет прервана: прогресс обнулится. Restart серии — ${Texts.price(price)}."),
-                ui.gap(16),
-            )
-        }
+        column.addView(
+            ui.small(
+                "Если серия будет прервана: прогресс обнулится. Restart серии — " +
+                    "${Texts.price(series.kind.restartPriceRub)}, или бесплатная новая серия через " +
+                    "${StandardRules.FREE_START_AFTER.toDays()} дней.",
+            ),
+            ui.gap(16),
+        )
 
         if (state is LockState.Waiting) {
             column.addView(ui.secondary("Прервать серию") { confirmBreak(series) }, ui.gap(20))
@@ -458,7 +511,8 @@ class MainActivity : Activity() {
     }
 
     private fun confirmBreak(series: Series) {
-        val price = series.kind.restartPriceRub?.let { "\nRestart серии — ${Texts.price(it)}." }.orEmpty()
+        val price = "\nRestart серии — ${Texts.price(series.kind.restartPriceRub)}, " +
+            "или бесплатная новая серия через ${StandardRules.FREE_START_AFTER.toDays()} дней."
         AlertDialog.Builder(this)
             .setTitle("Прервать серию?")
             .setMessage("Пройдено ${series.completedPeriods} из ${series.kind.periods}. Прогресс обнулится.$price")
@@ -478,40 +532,34 @@ class MainActivity : Activity() {
         column.addView(
             ui.body(
                 "Вы прошли ${series.completedPeriods} из ${Texts.days(series.kind.periods)}. " +
-                    "Вы можете начать заново прямо сейчас.",
+                    "Прогресс серии обнулён. Телефон разблокирован.",
                 center = true,
             ),
             ui.gap(8),
         )
-        series.kind.restartPriceRub?.let { price ->
-            column.addView(ui.card().apply {
-                addView(ui.small("Restart серии", center = true), ui.fill())
-                addView(ui.text(Texts.price(price), 30f, bold = true, center = true), ui.gap(4))
-                addView(ui.primary("Начать заново") { purchaseRestart(series) }, ui.gap(12))
-            }, ui.gap(24))
+        column.addView(ui.card().apply {
+            addView(ui.small("Restart серии прямо сейчас", center = true), ui.fill())
+            addView(ui.text(Texts.price(series.kind.restartPriceRub), 30f, bold = true, center = true), ui.gap(4))
+            addView(ui.primary("Начать заново") {
+                Checkout.obtain(this@MainActivity, Product.Restart(series.kind), "Restart серии") { source ->
+                    if (!Mama.restartSeries(this@MainActivity, source)) {
+                        alert("Не получилось", "Restart сейчас недоступен.")
+                    }
+                    render()
+                }
+            }, ui.gap(12))
+        }, ui.gap(24))
+        val days = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this))
+        if (days > 0) {
+            column.addView(
+                ui.small("Без Restart бесплатная новая серия будет доступна через ${Texts.days(days.toInt())}.", center = true),
+                ui.gap(12),
+            )
         }
         column.addView(ui.secondary("Вернуться без серии") {
             Mama.dismissSeries(this)
             render()
         }, ui.gap(16))
-    }
-
-    private fun purchaseRestart(series: Series) {
-        Billing.payments.purchase(this, Product.Restart(series.kind)) { result ->
-            when (result) {
-                PurchaseResult.Paid -> {
-                    Mama.restartSeries(this)
-                    render()
-                }
-                PurchaseResult.Cancelled -> Unit
-                is PurchaseResult.Failed -> alert("Оплата не прошла", result.reason)
-                PurchaseResult.Unavailable -> alert(
-                    "Оплата пока недоступна",
-                    "В этой версии оплата Restart ещё не подключена, поэтому Restart недоступен. " +
-                        "Можно вернуться без серии.",
-                )
-            }
-        }
     }
 
     private fun renderSuccess(column: LinearLayout, series: Series) {
@@ -530,6 +578,162 @@ class MainActivity : Activity() {
             Mama.dismissSeries(this)
             render()
         }, ui.gap(28))
+    }
+
+    // --- FLEX ---
+
+    private fun renderFlex(column: LinearLayout, flex: FlexPackage, state: LockState) {
+        val now = Mama.trustedNow(this)
+        column.addView(ui.text("MAMA FLEX", 24f, bold = true, center = true), ui.fill())
+        column.addView(
+            ui.text("${flex.successful} из ${FlexPackage.PERIODS} выполнено", 17f, Palette.MUTED, center = true),
+            ui.gap(4),
+        )
+        val dots = ui.row().apply { gravity = Gravity.CENTER }
+        repeat(FlexPackage.PERIODS) { i ->
+            val color = when {
+                i < flex.successful -> Palette.FOREST
+                i < flex.successful + flex.failed -> Palette.ALERT
+                else -> Palette.LINE
+            }
+            dots.addView(
+                ui.badge("", color, sizeDp = 16),
+                LinearLayout.LayoutParams(dp(16), dp(16)).apply { setMargins(dp(5), 0, dp(5), 0) },
+            )
+        }
+        column.addView(dots, ui.gap(14))
+        column.addView(
+            ui.body(
+                if (flex.rewardStillPossible) {
+                    "Пройди 7 из 7 — следующий FLEX бесплатно"
+                } else {
+                    "Следующий бесплатный FLEX доступен только при результате 7 из 7."
+                },
+                center = true,
+            ),
+            ui.gap(10),
+        )
+        flex.lastBurntAt?.takeIf { Duration.between(it, now) < Duration.ofHours(18) }?.let {
+            column.addView(ui.card().apply {
+                addView(ui.text("Сегодняшний FLEX-день завершён досрочно.", 15f, bold = true))
+                addView(ui.small("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}. Остальные дни FLEX остаются доступны."))
+            }, ui.gap(12))
+        }
+
+        val stats = ui.row()
+        val daysLeft = maxOf(0L, Duration.between(now, flex.expiresAt).toDays())
+        listOf(
+            "Осталось дней FLEX" to "${flex.remaining}",
+            "Успешно" to "${flex.successful}",
+            "Действует ещё" to Texts.days(daysLeft.toInt()),
+        ).forEachIndexed { i, (k, v) ->
+            stats.addView(ui.card(paddingDp = 12).apply {
+                addView(ui.small(k))
+                addView(ui.text(v, 17f, bold = true))
+            }, ui.weight().apply { if (i > 0) leftMargin = dp(8) })
+        }
+        column.addView(stats, ui.gap(14))
+        column.addView(
+            ui.small("Пакет действует до ${Texts.dayTime(flex.expiresAt, zone)}. Неиспользованные дни сгорают после этого срока."),
+            ui.gap(8),
+        )
+
+        if (flex.currentSessionId != null && state != LockState.Free) {
+            val caption = ui.small("", center = true)
+            val big = ui.text("", 32f, bold = true, center = true)
+            column.addView(ui.card().apply {
+                addView(caption, ui.fill())
+                addView(big, ui.gap(4))
+            }, ui.gap(16))
+            val tick = object : Runnable {
+                override fun run() {
+                    val t = Mama.trustedNow(this@MainActivity)
+                    when (val st = Mama.state(this@MainActivity)) {
+                        is LockState.Waiting -> {
+                            caption.text = "FLEX-период начнётся в ${Texts.time(st.startsAt, zone)} через"
+                            big.text = Texts.countdown(Duration.between(t, st.startsAt))
+                        }
+                        is LockState.Locked -> {
+                            caption.text = "FLEX-период идёт, осталось"
+                            big.text = Texts.countdown(Duration.between(t, st.endsAt))
+                        }
+                        is LockState.EmergencyPass -> {
+                            caption.text = "Экстренный доступ, блокировка вернётся через"
+                            big.text = Texts.countdown(Duration.between(t, st.until))
+                        }
+                        LockState.Free -> {
+                            caption.text = ""
+                            big.text = "—"
+                        }
+                    }
+                    tickHandler.postDelayed(this, 1_000)
+                }
+            }
+            ticker = tick
+            tick.run()
+            if (state is LockState.Waiting) {
+                column.addView(
+                    ui.small("Отмена до начала не тратит FLEX-день.", center = true),
+                    ui.gap(8),
+                )
+                column.addView(ui.secondary("Отменить этот FLEX-период") {
+                    Mama.cancelBeforeStart(this)
+                    render()
+                }, ui.gap(8))
+            }
+        } else {
+            column.addView(section("Время периода"))
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            row.addView(button("С ${start}") { pickTime(start) { start = it } }, weighted())
+            row.addView(button("До ${end}") { pickTime(end) { end = it } }, weighted())
+            column.addView(row)
+            column.addView(ui.primary("Включить FLEX: $start → $end") {
+                val contact = readyContact() ?: return@primary
+                if (!Mama.startFlexPeriod(this, DailyWindow(start, end, zone), contact, mode)) {
+                    alert("Не получилось", "Сейчас FLEX-период начать нельзя.")
+                }
+                render()
+            }, ui.gap(16))
+            column.addView(
+                ui.small("FLEX-день расходуется в момент начала блокировки. Доверенный контакт: ${contactName.text}.", center = true),
+                ui.gap(8),
+            )
+        }
+    }
+
+    private fun renderFlexResult(column: LinearLayout, flex: FlexPackage) {
+        val perfect = flex.earnedReward
+        column.addView(ui.badge(if (perfect) "✓" else "•", if (perfect) Palette.FOREST else Palette.MOSS, sizeDp = 64).apply {
+            (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL
+        })
+        column.addView(ui.text("FLEX завершён", 24f, bold = true, center = true), ui.gap(16))
+        column.addView(
+            ui.body("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}.", center = true),
+            ui.gap(8),
+        )
+        val credits = Mama.entitlements(this).freeFlexCredits
+        if (credits > 0) {
+            column.addView(ui.body("Следующий FLEX — бесплатно.", center = true), ui.gap(8))
+            column.addView(ui.primary("Активировать бесплатный FLEX") {
+                Mama.dismissFlex(this)
+                activateFlex(GrantSource.REWARD)
+            }, ui.gap(20))
+        } else {
+            column.addView(
+                ui.small("Следующий бесплатный FLEX доступен только при результате 7 из 7.", center = true),
+                ui.gap(8),
+            )
+            column.addView(ui.secondary("Новый FLEX — ${Texts.price(FlexPackage.PRICE_RUB)}") {
+                Checkout.obtain(this@MainActivity, Product.FlexPackage, "MAMA FLEX") { source ->
+                    Mama.dismissFlex(this@MainActivity)
+                    activateFlex(source)
+                }
+            }, ui.gap(20))
+        }
+        column.addView(ui.secondary("На главную") {
+            Mama.dismissFlex(this)
+            render()
+        }, ui.gap(12))
     }
 
     private fun pickMode() {
