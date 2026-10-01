@@ -18,7 +18,7 @@ class LaunchSmokeTest {
             Thread.sleep(3_000)
             scenario.onActivity { activity ->
                 assertFalse(activity.isFinishing)
-                assertTrue(activity.findViewById<android.view.ViewGroup>(android.R.id.content).childCount > 0)
+                assertTrue(activity.findViewById<android.view.ViewGroup>(android.R.id.content)!!.childCount > 0)
             }
         }
     }

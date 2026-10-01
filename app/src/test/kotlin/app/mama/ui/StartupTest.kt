@@ -9,6 +9,7 @@ import app.mama.core.GrantSource
 import app.mama.core.Entitlements
 import app.mama.core.Series
 import app.mama.core.SeriesKind
+import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
 import app.mama.core.Snapshot
 import app.mama.core.StateCodec
@@ -34,13 +35,13 @@ import java.time.temporal.ChronoUnit
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [26, 30, 34])
 class StartupTest {
-    private val app: Context get() = ApplicationProvider.getApplicationContext()
+    private val context: Context get() = ApplicationProvider.getApplicationContext()
 
     private fun launchAndCheck() {
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         val activity = controller.get()
         assertFalse("MainActivity finished during startup", activity.isFinishing)
-        val content = activity.findViewById<ViewGroup>(android.R.id.content)
+        val content = activity.findViewById<ViewGroup>(android.R.id.content)!!
         assertTrue("first screen was not rendered", content.childCount > 0)
         controller.pause().stop().destroy()
     }
@@ -51,7 +52,7 @@ class StartupTest {
     @Test
     fun `upgrade over v0_3_x setup and state opens the first screen`() {
         // Setup form as v0.3.2 saved it (no "choice" key yet, series length under "series").
-        app.getSharedPreferences("mama_setup", Context.MODE_PRIVATE).edit()
+        context.getSharedPreferences("mama_setup", Context.MODE_PRIVATE).edit()
             .putString("mode", "SLEEP")
             .putString("series", "FIVE")
             .putString("start", "23:00")
@@ -69,13 +70,13 @@ class StartupTest {
                 window = DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), ZoneId.of("Europe/Moscow")),
                 contact = TrustedContact("Мама", "+79001234567"), mode = SessionMode.SLEEP,
                 startedAt = now.minus(5, ChronoUnit.DAYS), completedPeriods = 3,
-                status = app.mama.core.SeriesStatus.COMPLETED, endedAt = now.minus(1, ChronoUnit.DAYS),
+                status = SeriesStatus.COMPLETED, endedAt = now.minus(1, ChronoUnit.DAYS),
             ),
             entitlements = Entitlements(
                 flex = FlexPackage("old-flex", now.minus(2, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 1, successful = 1),
             ),
         )
-        val store = app.createDeviceProtectedStorageContext().getSharedPreferences("mama_state", Context.MODE_PRIVATE).edit()
+        val store = context.createDeviceProtectedStorageContext().getSharedPreferences("mama_state", Context.MODE_PRIVATE).edit()
         StateCodec.encode(snapshot).forEach { (k, v) -> store.putString(k, v) }
         store.commit()
         launchAndCheck()
@@ -83,7 +84,7 @@ class StartupTest {
 
     @Test
     fun `unknown or obsolete stored setup values fall back to defaults`() {
-        app.getSharedPreferences("mama_setup", Context.MODE_PRIVATE).edit()
+        context.getSharedPreferences("mama_setup", Context.MODE_PRIVATE).edit()
             .putString("mode", "NOT_A_MODE")
             .putString("choice", "TEN_DAYS")
             .putString("series", "TEN")
