@@ -99,7 +99,10 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
             val light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            window.insetsController?.setSystemBarsAppearance(light, light)
+            // Not window.insetsController: in onCreate, before setContentView, the decor view does not
+            // exist yet and PhoneWindow.getInsetsController() throws a NullPointerException (v0.4.0 crash).
+            // window.decorView creates the decor; its controller applies the appearance once attached.
+            window.decorView.windowInsetsController?.setSystemBarsAppearance(light, light)
         } else {
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
                 View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
@@ -292,7 +295,7 @@ class MainActivity : Activity() {
             add(kit.modeCard(
                 "Тестовый режим", "Бесплатно",
                 "Короткий пробный запуск на 15 минут для проверки блокировки и механики приложения.",
-                choice == Choice.TEST, tag = "15 минут",
+                choice == Choice.TEST, tag = "15 минут · только для тестирования",
             ) { select(Choice.TEST) })
         }
         listOf(Choice.THREE, Choice.FIVE, Choice.SEVEN).forEach { c ->
