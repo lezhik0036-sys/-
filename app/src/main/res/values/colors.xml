@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Mirrors app.mama.ui.MamaColors for the window theme. -->
 <resources>
-    <color name="mama_background">#F6F2E9</color>
-    <color name="mama_surface">#FFFDF8</color>
-    <color name="mama_emerald">#2F5D50</color>
-    <color name="mama_emerald_secondary">#5F8A72</color>
-    <color name="mama_olive">#9CAB7D</color>
-    <color name="mama_text">#1F2A24</color>
-    <color name="mama_text_secondary">#5E655F</color>
-    <color name="mama_ripple">#242F5D50</color>
+    <color name="mama_background">#F7F4EC</color>
+    <color name="mama_surface">#FCFAF5</color>
+    <color name="mama_emerald">#28594A</color>
+    <color name="mama_emerald_secondary">#3E735F</color>
+    <color name="mama_olive">#83896A</color>
+    <color name="mama_text">#262A27</color>
+    <color name="mama_text_secondary">#70756E</color>
+    <color name="mama_ripple">#2228594A</color>
     <color name="mama_selection">#665F8A72</color>
 </resources>
