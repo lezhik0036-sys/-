@@ -2,6 +2,8 @@ package app.mama.core
 
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /** Where an entitlement came from. Nothing here is ever needed to unlock the phone. */
 enum class GrantSource {
@@ -80,6 +82,9 @@ data class FlexPackage(
         const val PERIODS = 7
         const val PRICE_RUB = 399
         val VALIDITY: Duration = Duration.ofDays(30)
+
+        /** Shortest FLEX period. */
+        val MIN_DURATION: Duration = Duration.ofHours(3)
     }
 }
 
@@ -100,20 +105,65 @@ class FlexEngine(private val engine: LockEngine, private val policy: CorePolicy 
     fun canStartPeriod(p: FlexPackage, now: Instant): Boolean =
         !p.over && p.remaining > 0 && now.isBefore(p.expiresAt) && p.currentSessionId == null
 
-    /** Plans one FLEX period: the next occurrence of [window] (or right now, if inside it). */
+    /** Why a FLEX period could not be planned. */
+    enum class PlanError {
+        /** No days left, package expired or over, or a period is already planned. */
+        NOT_AVAILABLE,
+
+        /** The chosen start moment has already passed (it is never moved forward). */
+        START_IN_PAST,
+
+        /** End is not after start. */
+        END_BEFORE_START,
+
+        /** Shorter than [FlexPackage.MIN_DURATION]. */
+        TOO_SHORT,
+
+        /** Longer than the engine's maximum lock length. */
+        TOO_LONG,
+
+        /** Would start after the package expired. */
+        AFTER_EXPIRY,
+    }
+
+    sealed interface PlanResult {
+        data class Planned(val pkg: FlexPackage, val session: Session) : PlanResult
+        data class Rejected(val error: PlanError) : PlanResult
+    }
+
+    /**
+     * Plans one FLEX period with absolute start and end moments.
+     *
+     * [start] = null means "start now": the actual current moment is used,
+     * never an earlier clock time. A chosen [start] must not be in the past:
+     * anything before the current minute is rejected, not shortened. Only a
+     * start inside the current minute (the time picker has minute precision)
+     * is accepted, and then begins immediately.
+     */
     fun planPeriod(
         p: FlexPackage,
-        window: DailyWindow,
+        start: Instant?,
+        end: Instant,
+        zone: ZoneId,
         contact: TrustedContact,
         mode: SessionMode,
         sessionId: String,
         now: Instant,
-    ): Pair<FlexPackage, Session>? {
-        if (!canStartPeriod(p, now)) return null
-        val plan = window.nextPlan(now, mode, policy.minDuration)
-        if (!maxOf(plan.start, now).isBefore(p.expiresAt)) return null
-        val created = engine.create(sessionId, plan, contact, now) as? LockEngine.CreateResult.Created ?: return null
-        return p.copy(currentSessionId = sessionId) to created.session
+    ): PlanResult {
+        fun reject(e: PlanError) = PlanResult.Rejected(e)
+        if (!canStartPeriod(p, now)) return reject(PlanError.NOT_AVAILABLE)
+        val currentMinute = now.truncatedTo(ChronoUnit.MINUTES)
+        if (start != null && start.isBefore(currentMinute)) return reject(PlanError.START_IN_PAST)
+        val effectiveStart = if (start == null || start.isBefore(now)) now else start
+        if (!end.isAfter(effectiveStart)) return reject(PlanError.END_BEFORE_START)
+        val length = Duration.between(effectiveStart, end)
+        if (length < FlexPackage.MIN_DURATION) return reject(PlanError.TOO_SHORT)
+        if (length > policy.maxDuration) return reject(PlanError.TOO_LONG)
+        if (!effectiveStart.isBefore(p.expiresAt)) return reject(PlanError.AFTER_EXPIRY)
+        val plan = LockPlan(effectiveStart, end, zone, mode)
+        val created = engine.create(sessionId, plan, contact, now) as? LockEngine.CreateResult.Created
+            ?: return reject(PlanError.NOT_AVAILABLE)
+        return PlanResult.Planned(p.copy(currentSessionId = sessionId), created.session)
     }
 
     data class Update(val pkg: FlexPackage, val rewardEarnedNow: Boolean)

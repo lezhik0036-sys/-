@@ -2,6 +2,7 @@ package app.mama.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
@@ -26,6 +27,7 @@ import android.widget.TextView
 import android.widget.Toast
 import app.mama.core.DailyWindow
 import app.mama.core.LockPlan
+import app.mama.core.FlexEngine
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
 import app.mama.core.LockState
@@ -41,8 +43,10 @@ import app.mama.billing.Product
 import app.mama.platform.Mama
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * Setup screen: mode, start/end time and time zone, trusted contact,
@@ -682,23 +686,99 @@ class MainActivity : Activity() {
                 }, ui.gap(8))
             }
         } else {
-            column.addView(section("Время периода"))
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            row.addView(button("С ${start}") { pickTime(start) { start = it } }, weighted())
-            row.addView(button("До ${end}") { pickTime(end) { end = it } }, weighted())
-            column.addView(row)
-            column.addView(ui.primary("Включить FLEX: $start → $end") {
-                val contact = readyContact() ?: return@primary
-                if (!Mama.startFlexPeriod(this, DailyWindow(start, end, zone), contact, mode)) {
-                    alert("Не получилось", "Сейчас FLEX-период начать нельзя.")
-                }
-                render()
-            }, ui.gap(16))
-            column.addView(
-                ui.small("FLEX-день расходуется в момент начала блокировки. Доверенный контакт: ${contactName.text}.", center = true),
-                ui.gap(8),
-            )
+            renderFlexPlanner(column)
         }
+    }
+
+    // --- FLEX period planner: absolute local date + time, never in the past ---
+
+    private var flexStartNow = true
+    private var flexStart: LocalDateTime? = null
+    private var flexEnd: LocalDateTime? = null
+
+    private fun nowLocal(): LocalDateTime =
+        LocalDateTime.ofInstant(Mama.trustedNow(this), zone).truncatedTo(ChronoUnit.MINUTES)
+
+    private fun renderFlexPlanner(column: LinearLayout) {
+        val now = nowLocal()
+        val start = if (flexStartNow) now else (flexStart ?: now.plusHours(1))
+        // "Now" carries seconds, so a default end exactly 3 h after the minute would be just short.
+        val end = flexEnd ?: start.plus(FlexPackage.MIN_DURATION).plusMinutes(if (flexStartNow) 1 else 0)
+        if (flexEnd == null) flexEnd = end
+        if (!flexStartNow && flexStart == null) flexStart = start
+
+        column.addView(section("Новый FLEX-период"))
+        val modes = ui.row()
+        modes.addView(
+            (if (flexStartNow) ui.primary("Начать сейчас") {} else ui.secondary("Начать сейчас") {
+                flexStartNow = true
+                render()
+            }),
+            ui.weight().apply { rightMargin = dp(6) },
+        )
+        modes.addView(
+            (if (!flexStartNow) ui.primary("Запланировать") {} else ui.secondary("Запланировать") {
+                flexStartNow = false
+                render()
+            }),
+            ui.weight().apply { leftMargin = dp(6) },
+        )
+        column.addView(modes, ui.gap(4))
+
+        if (flexStartNow) {
+            column.addView(label("Начало: сейчас (${Texts.localDayTime(now)})", 15f))
+        } else {
+            column.addView(button("Начало: ${Texts.localDayTime(start)}") {
+                pickDateTime(start) { flexStart = it; render() }
+            })
+        }
+        column.addView(button("Окончание: ${Texts.localDayTime(end)}") {
+            pickDateTime(end) { flexEnd = it; render() }
+        })
+        val minutes = Duration.between(start, end).toMinutes()
+        if (minutes > 0) {
+            column.addView(label("Длительность: ${Texts.duration(Duration.ofMinutes(minutes))} · ${zone.id}", 13f, MUTED))
+        }
+
+        column.addView(ui.primary("Включить FLEX-период") { submitFlexPeriod() }, ui.gap(16))
+        column.addView(
+            ui.small(
+                "FLEX-день расходуется в момент начала блокировки. Минимум — 3 часа. " +
+                    "Доверенный контакт: ${contactName.text}.",
+                center = true,
+            ),
+            ui.gap(8),
+        )
+    }
+
+    private fun submitFlexPeriod() {
+        val contact = readyContact() ?: return
+        val end = flexEnd ?: return
+        val start = if (flexStartNow) null else flexStart
+        val result = Mama.startFlexPeriod(
+            this,
+            start?.atZone(zone)?.toInstant(),
+            end.atZone(zone).toInstant(),
+            zone, contact, mode,
+        )
+        when (result) {
+            is FlexEngine.PlanResult.Planned -> {
+                flexStart = null
+                flexEnd = null
+                flexStartNow = true
+            }
+            is FlexEngine.PlanResult.Rejected -> alert("FLEX-период", Texts.flexPlanError(result.error))
+        }
+        render()
+    }
+
+    /** Date, then time. Nothing is inferred: the chosen date and time are used as is. */
+    private fun pickDateTime(initial: LocalDateTime, set: (LocalDateTime) -> Unit) {
+        DatePickerDialog(this, { _, y, m, d ->
+            TimePickerDialog(this, { _, h, min ->
+                set(LocalDateTime.of(y, m + 1, d, h, min))
+            }, initial.hour, initial.minute, true).show()
+        }, initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
     }
 
     private fun renderFlexResult(column: LinearLayout, flex: FlexPackage) {

@@ -36,8 +36,74 @@ class ProgramsTest {
 
     // --- FLEX ---
 
-    private fun startPeriod(p: FlexPackage, now: java.time.Instant): Pair<FlexPackage, Session> =
-        flex.planPeriod(p, window, MOM, SessionMode.SLEEP, id(), now)!!
+    /** Tonight 23:00 → 07:00 MSK relative to [now]'s date (now must be before 20:00Z). */
+    private fun startPeriod(p: FlexPackage, now: java.time.Instant): Pair<FlexPackage, Session> {
+        val plan = window.nextPlan(now, SessionMode.SLEEP)
+        val r = flex.planPeriod(p, plan.start, plan.end, MSK, MOM, SessionMode.SLEEP, id(), now)
+        val ok = r as FlexEngine.PlanResult.Planned
+        return ok.pkg to ok.session
+    }
+
+    private fun msk(iso: String) = java.time.LocalDateTime.parse(iso).atZone(MSK).toInstant()
+
+    private fun plan(start: String?, end: String, now: String): FlexEngine.PlanResult =
+        flex.planPeriod(
+            flex.activate("f", GrantSource.TEST_NO_PAYMENT, msk(now)),
+            start?.let(::msk), msk(end), MSK, MOM, SessionMode.SLEEP, id(), msk(now),
+        )
+
+    private fun error(r: FlexEngine.PlanResult) = (r as? FlexEngine.PlanResult.Rejected)?.error
+
+    @Test
+    fun `flex start rule - valid examples at 17 00`() {
+        val now = "2026-10-01T17:00"
+        for ((s, e) in listOf(
+            "2026-10-01T17:00" to "2026-10-01T20:00",
+            "2026-10-01T17:00" to "2026-10-01T23:00",
+            "2026-10-01T19:00" to "2026-10-01T23:00",
+            "2026-10-01T23:00" to "2026-10-02T07:00",
+            "2026-10-02T14:00" to "2026-10-02T20:00",
+        )) {
+            assertTrue(plan(s, e, now) is FlexEngine.PlanResult.Planned, "$s -> $e")
+        }
+    }
+
+    @Test
+    fun `flex start rule - past starts are rejected, never shortened`() {
+        val now = "2026-10-01T17:00"
+        for ((s, e) in listOf(
+            "2026-10-01T15:00" to "2026-10-01T20:00",
+            "2026-10-01T14:00" to "2026-10-02T08:00",
+            "2026-10-01T16:30" to "2026-10-01T22:00",
+        )) {
+            assertEquals(FlexEngine.PlanError.START_IN_PAST, error(plan(s, e, now)), "$s -> $e")
+        }
+    }
+
+    @Test
+    fun `start now uses the actual moment and needs 3 hours`() {
+        val now = "2026-10-01T17:12"
+        val ok = plan(null, "2026-10-01T20:12", now) as FlexEngine.PlanResult.Planned
+        assertEquals(msk(now), ok.session.plan.start)
+        assertEquals(FlexEngine.PlanError.TOO_SHORT, error(plan(null, "2026-10-01T20:11", now)))
+    }
+
+    @Test
+    fun `minimum flex duration is 3 hours`() {
+        val now = "2026-10-01T17:00"
+        assertEquals(FlexEngine.PlanError.TOO_SHORT, error(plan("2026-10-01T19:00", "2026-10-01T21:59", now)))
+        assertTrue(plan("2026-10-01T19:00", "2026-10-01T22:00", now) is FlexEngine.PlanResult.Planned)
+        assertEquals(FlexEngine.PlanError.END_BEFORE_START, error(plan("2026-10-01T19:00", "2026-10-01T18:00", now)))
+    }
+
+    @Test
+    fun `cannot start after the package expired`() {
+        val now = "2026-10-01T17:00"
+        assertEquals(
+            FlexEngine.PlanError.AFTER_EXPIRY,
+            error(plan("2026-10-31T18:00", "2026-10-31T23:00", now)),
+        )
+    }
 
     /** Plans tonight, runs it to the end (or exits early) and settles it. */
     private fun night(p: FlexPackage, now: java.time.Instant, exitEarly: Boolean = false): FlexPackage {
@@ -142,8 +208,16 @@ class ProgramsTest {
     fun `no new period after expiry or while one is planned`() {
         val p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, day0)
         val (planned, _) = startPeriod(p, day0)
-        assertNull(flex.planPeriod(planned, window, MOM, SessionMode.SLEEP, id(), day0))
-        assertNull(flex.planPeriod(p, window, MOM, SessionMode.SLEEP, id(), day0 + Duration.ofDays(31)))
+        val tonight = window.nextPlan(day0, SessionMode.SLEEP)
+        assertEquals(
+            FlexEngine.PlanError.NOT_AVAILABLE,
+            error(flex.planPeriod(planned, tonight.start, tonight.end, MSK, MOM, SessionMode.SLEEP, id(), day0)),
+        )
+        val late = day0 + Duration.ofDays(31)
+        assertEquals(
+            FlexEngine.PlanError.NOT_AVAILABLE,
+            error(flex.planPeriod(p, null, late + Duration.ofHours(4), MSK, MOM, SessionMode.SLEEP, id(), late)),
+        )
     }
 
     @Test

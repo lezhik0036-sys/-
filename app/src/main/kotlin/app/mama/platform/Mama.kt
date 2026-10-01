@@ -26,6 +26,7 @@ import app.mama.core.TrustedContact
 import app.mama.lock.LockService
 import app.mama.ui.Texts
 import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 
 /**
@@ -220,18 +221,30 @@ object Mama {
         return true
     }
 
-    /** Plans one FLEX period: today's window, or right now if inside it. */
+    /**
+     * Plans one FLEX period with absolute moments. [start] = null starts now.
+     * A start in the past is rejected, never shortened.
+     */
     @Synchronized
-    fun startFlexPeriod(context: Context, window: DailyWindow, contact: TrustedContact, mode: SessionMode): Boolean {
+    fun startFlexPeriod(
+        context: Context,
+        start: Instant?,
+        end: Instant,
+        zone: ZoneId,
+        contact: TrustedContact,
+        mode: SessionMode,
+    ): FlexEngine.PlanResult {
         val r = reconcile(context)
-        if (!idle(r)) return false
-        val flex = r.snapshot.entitlements.flex ?: return false
-        val (pkg, session) = flexEngine.planPeriod(flex, window, contact, mode, UUID.randomUUID().toString(), r.trustedNow)
-            ?: return false
-        SessionStore(context.applicationContext)
-            .save(r.snapshot.copy(session = session, entitlements = r.snapshot.entitlements.copy(flex = pkg)))
-        sync(context)
-        return true
+        val flex = r.snapshot.entitlements.flex
+        if (!idle(r) || flex == null) return FlexEngine.PlanResult.Rejected(FlexEngine.PlanError.NOT_AVAILABLE)
+        val result = flexEngine.planPeriod(flex, start, end, zone, contact, mode, UUID.randomUUID().toString(), r.trustedNow)
+        if (result is FlexEngine.PlanResult.Planned) {
+            SessionStore(context.applicationContext).save(
+                r.snapshot.copy(session = result.session, entitlements = r.snapshot.entitlements.copy(flex = result.pkg)),
+            )
+            sync(context)
+        }
+        return result
     }
 
     /** Leaves the result screen of a finished FLEX package. */

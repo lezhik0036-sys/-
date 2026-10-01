@@ -31,6 +31,19 @@ object Texts {
 
     fun price(rub: Int) = "$rub ₽"
 
+    fun localDayTime(t: java.time.LocalDateTime): String = dayTime.format(t)
+
+    fun flexPlanError(e: app.mama.core.FlexEngine.PlanError) = when (e) {
+        app.mama.core.FlexEngine.PlanError.START_IN_PAST ->
+            "Время начала уже прошло.\nВыберите текущее или будущее время."
+        app.mama.core.FlexEngine.PlanError.TOO_SHORT -> "Минимальный период FLEX — 3 часа."
+        app.mama.core.FlexEngine.PlanError.END_BEFORE_START -> "Окончание должно быть позже начала."
+        app.mama.core.FlexEngine.PlanError.TOO_LONG -> "Период FLEX не может быть длиннее 24 часов."
+        app.mama.core.FlexEngine.PlanError.AFTER_EXPIRY -> "К этому времени срок пакета FLEX уже закончится."
+        app.mama.core.FlexEngine.PlanError.NOT_AVAILABLE ->
+            "Сейчас FLEX-период начать нельзя: нет доступных дней или уже идёт другая блокировка."
+    }
+
     /** "1 день", "2 дня", "5 дней". */
     fun days(n: Int): String {
         val word = when {
