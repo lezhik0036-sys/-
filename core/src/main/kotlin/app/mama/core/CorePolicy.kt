@@ -8,11 +8,20 @@ data class CorePolicy(
     val codeLength: Int = 5,
     /** Wrong entries allowed per code. */
     val maxAttempts: Int = 3,
-    /** How long a sent code stays valid. */
+    /**
+     * How long a sent code stays valid.
+     * TODO(product): placeholder, not an approved product rule; configurable.
+     */
     val codeTtl: Duration = Duration.ofMinutes(15),
-    /** After all attempts are spent, how long until a new code may be requested. */
+    /**
+     * After all attempts are spent, how long until a new code may be requested.
+     * TODO(product): placeholder, not an approved product rule; configurable.
+     */
     val cooldownAfterFailures: Duration = Duration.ofMinutes(30),
-    /** Length of one emergency unlock. */
+    /**
+     * Length of one emergency unlock. Not offered in the UI: there is no
+     * approved rule for a temporary unlock during an active lock.
+     */
     val emergencyPass: Duration = Duration.ofMinutes(15),
     /** Emergency unlocks allowed per session. */
     val maxEmergencyPasses: Int = 3,

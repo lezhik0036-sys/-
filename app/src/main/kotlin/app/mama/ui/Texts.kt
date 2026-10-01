@@ -72,22 +72,20 @@ object Texts {
 
     /** Short lines for the lock screen: calm, firm, never shaming. */
     val lockPhrases = listOf(
-        "Это временно. Ты сильнее этого момента.",
-        "Ты управляешь собой.",
-        "Дисциплина — это забота о себе.",
-        "Выдержка сегодня — свобода завтра.",
-        "Ты можешь. Ты уже это делаешь.",
-        "Не сдавайся: осталось меньше, чем было.",
-        "Тишина тоже делает тебя сильнее.",
-        "Каждая минута — маленькая победа.",
-        "Решение принято. Просто будь в нём.",
-        "Телефон подождёт. Ты важнее.",
-        "Ещё немного — и ты справишься.",
-        "Сила — в спокойствии.",
-        "Сейчас время для себя.",
-        "Отдых — тоже работа над собой.",
-        "Ты держишь слово, данное себе.",
+        "Не сдавайся.\nТы уже выбрал себя.",
+        "Это временно.\nТы сильнее этого момента.",
+        "Ты управляешь собой.\nНе телефон.",
+        "Решение принято.\nПросто будь в нём.",
+        "Выдержка сегодня —\nсвобода завтра.",
+        "Ещё немного.\nТы справишься.",
+        "Тишина тоже\nделает тебя сильнее.",
+        "Каждая минута —\nмаленькая победа.",
+        "Телефон подождёт.\nТы важнее.",
+        "Ты держишь слово,\nданное себе.",
     )
+
+    /** Second line under the phrase when no personal reason is set. */
+    const val LOCK_SUBLINE = "Ты можешь больше, чем думаешь."
 
     /** A phrase for this session that changes every [everyMinutes] minutes. */
     fun lockPhrase(sessionId: String, elapsedMinutes: Long, everyMinutes: Long = 10): String =
@@ -152,15 +150,25 @@ object Texts {
         return "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
     }
 
+    // TODO(product): the code lifetime and the pause after 3 wrong entries are
+    // not approved product rules yet, so the SMS does not promise either.
     fun smsForContact(mode: SessionMode, kind: ExitKind, code: String, policy: CorePolicy): String {
         val what = when (kind) {
-            ExitKind.END_SESSION -> "досрочно завершить режим «${mode(mode)}»"
+            ExitKind.END_SESSION -> "досрочно завершить блокировку в MAMA"
             ExitKind.EMERGENCY -> "экстренный доступ к телефону на ${duration(policy.emergencyPass)}"
         }
         return "MAMA: вас указали доверенным контактом. Человек просит $what. " +
-            "Код: $code (действует ${duration(policy.codeTtl)}). " +
-            "Если не согласны — просто не сообщайте код."
+            "Код: $code. Если не согласны — просто не сообщайте код."
     }
+
+    /** "13 : 18 : 24" parts: hours, minutes, seconds (hours may exceed 24). */
+    fun hms(d: Duration): Triple<String, String, String> {
+        val s = maxOf(0, d.seconds)
+        return Triple("%02d".format(s / 3600), "%02d".format((s % 3600) / 60), "%02d".format(s % 60))
+    }
+
+    /** "1 из 7"-style day count: "День 3 из 7". */
+    fun dayOf(day: Int, total: Int) = "День $day из $total"
 
     fun createError(e: LockEngine.CreateError) = when (e) {
         LockEngine.CreateError.ALREADY_ENDED -> "Это время уже прошло."

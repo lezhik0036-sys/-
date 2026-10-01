@@ -35,7 +35,9 @@ jobs:
   # The APK must actually open on Android, not just compile.
   launch:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -56,7 +58,22 @@ jobs:
           api-level: 34
           target: google_apis
           arch: x86_64
+          profile: pixel_6
           disable-animations: true
           script: |
             .github/scripts/launch-check.sh
+            .github/scripts/screenshots.sh
             ./gradlew :app:connectedDebugAndroidTest --console=plain
+      # Screenshots of every screen for visual review: a "ui-screenshots"
+      # pre-release, replaced on every push to a claude/* branch.
+      - name: Publish UI screenshots
+        if: ${{ !cancelled() && startsWith(github.ref_name, 'claude/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls shots/*.png > /dev/null 2>&1 || { echo 'no screenshots'; exit 0; }
+          pip install --quiet pillow
+          python3 .github/scripts/shots_to_jpg.py
+          gh release delete ui-screenshots --yes --cleanup-tag || true
+          gh release create ui-screenshots shots_jpg/*.jpg --prerelease --target "$GITHUB_SHA" \
+            --title "UI screenshots (CI)" --notes "Screens of MAMA $GITHUB_SHA rendered on an Android 14 emulator (Pixel 6), preview mode with sample data."

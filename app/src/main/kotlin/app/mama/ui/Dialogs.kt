@@ -19,7 +19,6 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.TextView
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -31,16 +30,10 @@ class BrandDialogHandle(private val dialog: Dialog, val confirm: BrandButtonView
     }
 }
 
-/**
- * MAMA's own dialog: warm ivory surface, large rounded corners, emerald
- * actions. Replaces system AlertDialogs so nothing looks like default Android.
- */
+/** MAMA's own dialog: ivory surface, large radius, emerald actions. No system AlertDialogs. */
 object BrandDialog {
 
-    /**
-     * Shows a dialog. [onConfirm] returns true to close the dialog, false to
-     * keep it open (for example when the input is invalid).
-     */
+    /** [onConfirm] returns true to close the dialog, false to keep it open (invalid input). */
     fun show(
         context: Context,
         title: String,
@@ -48,39 +41,33 @@ object BrandDialog {
         content: View? = null,
         confirm: String? = "Понятно",
         cancel: String? = null,
-        confirmKind: ButtonKind = ButtonKind.PRIMARY,
-        cancelable: Boolean = true,
         onCancel: () -> Unit = {},
         onConfirm: () -> Boolean = { true },
     ): BrandDialogHandle {
         val kit = Kit(context)
         val dialog = Dialog(context)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.setCancelable(cancelable)
 
         val sheet = kit.column().apply {
-            background = kit.shape(MamaColors.SurfaceCard, 30)
-            setPadding(kit.dp(24), kit.dp(24), kit.dp(24), kit.dp(18))
+            background = kit.shape(MamaColors.WarmIvory, 26)
+            setPadding(kit.dp(22), kit.dp(24), kit.dp(22), kit.dp(18))
         }
         sheet.addView(kit.text(title, MamaType.H2))
-        message?.let { sheet.addView(kit.body(it), kit.gap(10)) }
+        message?.let { sheet.addView(kit.text(it, MamaType.BODY, MamaColors.TextSecondary), kit.gap(10)) }
         content?.let { sheet.addView(it, kit.gap(16)) }
 
         var confirmButton: BrandButtonView? = null
         if (confirm != null || cancel != null) {
-            val actions = kit.row().apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+            val actions = kit.row()
             cancel?.let {
-                actions.addView(
-                    kit.brandButton(it, ButtonKind.GHOST) { dialog.dismiss(); onCancel() },
-                    if (confirm != null) kit.weight() else kit.wrap(),
-                )
+                actions.addView(kit.secondaryButton(it) { dialog.dismiss(); onCancel() }, kit.weight())
             }
             confirm?.let {
-                val b = kit.brandButton(it, confirmKind) { if (onConfirm()) dialog.dismiss() }
+                val b = kit.primaryButton(it) { if (onConfirm()) dialog.dismiss() }
                 actions.addView(b, kit.weight().apply { if (cancel != null) leftMargin = kit.dp(10) })
                 confirmButton = b
             }
-            sheet.addView(actions, kit.gap(20))
+            sheet.addView(actions, kit.gap(22))
         }
 
         val scroll = ScrollView(context).apply {
@@ -94,7 +81,7 @@ object BrandDialog {
         dialog.setContentView(frame)
         dialog.window?.let { w ->
             w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            w.setDimAmount(0.35f)
+            w.setDimAmount(0.45f)
             @Suppress("DEPRECATION")
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
@@ -103,14 +90,8 @@ object BrandDialog {
         return BrandDialogHandle(dialog, confirmButton)
     }
 
-    /** A list of choices in a branded dialog; picking one closes it. */
-    fun list(
-        context: Context,
-        title: String,
-        items: List<Pair<String, String?>>,
-        selected: Int,
-        onPick: (Int) -> Unit,
-    ) {
+    /** A list of choices; picking one closes the dialog. */
+    fun list(context: Context, title: String, items: List<Pair<String, String?>>, selected: Int, onPick: (Int) -> Unit) {
         val kit = Kit(context)
         val rows = kit.column()
         lateinit var handle: BrandDialogHandle
@@ -119,15 +100,16 @@ object BrandDialog {
             val r = kit.row().apply {
                 minimumHeight = kit.dp(52)
                 setPadding(kit.dp(16), kit.dp(10), kit.dp(16), kit.dp(10))
-                background = kit.pressable(
-                    kit.shape(if (on) MamaColors.EmeraldTint else MamaColors.SurfaceCard, 18, if (on) MamaColors.EmeraldPrimary else MamaColors.BorderSoft),
-                    18,
-                )
+                background = if (on) {
+                    kit.pressable(kit.gradient(MamaColors.EmeraldActive, MamaColors.Emerald, 16), 16, MamaColors.RippleOnDark)
+                } else {
+                    kit.pressable(kit.shape(MamaColors.PureCard, 16, MamaColors.Border), 16)
+                }
                 isClickable = true
                 setOnClickListener { handle.dismiss(); onPick(i) }
             }
-            r.addView(kit.text(main, MamaType.BODY, MamaColors.TextPrimary), kit.weight())
-            side?.let { r.addView(kit.text(it, MamaType.BODY, if (on) MamaColors.EmeraldPrimary else MamaColors.TextSecondary)) }
+            r.addView(kit.text(main, MamaType.BODY, if (on) MamaColors.White else MamaColors.Graphite), kit.weight())
+            side?.let { r.addView(kit.text(it, MamaType.BODY, if (on) MamaColors.OliveLight else MamaColors.TextSecondary)) }
             rows.addView(r, kit.gap(if (i == 0) 0 else 8))
         }
         val content: View = if (items.size > 6) {
@@ -147,8 +129,8 @@ object BrandDialog {
 }
 
 /**
- * Digital 24-hour time picker: [ HH ] : [ mm ], typed or stepped with
- * arrows. There is no analog clock face anywhere in MAMA.
+ * [MamaDigitalTimePicker]: 24-hour `[ HH ] : [ mm ]`, typed or stepped with
+ * arrows (hold to repeat). There is no analog clock face anywhere in MAMA.
  */
 object DigitalTimePicker {
 
@@ -156,23 +138,28 @@ object DigitalTimePicker {
         val kit = Kit(context)
         val hours = digitField(kit, initial.hour)
         val minutes = digitField(kit, initial.minute)
-        val error = kit.text("", MamaType.CAPTION, MamaColors.DangerInk, center = true).apply { visibility = View.GONE }
+        val error = kit.text("", MamaType.CAPTION, MamaColors.Warning, center = true).apply { visibility = View.GONE }
 
         val line = kit.row().apply { gravity = Gravity.CENTER }
         line.addView(unit(kit, "Часы", hours, 24))
-        line.addView(
-            kit.text(":", MamaType.DIGITS_L, MamaColors.EmeraldSecondary).apply { setPadding(kit.dp(10), 0, kit.dp(10), 0) },
-        )
+        line.addView(kit.text(":", MamaType.DIGITS_L, MamaColors.Emerald).apply { setPadding(kit.dp(10), 0, kit.dp(10), kit.dp(26)) })
         line.addView(unit(kit, "Минуты", minutes, 60))
 
-        val quick = kit.chips(listOf(":00", ":15", ":30", ":45"), selected = -1) { i ->
-            minutes.setText("%02d".format(i * 15))
+        val quick = kit.row().apply { gravity = Gravity.CENTER }
+        listOf(0, 15, 30, 45).forEachIndexed { i, m ->
+            quick.addView(kit.text(":%02d".format(m), MamaType.CAPTION, MamaColors.Emerald, center = true).apply {
+                typeface = MamaFonts.ui(context, 700)
+                gravity = Gravity.CENTER
+                background = kit.pressable(kit.shape(MamaColors.EmeraldTint, 14), 14)
+                setPadding(kit.dp(14), kit.dp(9), kit.dp(14), kit.dp(9))
+                isClickable = true
+                setOnClickListener { minutes.setText("%02d".format(m)) }
+            }, kit.wrap().apply { if (i > 0) leftMargin = kit.dp(8) })
         }
         val content = kit.column().apply {
             addView(line, kit.fill())
-            addView(quick, kit.wrap().apply { topMargin = kit.dp(16); gravity = Gravity.CENTER_HORIZONTAL })
+            addView(quick, kit.gap(14))
             addView(error, kit.gap(12))
-            // Keeps the keyboard closed until a number is tapped.
             isFocusableInTouchMode = true
         }
         BrandDialog.show(context, title, content = content, confirm = "Готово", cancel = "Отмена") {
@@ -198,36 +185,32 @@ object DigitalTimePicker {
     private fun digitField(kit: Kit, value: Int): EditText = EditText(kit.context).apply {
         setText("%02d".format(value))
         MamaType.DIGITS_L.applyTo(this)
-        setTextColor(MamaColors.TextPrimary)
+        setTextColor(MamaColors.Graphite)
         gravity = Gravity.CENTER
         inputType = InputType.TYPE_CLASS_NUMBER
         filters = arrayOf(InputFilter.LengthFilter(2))
         setSelectAllOnFocus(true)
         background = kit.fieldBackground()
-        setPadding(0, kit.dp(10), 0, kit.dp(10))
+        setPadding(0, kit.dp(8), 0, kit.dp(8))
     }
 
-    /** Arrow, digits, arrow, caption. Holding an arrow keeps stepping. */
     private fun unit(kit: Kit, label: String, field: EditText, modulo: Int): View = kit.column().apply {
         gravity = Gravity.CENTER_HORIZONTAL
         fun step(delta: Int) {
             val current = field.text.toString().toIntOrNull()?.coerceIn(0, modulo - 1) ?: 0
             field.setText("%02d".format(Math.floorMod(current + delta, modulo)))
         }
-        addView(arrow(kit, "▲") { step(+1) }, LinearLayout.LayoutParams(kit.dp(96), kit.dp(44)))
-        addView(field, LinearLayout.LayoutParams(kit.dp(96), kit.dp(84)).apply { topMargin = kit.dp(6) })
-        addView(arrow(kit, "▼") { step(-1) }, LinearLayout.LayoutParams(kit.dp(96), kit.dp(44)).apply { topMargin = kit.dp(6) })
-        addView(kit.text(label, MamaType.OVERLINE, MamaColors.TextSecondary, center = true), kit.wrap().apply {
-            topMargin = kit.dp(8)
-            gravity = Gravity.CENTER_HORIZONTAL
-        })
+        addView(arrow(kit, "▲") { step(+1) }, LinearLayout.LayoutParams(kit.dp(96), kit.dp(42)))
+        addView(field, LinearLayout.LayoutParams(kit.dp(96), kit.dp(82)).apply { topMargin = kit.dp(6) })
+        addView(arrow(kit, "▼") { step(-1) }, LinearLayout.LayoutParams(kit.dp(96), kit.dp(42)).apply { topMargin = kit.dp(6) })
+        addView(kit.text(label, MamaType.SMALL, MamaColors.TextSecondary, center = true), kit.centered(8))
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    private fun arrow(kit: Kit, symbol: String, action: () -> Unit): TextView =
-        kit.text(symbol, MamaType.TITLE, MamaColors.EmeraldPrimary, center = true).apply {
+    private fun arrow(kit: Kit, symbol: String, action: () -> Unit) =
+        kit.text(symbol, MamaType.TITLE, MamaColors.Emerald, center = true).apply {
             gravity = Gravity.CENTER
-            background = kit.pressable(kit.shape(MamaColors.EmeraldTint, 16), 16)
+            background = kit.pressable(kit.shape(MamaColors.EmeraldTint, 14), 14)
             isClickable = true
             contentDescription = if (symbol == "▲") "Больше" else "Меньше"
             val handler = Handler(Looper.getMainLooper())
@@ -261,15 +244,9 @@ object DigitalTimePicker {
 
 /** Date choice as a plain list of days: no calendar widget. */
 object DateList {
-    /** Offers [from] .. [to] inclusive; [initial] is highlighted. */
     fun show(context: Context, title: String, initial: LocalDate, from: LocalDate, to: LocalDate, onPicked: (LocalDate) -> Unit) {
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.toList()
         if (days.isEmpty()) return
-        BrandDialog.list(
-            context,
-            title,
-            days.map { Texts.dayName(it, from) to Texts.date(it) },
-            days.indexOf(initial),
-        ) { onPicked(days[it]) }
+        BrandDialog.list(context, title, days.map { Texts.dayName(it, from) to Texts.date(it) }, days.indexOf(initial)) { onPicked(days[it]) }
     }
 }

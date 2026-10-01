@@ -16,20 +16,14 @@ import app.mama.platform.Alarms
 import app.mama.platform.MamaDeviceAdmin
 
 /** Everything the strict lock depends on, with a way to grant each item. */
-enum class Requirement(val title: String, val why: String, val required: Boolean) {
-    OVERLAY("Поверх других приложений", "Экран блокировки закрывает всё остальное.", true),
-    GUARD(
-        "Специальные возможности: MAMA",
-        "Закрывает шторку, «Недавние» и настройки во время блокировки. Без неё блокировка не строгая. " +
-            "Если переключатель серый: Настройки → Приложения → MAMA → ⋮ → «Разрешить ограниченные настройки». " +
-            "Если включено, но здесь ✗ — выключите и снова включите.",
-        true,
-    ),
-    ADMIN("Администратор устройства", "Нельзя удалить MAMA во время блокировки.", true),
-    SMS("SMS и звонки", "Код уходит контакту по SMS; звонки принимаются и завершаются прямо с экрана блокировки.", true),
-    EXACT_ALARMS("Будильники и напоминания", "Блокировка начинается и заканчивается точно вовремя.", true),
-    BATTERY("Без ограничений батареи", "Система не усыпит MAMA ночью.", false),
-    NOTIFICATIONS("Уведомления", "Статус блокировки в шторке.", false),
+enum class Requirement(val title: String, val why: String, val required: Boolean, val icon: Icon) {
+    OVERLAY("Поверх других приложений", "Экран MAMA закрывает всё остальное во время блокировки.", true, Icon.LAYERS),
+    GUARD("Специальные возможности", "Не даёт открыть шторку, «Недавние» и настройки во время блокировки.", true, Icon.ACCESSIBILITY),
+    ADMIN("Администратор устройства", "MAMA нельзя удалить, пока идёт блокировка.", true, Icon.SHIELD),
+    SMS("Телефон, SMS и звонки", "Код для выхода приходит доверенному контакту. Звонки работают с экрана блокировки.", true, Icon.PHONE),
+    EXACT_ALARMS("Будильники и напоминания", "Блокировка начинается и заканчивается точно вовремя.", true, Icon.ALARM),
+    BATTERY("Работа без ограничений батареи", "Система не усыпит MAMA ночью.", false, Icon.BATTERY),
+    NOTIFICATIONS("Уведомления", "Напомним, когда блокировка начнётся и закончится.", false, Icon.BELL),
     ;
 
     fun isGranted(context: Context): Boolean = when (this) {
