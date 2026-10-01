@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Warm cream window with emerald accents: no default Android blue or teal anywhere. -->
+    <style name="Theme.Mama" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">@color/mama_emerald</item>
+        <item name="android:colorPrimaryDark">@color/mama_background</item>
+        <item name="android:colorAccent">@color/mama_emerald</item>
+        <item name="android:colorControlNormal">@color/mama_olive</item>
+        <item name="android:colorControlActivated">@color/mama_emerald</item>
+        <item name="android:colorControlHighlight">@color/mama_ripple</item>
+        <item name="android:colorEdgeEffect">@color/mama_emerald_secondary</item>
+        <item name="android:textColorPrimary">@color/mama_text</item>
+        <item name="android:textColorSecondary">@color/mama_text_secondary</item>
+        <item name="android:textColorHighlight">@color/mama_selection</item>
+        <item name="android:windowBackground">@color/mama_background</item>
+        <item name="android:statusBarColor">@color/mama_background</item>
+        <item name="android:navigationBarColor">@color/mama_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:alertDialogTheme">@style/Theme.Mama.Dialog</item>
+    </style>
+
+    <!-- Fallback for any system dialog that is still shown. -->
+    <style name="Theme.Mama.Dialog" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorPrimary">@color/mama_emerald</item>
+        <item name="android:colorAccent">@color/mama_emerald</item>
+        <item name="android:colorControlActivated">@color/mama_emerald</item>
+        <item name="android:colorBackground">@color/mama_surface</item>
+        <item name="android:textColorPrimary">@color/mama_text</item>
+        <item name="android:textColorSecondary">@color/mama_text_secondary</item>
+    </style>
+</resources>

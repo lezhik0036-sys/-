@@ -27,7 +27,7 @@
 core/   чистый Kotlin: расписание, часовые пояса, коды, ClockGuard, Recovery (+ тесты)
 app/    Android: оверлей, foreground-служба, Accessibility-страж, Device Admin,
         будильники, приёмники загрузки, SMS, экран настройки
-docs/   спецификация MAMA Core v0.1
+docs/   спецификация MAMA Core v0.1, монетизация, дизайн-система (DESIGN.md)
 ```
 
 ## Сборка

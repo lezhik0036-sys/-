@@ -9,6 +9,7 @@ import app.mama.core.SeriesKind
 import app.mama.core.SessionMode
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -52,6 +53,45 @@ object Texts {
         today.plusDays(1) -> "Завтра · " + time.format(t)
         else -> localDayTime(t)
     }
+
+    private val months = listOf("янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+    private val weekdays = listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
+
+    /** "01 окт 2026". */
+    fun date(d: java.time.LocalDate): String = "%02d %s %d".format(d.dayOfMonth, months[d.monthValue - 1], d.year)
+
+    /** "Сегодня", "Завтра", or the weekday. */
+    fun dayName(d: java.time.LocalDate, today: java.time.LocalDate): String = when (d) {
+        today -> "Сегодня"
+        today.plusDays(1) -> "Завтра"
+        else -> weekdays[d.dayOfWeek.value - 1]
+    }
+
+    /** 24-hour "HH:mm", never AM/PM. */
+    fun hhmm(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
+
+    /** Short lines for the lock screen: calm, firm, never shaming. */
+    val lockPhrases = listOf(
+        "Это временно. Ты сильнее этого момента.",
+        "Ты управляешь собой.",
+        "Дисциплина — это забота о себе.",
+        "Выдержка сегодня — свобода завтра.",
+        "Ты можешь. Ты уже это делаешь.",
+        "Не сдавайся: осталось меньше, чем было.",
+        "Тишина тоже делает тебя сильнее.",
+        "Каждая минута — маленькая победа.",
+        "Решение принято. Просто будь в нём.",
+        "Телефон подождёт. Ты важнее.",
+        "Ещё немного — и ты справишься.",
+        "Сила — в спокойствии.",
+        "Сейчас время для себя.",
+        "Отдых — тоже работа над собой.",
+        "Ты держишь слово, данное себе.",
+    )
+
+    /** A phrase for this session that changes every [everyMinutes] minutes. */
+    fun lockPhrase(sessionId: String, elapsedMinutes: Long, everyMinutes: Long = 10): String =
+        lockPhrases[Math.floorMod(sessionId.hashCode() + (elapsedMinutes / everyMinutes).toInt(), lockPhrases.size)]
 
     /** "Продолжительность" value: "3 ч 1 мин", "6 часов", "24 часа". */
     fun flexDuration(d: Duration): String {

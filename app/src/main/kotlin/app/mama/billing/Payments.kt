@@ -1,9 +1,9 @@
 package app.mama.billing
 
 import android.app.Activity
-import android.app.AlertDialog
 import app.mama.core.GrantSource
 import app.mama.core.SeriesKind
+import app.mama.ui.BrandDialog
 
 /**
  * What MAMA can sell. Nothing here ever unlocks a phone: Trusted Exit (the
@@ -50,6 +50,12 @@ object FeatureFlags {
      * Must be false in any build with real payments.
      */
     const val TEST_GRANTS_ENABLED = true
+
+    /**
+     * Free 15-minute test mode, only while MAMA is being tested. Not a series,
+     * not FLEX, no payment and no Restart. TODO(release): decide whether to keep it.
+     */
+    const val TEST_MODE_ENABLED = true
 }
 
 /** Used while payments are paused: never reports a successful payment. */
@@ -83,22 +89,24 @@ object Checkout {
             return
         }
         if (FeatureFlags.TEST_GRANTS_ENABLED) {
-            AlertDialog.Builder(activity)
-                .setTitle("$title — ${product.priceRub} ₽")
-                .setMessage(
-                    "Тестовая версия: оплата не подключена и не проводится.\n\n" +
-                        "Можно активировать для проверки без оплаты. В рабочей версии здесь будет оплата " +
-                        "${product.priceRub} ₽.",
-                )
-                .setPositiveButton("Активировать для теста") { _, _ -> onGranted(GrantSource.TEST_NO_PAYMENT) }
-                .setNegativeButton("Отмена", null)
-                .show()
+            BrandDialog.show(
+                activity,
+                "$title — ${product.priceRub} ₽",
+                message = "Тестовая версия: оплата не подключена и не проводится.\n\n" +
+                    "Можно активировать для проверки без оплаты. В рабочей версии здесь будет оплата " +
+                    "${product.priceRub} ₽.",
+                confirm = "Активировать для теста",
+                cancel = "Отмена",
+            ) {
+                onGranted(GrantSource.TEST_NO_PAYMENT)
+                true
+            }
             return
         }
         info(activity, "Оплата пока недоступна", "В этой версии оплата не подключена.")
     }
 
     private fun info(activity: Activity, title: String, message: String) {
-        AlertDialog.Builder(activity).setTitle(title).setMessage(message).setPositiveButton("Понятно", null).show()
+        BrandDialog.show(activity, title, message)
     }
 }

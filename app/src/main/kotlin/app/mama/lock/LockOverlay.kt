@@ -1,11 +1,8 @@
 package app.mama.lock
 
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -13,7 +10,6 @@ import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -23,6 +19,12 @@ import app.mama.core.LockEngine
 import app.mama.core.Session
 import app.mama.platform.Calls
 import app.mama.platform.Mama
+import app.mama.ui.BrandButtonView
+import app.mama.ui.ButtonKind
+import app.mama.ui.Kit
+import app.mama.ui.MamaColors
+import app.mama.ui.MamaType
+import app.mama.ui.RingView
 import app.mama.ui.Texts
 import java.time.Duration
 import java.time.Instant
@@ -41,20 +43,24 @@ class LockOverlay(private val service: LockService) {
     private val input = StringBuilder()
     private var message: String? = null
 
+    private val kit = Kit(service)
+
     private lateinit var title: TextView
+    private lateinit var ring: RingView
     private lateinit var countdown: TextView
     private lateinit var until: TextView
+    private lateinit var phrase: TextView
     private lateinit var status: TextView
     private lateinit var codeSection: LinearLayout
     private lateinit var codeHint: TextView
     private lateinit var codeBox: TextView
     private lateinit var requestSection: LinearLayout
-    private lateinit var requestEnd: Button
-    private lateinit var requestEmergency: Button
-    private lateinit var callContact: Button
+    private lateinit var requestEnd: BrandButtonView
+    private lateinit var requestEmergency: BrandButtonView
+    private lateinit var callContact: BrandButtonView
     private lateinit var callSection: LinearLayout
     private lateinit var callInfo: TextView
-    private lateinit var answer: Button
+    private lateinit var answer: BrandButtonView
     private lateinit var footer: TextView
 
     private var session: Session? = null
@@ -118,20 +124,23 @@ class LockOverlay(private val service: LockService) {
 
     private fun bind(s: Session, now: Instant) {
         val zone = s.plan.zone
-        title.text = "MAMA ${Texts.version(service)} · ${Texts.mode(s.plan.mode)}"
+        title.text = "MAMA · ${Texts.mode(s.plan.mode)}"
         countdown.text = Texts.countdown(Duration.between(now, s.plan.end))
-        until.text = "до ${Texts.time(s.plan.end, zone)} · ${Texts.zone(zone, now)}"
+        until.text = "до ${Texts.time(s.plan.end, zone)}"
+        val total = Duration.between(s.plan.start, s.plan.end).toMillis().coerceAtLeast(1)
+        val left = Duration.between(now, s.plan.end).toMillis().coerceIn(0, total)
+        ring.progress = 1f - left.toFloat() / total
+        phrase.text = Texts.lockPhrase(s.id, Duration.between(s.plan.start, now).toMinutes())
         callContact.text = "Позвонить: ${s.contact.name}"
         val call = LockService.callState
         callSection.visibility = if (call != Calls.CallState.NONE) View.VISIBLE else View.GONE
         callInfo.text = if (call == Calls.CallState.RINGING) "Входящий звонок" else "Идёт звонок"
         answer.visibility = if (call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
-        footer.text = "MAMA ${Texts.version(service)} · защита шторки: " +
-            if (GuardService.running) {
-                "включена (SystemUI: ${GuardService.systemUiEvents}, закрыто: ${GuardService.panelsClosed}, экран блокировки: ${GuardService.keyguardSkips}/${GuardService.keyguardPanelsClosed}, гашений: ${GuardService.screenOffs} ${GuardService.lastPanelIds})"
-            } else {
-                "ВЫКЛЮЧЕНА (Настройки → Спец. возможности → MAMA)"
-            }
+        footer.text = "MAMA ${Texts.version(service)} · " + if (GuardService.running) {
+            "защита включена"
+        } else {
+            "защита ВЫКЛЮЧЕНА (Настройки → Спец. возможности → MAMA)"
+        }
 
         val challenge = s.challenge
         codeSection.visibility = if (challenge != null) View.VISIBLE else View.GONE
@@ -145,7 +154,7 @@ class LockOverlay(private val service: LockService) {
                 "Попыток: ${challenge.attemptsLeft} · действует до ${Texts.time(challenge.expiresAt, zone)}"
         }
         codeBox.text = (0 until Mama.policy.codeLength)
-            .joinToString(" ") { i -> if (i < input.length) input[i].toString() else "_" }
+            .joinToString("  ") { i -> if (i < input.length) input[i].toString() else "·" }
 
         val cooldown = s.codeCooldownUntil
         requestEnd.isEnabled = cooldown == null
@@ -210,71 +219,85 @@ class LockOverlay(private val service: LockService) {
         val column = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(24), dp(48), dp(24), dp(32))
+            setPadding(dp(24), dp(44), dp(24), dp(28))
         }
-        title = text(18f, MUTED).also(column::addView)
+        title = kit.text("", MamaType.OVERLINE, MamaColors.EmeraldPrimary, center = true).also { column.addView(it, kit.fill()) }
 
         // Calls are handled right here: the lock never steps aside for a call screen.
-        callSection = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(16), 0, 0)
-        }
-        callInfo = text(20f, ACCENT, bold = true).also(callSection::addView)
-        answer = button("Ответить") { Calls.answer(service) }
-        callSection.addView(answer)
-        callSection.addView(button("Завершить звонок", danger = true) { Calls.hangUp(service) })
-        column.addView(callSection)
+        callSection = kit.card(18).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        callInfo = kit.text("", MamaType.H2, MamaColors.EmeraldPrimary, center = true).also { callSection.addView(it, kit.fill()) }
+        answer = kit.brandButton("Ответить") { Calls.answer(service) }
+        callSection.addView(answer, kit.gap(14))
+        callSection.addView(kit.brandButton("Завершить звонок", ButtonKind.DANGER) { Calls.hangUp(service) }, kit.gap(10))
+        column.addView(callSection, kit.gap(16))
 
-        countdown = text(52f, FG, bold = true).also { it.setPadding(0, dp(24), 0, 0); column.addView(it) }
-        until = text(15f, MUTED).also(column::addView)
-        status = text(15f, ACCENT).also { it.setPadding(0, dp(20), 0, 0); column.addView(it) }
-
-        codeSection = LinearLayout(ctx).apply {
+        // Timer inside a quiet progress ring.
+        val dial = FrameLayout(ctx)
+        ring = RingView(ctx)
+        dial.addView(ring, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val inner = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(0, dp(24), 0, 0)
         }
-        codeHint = text(15f, MUTED).also(codeSection::addView)
-        codeBox = text(34f, FG, bold = true).also {
+        inner.addView(kit.text("осталось", MamaType.OVERLINE, MamaColors.TextSecondary, center = true), kit.fill())
+        countdown = kit.text("", MamaType.DIGITS_L, MamaColors.TextPrimary, center = true).also { inner.addView(it, kit.gap(6)) }
+        until = kit.caption("", center = true).also { inner.addView(it, kit.gap(6)) }
+        dial.addView(inner, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        column.addView(dial, LinearLayout.LayoutParams(dp(250), dp(250)).apply { topMargin = dp(24) })
+
+        phrase = kit.text("", MamaType.QUOTE, MamaColors.TextPrimary, center = true).also {
+            it.setPadding(dp(12), 0, dp(12), 0)
+            column.addView(it, kit.gap(26))
+        }
+        status = kit.text("", MamaType.CAPTION, MamaColors.WarningInk, center = true).also {
+            it.background = kit.shape(MamaColors.WarningSoft, 18)
+            it.setPadding(dp(16), dp(10), dp(16), dp(10))
+            column.addView(it, kit.gap(18))
+        }
+
+        codeSection = kit.card(18).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        codeHint = kit.caption("", center = true).also { codeSection.addView(it, kit.fill()) }
+        codeBox = kit.text("", MamaType.DIGITS, MamaColors.TextPrimary, center = true).also {
             it.typeface = Typeface.MONOSPACE
-            it.setPadding(0, dp(12), 0, dp(12))
-            codeSection.addView(it)
+            it.setPadding(0, dp(12), 0, dp(8))
+            codeSection.addView(it, kit.fill())
         }
-        codeSection.addView(keypad())
-        column.addView(codeSection)
+        codeSection.addView(keypad(), kit.wrap().apply { gravity = Gravity.CENTER_HORIZONTAL })
+        column.addView(codeSection, kit.gap(20))
 
-        requestSection = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(32), 0, 0)
-        }
-        requestEnd = button("Попросить код: завершить досрочно") { request(ExitKind.END_SESSION) }
-        requestEmergency = button(
+        requestSection = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        requestEnd = kit.brandButton("Попросить код: завершить досрочно", ButtonKind.SECONDARY) { request(ExitKind.END_SESSION) }
+        requestEmergency = kit.brandButton(
             "Попросить код: экстренный доступ на ${Texts.duration(Mama.policy.emergencyPass)}",
+            ButtonKind.SECONDARY,
         ) { request(ExitKind.EMERGENCY) }
-        requestSection.addView(requestEnd)
-        requestSection.addView(requestEmergency)
-        column.addView(requestSection)
+        requestSection.addView(requestEnd, kit.fill())
+        requestSection.addView(requestEmergency, kit.gap(10))
+        column.addView(requestSection, kit.gap(28))
 
-        callContact = button("Позвонить") {
-            val s = session ?: return@button
+        callContact = kit.brandButton("Позвонить", ButtonKind.SECONDARY) {
+            val s = session ?: return@brandButton
             if (!Calls.callContact(service, s.contact.phone)) {
                 message = "Нет разрешения на звонки. Позвонить можно через экстренный вызов."
                 rebind()
             }
         }
-        column.addView(spacer(24))
-        column.addView(callContact)
-        column.addView(button("Экстренный вызов ${Calls.EMERGENCY_NUMBER}", danger = true) {
+        column.addView(callContact, kit.gap(10))
+        column.addView(kit.brandButton("Экстренный вызов ${Calls.EMERGENCY_NUMBER}", ButtonKind.DANGER) {
             Calls.callEmergency(service)
-        })
-        footer = text(12f, MUTED).also { it.setPadding(0, dp(24), 0, 0); column.addView(it) }
+        }, kit.gap(10))
+        footer = kit.text("", MamaType.CAPTION, MamaColors.OliveSoft, center = true).also {
+            it.textSize = 11f
+            column.addView(it, kit.gap(24))
+        }
 
         val scroll = ScrollView(ctx).apply {
             isFillViewport = true
+            isVerticalScrollBarEnabled = false
             addView(column)
         }
         return FrameLayout(ctx).apply {
-            setBackgroundColor(BG)
+            setBackgroundColor(MamaColors.BackgroundPrimary)
             addView(scroll)
             isFocusable = true
             isFocusableInTouchMode = true
@@ -289,47 +312,20 @@ class LockOverlay(private val service: LockService) {
             .forEach { row ->
                 val line = LinearLayout(service).apply { orientation = LinearLayout.HORIZONTAL }
                 row.forEach { key ->
-                    val b = Button(service).apply {
-                        text = key
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
-                        setTextColor(FG)
-                        background = rounded(if (key == OK) ACCENT_BG else KEY_BG)
+                    val ok = key == OK
+                    val b = kit.text(key, MamaType.H2, if (ok) MamaColors.White else MamaColors.TextPrimary, center = true).apply {
+                        gravity = Gravity.CENTER
+                        textSize = 24f
+                        val fill = if (ok) MamaColors.EmeraldPrimary else MamaColors.BackgroundPrimary
+                        background = kit.pressable(kit.shape(fill, 20, if (ok) null else MamaColors.BorderSoft), 20)
+                        isClickable = true
                         setOnClickListener { press(key) }
                     }
-                    line.addView(b, LinearLayout.LayoutParams(dp(84), dp(64)).apply { setMargins(dp(6), dp(6), dp(6), dp(6)) })
+                    line.addView(b, LinearLayout.LayoutParams(dp(80), dp(60)).apply { setMargins(dp(5), dp(5), dp(5), dp(5)) })
                 }
                 grid.addView(line)
             }
         return grid
-    }
-
-    private fun text(sizeSp: Float, color: Int, bold: Boolean = false) = TextView(service).apply {
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        setTextColor(color)
-        gravity = Gravity.CENTER
-        if (bold) setTypeface(typeface, Typeface.BOLD)
-    }
-
-    private fun button(label: String, danger: Boolean = false, onClick: () -> Unit) = Button(service).apply {
-        text = label
-        isAllCaps = false
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-        setTextColor(if (danger) DANGER else FG)
-        background = rounded(KEY_BG)
-        setOnClickListener { onClick() }
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { setMargins(0, dp(6), 0, dp(6)) }
-        minHeight = dp(52)
-    }
-
-    private fun spacer(heightDp: Int) = View(service).apply {
-        layoutParams = LinearLayout.LayoutParams(1, dp(heightDp))
-    }
-
-    private fun rounded(color: Int) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = dp(14).toFloat()
     }
 
     private fun dp(v: Int) = (v * service.resources.displayMetrics.density).toInt()
@@ -337,12 +333,5 @@ class LockOverlay(private val service: LockService) {
     private companion object {
         const val DEL = "⌫"
         const val OK = "OK"
-        val BG = Color.rgb(0x0E, 0x11, 0x16)
-        val FG = Color.rgb(0xEE, 0xF0, 0xF3)
-        val MUTED = Color.rgb(0x9A, 0xA3, 0xAE)
-        val ACCENT = Color.rgb(0x8F, 0xB8, 0xFF)
-        val ACCENT_BG = Color.rgb(0x2B, 0x4A, 0x80)
-        val KEY_BG = Color.rgb(0x1C, 0x21, 0x2A)
-        val DANGER = Color.rgb(0xFF, 0x8A, 0x80)
     }
 }

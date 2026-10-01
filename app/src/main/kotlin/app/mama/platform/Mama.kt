@@ -22,7 +22,9 @@ import app.mama.core.Session
 import app.mama.core.SessionMode
 import app.mama.core.StandardRules
 import app.mama.core.Snapshot
+import app.mama.core.TestMode
 import app.mama.core.TrustedContact
+import app.mama.billing.FeatureFlags
 import app.mama.lock.LockService
 import app.mama.ui.Texts
 import java.time.Instant
@@ -255,6 +257,32 @@ object Mama {
         SessionStore(context.applicationContext)
             .save(r.snapshot.copy(entitlements = r.snapshot.entitlements.copy(flex = null)))
         reconcile(context)
+    }
+
+    sealed interface TestStart {
+        data class Started(val sessionId: String) : TestStart
+        data object Busy : TestStart
+        data class Rejected(val reason: LockEngine.CreateError) : TestStart
+    }
+
+    /**
+     * Free 15-minute test lock, starting right now. Only when nothing else is
+     * running: no series, no FLEX period, no session.
+     */
+    @Synchronized
+    fun startTest(context: Context, contact: TrustedContact, zone: ZoneId, mode: SessionMode): TestStart {
+        if (!FeatureFlags.TEST_MODE_ENABLED) return TestStart.Busy
+        val r = reconcile(context)
+        if (!idle(r)) return TestStart.Busy
+        val id = UUID.randomUUID().toString()
+        return when (val created = engine.create(id, TestMode.plan(r.trustedNow, zone, mode), contact, r.trustedNow)) {
+            is LockEngine.CreateResult.Rejected -> TestStart.Rejected(created.reason)
+            is LockEngine.CreateResult.Created -> {
+                SessionStore(context.applicationContext).save(r.snapshot.copy(session = created.session))
+                sync(context)
+                TestStart.Started(id)
+            }
+        }
     }
 
     sealed interface StartResult {

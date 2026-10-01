@@ -1,45 +1,43 @@
 package app.mama.ui
 
 import android.app.Activity
-import android.app.AlertDialog
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.ContactsContract
 import android.text.InputType
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.os.Handler
-import android.os.Looper
-import android.widget.Button
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
+import app.mama.billing.Checkout
+import app.mama.billing.FeatureFlags
+import app.mama.billing.Product
 import app.mama.core.DailyWindow
-import app.mama.core.LockPlan
 import app.mama.core.FlexEngine
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
+import app.mama.core.LockPlan
 import app.mama.core.LockState
 import app.mama.core.Series
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
-import app.mama.core.StandardRules
 import app.mama.core.SessionMode
 import app.mama.core.SessionStatus
+import app.mama.core.StandardRules
+import app.mama.core.TestMode
 import app.mama.core.TrustedContact
-import app.mama.billing.Checkout
-import app.mama.billing.Product
 import app.mama.platform.Mama
 import java.time.Duration
 import java.time.Instant
@@ -49,16 +47,22 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 /**
- * Setup screen: mode, start/end time and time zone, trusted contact,
- * permission checklist, start. While a session is planned or running it
- * shows the session instead of the form, so the contact cannot be changed.
+ * Setup screen: mode, time, trusted contact, permissions, start. While a
+ * series, FLEX package or session exists it shows that instead of the form,
+ * so the contact cannot be changed mid-commitment.
  */
 class MainActivity : Activity() {
 
+    /** What the user is about to start. */
+    private enum class Choice(val series: SeriesKind?) {
+        TEST(null), THREE(SeriesKind.THREE), FIVE(SeriesKind.FIVE), SEVEN(SeriesKind.SEVEN), FLEX(null)
+    }
+
     private val prefs by lazy { getSharedPreferences("mama_setup", Context.MODE_PRIVATE) }
+    private val kit by lazy { Kit(this) }
 
     private var mode = SessionMode.SLEEP
-    private var seriesKind = SeriesKind.SEVEN
+    private var choice = Choice.SEVEN
     private var start = LocalTime.of(23, 0)
     private var end = LocalTime.of(7, 0)
     private var zone: ZoneId = ZoneId.systemDefault()
@@ -67,16 +71,42 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        styleSystemBars()
         mode = runCatching { SessionMode.valueOf(prefs.getString("mode", null)!!) }.getOrDefault(SessionMode.SLEEP)
-        seriesKind = runCatching { SeriesKind.valueOf(prefs.getString("series", null)!!) }
-            .getOrDefault(SeriesKind.SEVEN)
+        choice = runCatching { Choice.valueOf(prefs.getString("choice", null)!!) }.getOrElse {
+            // Older versions stored only the series length.
+            runCatching { Choice.valueOf(prefs.getString("series", null)!!) }.getOrDefault(Choice.SEVEN)
+        }
+        if (choice == Choice.TEST && !FeatureFlags.TEST_MODE_ENABLED) choice = Choice.SEVEN
         start = runCatching { LocalTime.parse(prefs.getString("start", null)) }.getOrDefault(start)
         end = runCatching { LocalTime.parse(prefs.getString("end", null)) }.getOrDefault(end)
         zone = runCatching { ZoneId.of(prefs.getString("zone", null)) }.getOrDefault(zone)
-        contactName = input("Имя, например «Мама»", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
+        contactName = kit.textField("Например, «Мама»", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
             .apply { setText(prefs.getString("contactName", "")) }
-        contactPhone = input("+7 900 123-45-67", InputType.TYPE_CLASS_PHONE)
+        contactPhone = kit.textField("+7 900 123-45-67", InputType.TYPE_CLASS_PHONE)
             .apply { setText(prefs.getString("contactPhone", "")) }
+    }
+
+    /**
+     * Cream bars with dark icons. The page is laid out edge-to-edge on every
+     * Android version (Android 15 enforces it anyway) and pads itself for the
+     * bars in [padForBars], so spacing is the same on all phones.
+     */
+    @Suppress("DEPRECATION")
+    private fun styleSystemBars() {
+        window.statusBarColor = MamaColors.BackgroundPrimary
+        window.navigationBarColor = MamaColors.BackgroundPrimary
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            val light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.insetsController?.setSystemBarsAppearance(light, light)
+        } else {
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
     }
 
     override fun onResume() {
@@ -153,7 +183,7 @@ class MainActivity : Activity() {
     private fun saveForm() {
         prefs.edit()
             .putString("mode", mode.name)
-            .putString("series", seriesKind.name)
+            .putString("choice", choice.name)
             .putString("start", start.toString())
             .putString("end", end.toString())
             .putString("zone", zone.id)
@@ -162,62 +192,85 @@ class MainActivity : Activity() {
             .apply()
     }
 
+    // --- rendering ---
+
+    private var scroll: ScrollView? = null
+    private var screen: String? = null
+
     private fun render() {
         val state = Mama.sync(this)
         // The contact fields are reused across renders to keep typed text.
         (contactName.parent as? ViewGroup)?.removeView(contactName)
         (contactPhone.parent as? ViewGroup)?.removeView(contactPhone)
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(32), dp(20), dp(32))
-        }
-        column.addView(label("MAMA  ${Texts.version(this)}", 30f, bold = true))
-        column.addView(label("Добровольная блокировка телефона на выбранное время", 15f, MUTED))
-        column.addView(space(16))
         stopTicker()
+        val column = kit.column().apply { setPadding(dp(20), dp(20), dp(20), dp(40)) }
         val series = Mama.series(this)
         val flex = Mama.entitlements(this).flex
-        when {
-            series != null && series.status == SeriesStatus.BROKEN -> renderBroken(column, series)
-            series != null && series.status == SeriesStatus.COMPLETED -> renderSuccess(column, series)
-            series != null -> renderSeries(column, series, state)
-            flex != null && flex.over -> renderFlexResult(column, flex)
-            flex != null -> renderFlex(column, flex, state)
-            state == LockState.Free -> renderForm(column)
+        val key = when {
+            series != null && series.status == SeriesStatus.BROKEN -> "broken"
+            series != null && series.status == SeriesStatus.COMPLETED -> "success"
+            series != null -> "series"
+            flex != null && flex.over -> "flexResult"
+            flex != null -> "flex"
+            state == LockState.Free -> "form"
+            else -> "session"
+        }
+        header(column, hero = key == "form")
+        when (key) {
+            "broken" -> renderBroken(column, series!!)
+            "success" -> renderSuccess(column, series!!)
+            "series" -> renderSeries(column, series!!, state)
+            "flexResult" -> renderFlexResult(column, flex!!)
+            "flex" -> renderFlex(column, flex!!, state)
+            "form" -> renderForm(column)
             else -> renderSession(column, state)
         }
-        setContentView(ScrollView(this).apply {
-            setBackgroundColor(Palette.PAPER)
+        // Stay where the user was when the same screen is redrawn (e.g. after picking a mode).
+        val keepY = if (key == screen) scroll?.scrollY ?: 0 else 0
+        val newScroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
             addView(column)
-        })
+        }
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(MamaColors.BackgroundPrimary)
+            addView(newScroll)
+            setOnApplyWindowInsetsListener { v, insets -> padForBars(v, insets) }
+        }
+        setContentView(root)
+        if (keepY > 0) newScroll.post { newScroll.scrollTo(0, keepY) }
+        scroll = newScroll
+        screen = key
     }
 
-    // --- session in progress ---
+    /** Keeps content clear of the status bar, navigation bar and keyboard (edge-to-edge on Android 15). */
+    @Suppress("DEPRECATION")
+    private fun padForBars(v: View, insets: WindowInsets): WindowInsets {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+        } else {
+            v.setPadding(
+                insets.systemWindowInsetLeft, insets.systemWindowInsetTop,
+                insets.systemWindowInsetRight, insets.systemWindowInsetBottom,
+            )
+        }
+        return insets
+    }
 
-    private fun renderSession(column: LinearLayout, state: LockState) {
-        val session = Mama.session(this) ?: return
-        val z = session.plan.zone
-        val now = Mama.trustedNow(this)
-        column.addView(label("Режим «${Texts.mode(session.plan.mode)}»", 20f, bold = true))
-        column.addView(label("${Texts.dayTime(session.plan.start, z)} → ${Texts.dayTime(session.plan.end, z)}", 16f))
-        column.addView(label(Texts.zone(z, now), 14f, MUTED))
-        column.addView(label("Доверенный контакт: ${session.contact.name}, ${session.contact.phone}", 14f, MUTED))
-        column.addView(space(16))
-        when (state) {
-            is LockState.Waiting -> {
-                column.addView(label("Начнётся через ${Texts.duration(Duration.between(now, state.startsAt))}.", 16f))
-                column.addView(label("До начала можно передумать. После — выйти можно только с кодом от доверенного контакта.", 14f, MUTED))
-                column.addView(button("Отменить до начала") {
-                    Mama.cancelBeforeStart(this)
-                    render()
-                })
-            }
-            is LockState.Locked -> column.addView(label("Идёт блокировка.", 16f))
-            is LockState.EmergencyPass -> {
-                column.addView(label("Экстренный доступ до ${Texts.time(state.until, z)}.", 16f))
-                column.addView(label("После этого блокировка вернётся до ${Texts.time(state.endsAt, z)}.", 14f, MUTED))
-            }
-            LockState.Free -> Unit
+    private fun header(column: LinearLayout, hero: Boolean) {
+        val top = kit.row()
+        top.addView(kit.text("MAMA", MamaType.WORDMARK, MamaColors.EmeraldPrimary), kit.weight())
+        top.addView(kit.statusBadge(Texts.version(this), Tone.NEUTRAL))
+        column.addView(top)
+        if (hero) {
+            column.addView(
+                kit.body("Добровольная пауза от телефона на выбранное время. Спокойно, честно и без лазеек."),
+                kit.gap(6),
+            )
+            column.addView(kit.hero(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(132)).apply {
+                topMargin = dp(18)
+            })
         }
     }
 
@@ -225,97 +278,177 @@ class MainActivity : Activity() {
 
     private fun renderForm(column: LinearLayout) {
         Mama.session(this)?.takeIf { it.status == SessionStatus.FINISHED }?.let {
-            column.addView(label("Прошлая сессия: ${Texts.finishReason(it.finishReason)}.", 14f, MUTED))
-            column.addView(space(12))
+            val wasTest = it.id == prefs.getString("testSession", null)
+            val what = if (wasTest) "Тестовая блокировка" else "Прошлая блокировка"
+            column.addView(kit.infoBlock("$what: ${Texts.finishReason(it.finishReason)}.", Tone.NEUTRAL), kit.gap(18))
         }
-
-        column.addView(section("Серия"))
-        column.addView(label("Сколько дней подряд ты готов не менять своё решение?", 14f, MUTED))
-        SeriesKind.entries.forEach { kind -> column.addView(seriesOption(kind), ui.gap(8)) }
         val ent = Mama.entitlements(this)
+
+        // 1. Mode
+        column.addView(kit.sectionTitle("Выберите режим", "На какой срок ты берёшь обязательство?"))
+        val cards = kit.column()
+        fun add(view: View) = cards.addView(view, kit.gap(if (cards.childCount == 0) 0 else 10))
+        if (FeatureFlags.TEST_MODE_ENABLED) {
+            add(kit.modeCard(
+                "Тестовый режим", "Бесплатно",
+                "Короткий пробный запуск на 15 минут для проверки блокировки и механики приложения.",
+                choice == Choice.TEST, tag = "15 минут",
+            ) { select(Choice.TEST) })
+        }
+        listOf(Choice.THREE, Choice.FIVE, Choice.SEVEN).forEach { c ->
+            val kind = c.series!!
+            val price = Texts.price(kind.restartPriceRub)
+            add(kit.modeCard(
+                Texts.seriesName(kind), price,
+                "${Texts.seriesName(kind)} подряд в одно и то же время. Старт бесплатный, $price — только за Restart после срыва.",
+                choice == c,
+            ) { select(c) })
+        }
+        val freeFlex = ent.freeFlexCredits > 0
+        add(kit.modeCard(
+            "FLEX", if (freeFlex) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB),
+            "${FlexPackage.PERIODS} периодов от 3 до 24 часов в любые дни за ${FlexPackage.VALIDITY.toDays()} дней. " +
+                "Разовый пакет, не подписка. Пройди 7 из 7 — следующий FLEX бесплатно.",
+            choice == Choice.FLEX, tag = if (freeFlex) "Заработан за 7 из 7" else null,
+        ) { select(Choice.FLEX) })
+        column.addView(cards, kit.fill())
         val waitDays = StandardRules.daysUntilFreeStart(ent, Mama.trustedNow(this))
-        if (waitDays > 0) {
-            column.addView(ui.card().apply {
-                addView(ui.text("Бесплатная новая серия будет доступна через ${Texts.days(waitDays.toInt())}", 15f, bold = true))
-                addView(ui.small("Телефон при этом не заблокирован: ожидание касается только бесплатного старта новой серии."))
-            }, ui.gap(10))
+        if (choice.series != null && waitDays > 0) {
+            column.addView(kit.infoBlock(
+                "Телефон при этом не заблокирован: ожидание касается только бесплатного старта новой серии.",
+                Tone.WARNING,
+                "Бесплатная новая серия будет доступна через ${Texts.days(waitDays.toInt())}",
+            ), kit.gap(12))
         }
 
-        column.addView(section("MAMA FLEX"))
-        column.addView(flexOffer(ent.freeFlexCredits), ui.gap(4))
+        // Purpose
+        column.addView(kit.sectionTitle("Цель", "Для чего эта пауза"))
+        val modes = SessionMode.entries
+        column.addView(kit.chips(modes.map { Texts.mode(it) }, modes.indexOf(mode)) { i ->
+            mode = modes[i]
+            saveForm()
+            render()
+        }, kit.fill())
 
-        column.addView(section("Режим"))
-        column.addView(button(Texts.mode(mode)) { pickMode() })
+        // 2. Time
+        renderTimeBlock(column)
 
-        column.addView(section("Время"))
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(button("С ${start}") { pickTime(start) { start = it } }, weighted())
-        row.addView(button("До ${end}") { pickTime(end) { end = it } }, weighted())
-        column.addView(row)
-        column.addView(button("Часовой пояс: ${Texts.zone(zone)}") { pickZone() })
-        column.addView(label(preview(), 14f, MUTED))
+        // 3. Trusted contact
+        column.addView(kit.sectionTitle("Доверенный контакт", "Только этот человек сможет помочь выйти раньше — через код"))
+        column.addView(kit.contactCard(contactName, contactPhone) { pickContact() }, kit.fill())
+        column.addView(kit.infoBlock(
+            "Код из ${Mama.policy.codeLength} цифр придёт ему по SMS, на ввод — ${Mama.policy.maxAttempts} попытки. " +
+                "Выход по коду всегда бесплатный.",
+        ), kit.gap(10))
 
-        column.addView(section("Доверенный контакт"))
-        column.addView(label("Только этот человек сможет выпустить вас раньше: ему придёт SMS с кодом из 5 цифр, на ввод — 3 попытки.", 14f, MUTED))
-        column.addView(contactName)
-        column.addView(contactPhone)
-        column.addView(button("Выбрать из контактов") { pickContact() })
+        // 4. Permissions
+        renderPermissions(column)
 
-        column.addView(section("Разрешения"))
-        if (Requirement.entries.any { !it.isGranted(this) }) {
-            column.addView(button("Выдать все разрешения", primary = true) { startSetupAll() })
-            column.addView(label("MAMA по очереди откроет каждый экран: включите переключатель и вернитесь назад.", 13f, MUTED))
-        }
-        Requirement.entries.forEach { req ->
-            val ok = req.isGranted(this)
-            val mark = if (ok) "✓" else if (req.required) "✗" else "○"
-            column.addView(button("$mark  ${req.title}", enabled = !ok) { req.request(this) })
-            column.addView(label(req.why, 13f, MUTED))
-        }
-
-        column.addView(space(20))
-        column.addView(ui.primary("Начать серию: ${Texts.seriesName(seriesKind)}") { confirmStart() }, ui.fill())
+        // 5. Start
+        column.addView(kit.brandButton(ctaLabel()) { startChosen() }, kit.gap(32))
+        column.addView(kit.caption(ctaNote(), center = true), kit.gap(10))
     }
 
-    private val ui by lazy { Ui(this) }
+    private fun select(c: Choice) {
+        choice = c
+        saveForm()
+        render()
+    }
 
-    /** One selectable standard series card with its Restart price. */
-    private fun seriesOption(kind: SeriesKind): View {
-        val selected = kind == seriesKind
-        val fg = if (selected) Color.WHITE else Palette.INK
-        val sub = if (selected) Palette.CHIP else Palette.MUTED
-        return ui.card(selected).apply {
-            val line = ui.row()
-            line.addView(ui.text(Texts.seriesName(kind), 20f, fg, bold = true), ui.weight())
-            if (selected) line.addView(ui.text("✓", 18f, Color.WHITE, bold = true))
-            addView(line)
-            addView(ui.text("Restart при срыве — ${Texts.price(kind.restartPriceRub)}", 13f, sub))
-            setOnClickListener {
-                seriesKind = kind
-                saveForm()
-                render()
+    private fun renderTimeBlock(column: LinearLayout) {
+        when (choice) {
+            Choice.TEST -> {
+                column.addView(kit.sectionTitle("Время", "Тест всегда длится ровно 15 минут"))
+                val now = Mama.trustedNow(this)
+                val row = kit.row()
+                row.addView(
+                    kit.timeCard("Начало", Texts.time(now, zone), "сразу", enabled = false),
+                    kit.weight().apply { rightMargin = dp(6) },
+                )
+                row.addView(
+                    kit.timeCard("Окончание", Texts.time(now + TestMode.DURATION, zone), "через 15 минут", enabled = false),
+                    kit.weight().apply { leftMargin = dp(6) },
+                )
+                column.addView(row, kit.fill())
+                column.addView(kit.infoBlock(
+                    "Блокировка начнётся сразу после запуска. Тест бесплатный, не входит в серии и не тратит FLEX-дни.",
+                    Tone.BRAND,
+                ), kit.gap(10))
+            }
+            Choice.FLEX -> {
+                column.addView(kit.sectionTitle("Время", "Для каждого FLEX-периода — отдельно"))
+                column.addView(kit.infoBlock(
+                    "После активации пакета для каждого периода выбираются дата и время начала и окончания: " +
+                        "сейчас или позже, от 3 до 24 часов, можно через полночь.",
+                    Tone.BRAND,
+                ), kit.fill())
+                column.addView(kit.settingRow("Часовой пояс", Texts.zone(zone)) { pickZone() }, kit.gap(10))
+            }
+            else -> {
+                column.addView(kit.sectionTitle("Время", "Каждый день серии — в это время"))
+                val row = kit.row()
+                row.addView(kit.timeCard("Начало", Texts.hhmm(start)) {
+                    DigitalTimePicker.show(this, "Начало блокировки", start) { start = it; saveForm(); render() }
+                }, kit.weight().apply { rightMargin = dp(6) })
+                row.addView(kit.timeCard("Окончание", Texts.hhmm(end)) {
+                    DigitalTimePicker.show(this, "Окончание блокировки", end) { end = it; saveForm(); render() }
+                }, kit.weight().apply { leftMargin = dp(6) })
+                column.addView(row, kit.fill())
+                column.addView(kit.settingRow("Часовой пояс", Texts.zone(zone)) { pickZone() }, kit.gap(10))
+                column.addView(kit.infoBlock(preview()), kit.gap(10))
             }
         }
     }
 
-    /** The FLEX offer: price, rules, and the free package if one was earned. */
-    private fun flexOffer(freeCredits: Int): View = ui.card().apply {
-        val line = ui.row()
-        line.addView(ui.text("FLEX", 20f, bold = true), ui.weight())
-        line.addView(
-            ui.text(if (freeCredits > 0) "бесплатно" else Texts.price(FlexPackage.PRICE_RUB), 16f, Palette.FOREST, bold = true),
-        )
-        addView(line)
-        addView(ui.small(
-            "${FlexPackage.PERIODS} периодов блокировки в любые выбранные дни, срок ${FlexPackage.VALIDITY.toDays()} дней. " +
-                "Разовый пакет, не подписка, без автопродления. Пройди 7 из 7 — следующий FLEX бесплатно.",
-        ))
-        if (freeCredits > 0) {
-            addView(ui.primary("Активировать бесплатный FLEX") { activateFlex(GrantSource.REWARD) }, ui.gap(10))
+    private fun renderPermissions(column: LinearLayout) {
+        column.addView(kit.sectionTitle("Разрешения", "Нужны, чтобы блокировку нельзя было обойти"))
+        if (Requirement.entries.any { !it.isGranted(this) }) {
+            column.addView(kit.brandButton("Выдать все разрешения") { startSetupAll() }, kit.fill())
+            column.addView(
+                kit.caption("MAMA по очереди откроет каждый экран настроек: включите переключатель и вернитесь назад.", center = true),
+                kit.gap(8),
+            )
         } else {
-            addView(ui.secondary("Купить FLEX — ${Texts.price(FlexPackage.PRICE_RUB)}") {
-                Checkout.obtain(this@MainActivity, Product.FlexPackage, "MAMA FLEX") { activateFlex(it) }
-            }, ui.gap(10))
+            column.addView(kit.infoBlock("Всё готово к строгой блокировке.", Tone.SUCCESS, "Все разрешения выданы"), kit.fill())
+        }
+        Requirement.entries.forEach { req ->
+            val status = when {
+                req.isGranted(this) -> PermissionStatus.GRANTED
+                req.required -> PermissionStatus.REQUIRED
+                else -> PermissionStatus.MISSING
+            }
+            column.addView(kit.permissionCard(req.title, req.why, status) { req.request(this) }, kit.gap(10))
+        }
+    }
+
+    private fun ctaLabel() = when (choice) {
+        Choice.TEST -> "Начать тест 15 минут"
+        Choice.FLEX -> "Начать FLEX"
+        else -> "Начать серию ${Texts.seriesName(choice.series!!)}"
+    }
+
+    private fun ctaNote() = when (choice) {
+        Choice.TEST -> "Бесплатно. Выйти раньше можно по коду доверенного контакта."
+        Choice.FLEX -> if (Mama.entitlements(this).freeFlexCredits > 0) {
+            "Бесплатный FLEX, заработанный за 7 из 7."
+        } else {
+            "${Texts.price(FlexPackage.PRICE_RUB)} за пакет. Разовая покупка, без автопродления."
+        }
+        else -> "Старт бесплатный. Restart после срыва — ${Texts.price(choice.series!!.restartPriceRub)}."
+    }
+
+    private fun startChosen() = when (choice) {
+        Choice.TEST -> confirmTest()
+        Choice.FLEX -> startFlex()
+        else -> confirmStart(choice.series!!)
+    }
+
+    private fun startFlex() {
+        saveForm()
+        if (Mama.entitlements(this).freeFlexCredits > 0) {
+            activateFlex(GrantSource.REWARD)
+        } else {
+            Checkout.obtain(this, Product.FlexPackage, "MAMA FLEX") { activateFlex(it) }
         }
     }
 
@@ -327,16 +460,16 @@ class MainActivity : Activity() {
         render()
     }
 
-    /** Checks permissions, time and contact from the form; null (with a message) if something is missing. */
-    private fun readyContact(): TrustedContact? {
+    /** Checks permissions and contact (and the daily window for series); null, with a message, if something is missing. */
+    private fun readyContact(checkWindow: Boolean = false): TrustedContact? {
         saveForm()
         val missing = Requirement.missingRequired(this)
         if (missing.isNotEmpty()) {
             alert("Не хватает разрешений", missing.joinToString("\n") { "• ${it.title}" })
             return null
         }
-        if (start == end) {
-            alert("Проверьте время", "Начало и конец совпадают.")
+        if (checkWindow && start == end) {
+            alert("Проверьте время", "Начало и окончание совпадают.")
             return null
         }
         val name = contactName.text.toString().trim()
@@ -352,7 +485,7 @@ class MainActivity : Activity() {
         DailyWindow(start, end, zone).nextPlan(Mama.trustedNow(this), mode, Mama.policy.minDuration)
 
     private fun preview(): String {
-        if (start == end) return "Начало и конец совпадают."
+        if (start == end) return "Начало и окончание совпадают."
         val p = plan()
         val now = Mama.trustedNow(this)
         val startsNow = !p.start.isAfter(now)
@@ -364,62 +497,87 @@ class MainActivity : Activity() {
         } else {
             ""
         }
-        return "Блокировка: $from → ${Texts.dayTime(p.end, zone)} (${Texts.duration(length)})$localHint"
+        return "Первая блокировка: $from → ${Texts.dayTime(p.end, zone)} (${Texts.duration(length)})$localHint"
     }
 
-    private fun confirmStart() {
+    private fun confirmTest() {
         val contact = readyContact() ?: return
-        val kind = seriesKind
+        val endsAt = Mama.trustedNow(this) + TestMode.DURATION
+        BrandDialog.show(
+            this,
+            "Начать тест на 15 минут?",
+            message = "Телефон заблокируется сразу, примерно до ${Texts.time(endsAt, zone)}.\n\n" +
+                "Выйти раньше можно только по коду, который получит ${contact.name}. " +
+                "Тест бесплатный и ни на что не влияет: это не серия и не FLEX.",
+            confirm = "Начать тест",
+            cancel = "Назад",
+        ) {
+            when (val r = Mama.startTest(this, contact, zone, mode)) {
+                is Mama.TestStart.Started -> prefs.edit().putString("testSession", r.sessionId).apply()
+                Mama.TestStart.Busy -> alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
+                is Mama.TestStart.Rejected -> alert("Не получилось", Texts.createError(r.reason))
+            }
+            render()
+            true
+        }
+    }
+
+    private fun confirmStart(kind: SeriesKind) {
+        val contact = readyContact(checkWindow = true) ?: return
         val ent = Mama.entitlements(this)
         val waitDays = StandardRules.daysUntilFreeStart(ent, Mama.trustedNow(this))
         if (waitDays > 0) {
             alert(
                 "Бесплатная серия пока недоступна",
-                "Бесплатная новая серия будет доступна через ${Texts.days(waitDays.toInt())}. " +
-                    "Телефон при этом не заблокирован.",
+                "Бесплатная новая серия будет доступна через ${Texts.days(waitDays.toInt())}. Телефон при этом не заблокирован.",
             )
             return
         }
         val restart = Texts.price(kind.restartPriceRub)
-        val message = "Серия: ${Texts.seriesName(kind)}\n" +
-            "Каждый день: $start → $end (${zone.id})\n" +
-            "Доверенный контакт: ${contact.name}, ${contact.phone}\n\n" +
-            "Если серия будет прервана:\nпрогресс обнулится.\nRestart серии — $restart.\n" +
-            "Без Restart бесплатная новая серия будет доступна через " +
-            "${StandardRules.FREE_START_AFTER.toDays()} дней.\n\n" +
-            "Выйти по коду доверенного контакта можно всегда, это бесплатно. " +
-            "Если серия завершена успешно — платить не нужно."
+        val content = kit.column()
+        listOf(
+            "Серия" to Texts.seriesName(kind),
+            "Каждый день" to "${Texts.hhmm(start)} → ${Texts.hhmm(end)}",
+            "Часовой пояс" to zone.id,
+            "Доверенный контакт" to "${contact.name}, ${contact.phone}",
+        ).forEachIndexed { i, (k, v) ->
+            val line = kit.row()
+            line.addView(kit.caption(k), kit.weight())
+            line.addView(kit.text(v, MamaType.BODY))
+            content.addView(line, kit.gap(if (i == 0) 0 else 6))
+        }
+        content.addView(kit.infoBlock(
+            "Прогресс обнулится. Restart серии — $restart. Без Restart бесплатная новая серия будет доступна через " +
+                "${StandardRules.FREE_START_AFTER.toDays()} дней.",
+            Tone.WARNING,
+            "Если серия будет прервана",
+        ), kit.gap(16))
+        content.addView(kit.caption(
+            "Выйти по коду доверенного контакта можно всегда, это бесплатно. Если серия завершена успешно — платить не нужно.",
+        ), kit.gap(12))
         val agree = CheckBox(this).apply {
             text = "Я понимаю условия и принимаю ответственность за своё решение"
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            MamaType.CAPTION.applyTo(this)
+            setTextColor(MamaColors.TextPrimary)
+            buttonTintList = ColorStateList.valueOf(MamaColors.EmeraldPrimary)
+            setPadding(dp(6), dp(6), 0, dp(6))
         }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), 0)
-            addView(agree)
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Проверь условия")
-            .setMessage(message)
-            .setView(box)
-            .setPositiveButton("Начать серию") { _, _ ->
-                when (val r = Mama.startSeries(this, kind, DailyWindow(start, end, zone), contact, mode)) {
-                    Mama.SeriesStart.Started -> Unit
-                    Mama.SeriesStart.Busy ->
-                        alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
-                    is Mama.SeriesStart.Waiting ->
-                        alert("Бесплатная серия пока недоступна", "Будет доступна через ${Texts.days(r.days.toInt())}.")
-                }
-                render()
+        content.addView(agree, kit.gap(12))
+        val handle = BrandDialog.show(this, "Проверь условия", content = content, confirm = "Начать серию", cancel = "Назад") {
+            when (val r = Mama.startSeries(this, kind, DailyWindow(start, end, zone), contact, mode)) {
+                Mama.SeriesStart.Started -> Unit
+                Mama.SeriesStart.Busy -> alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
+                is Mama.SeriesStart.Waiting ->
+                    alert("Бесплатная серия пока недоступна", "Будет доступна через ${Texts.days(r.days.toInt())}.")
             }
-            .setNegativeButton("Назад", null)
-            .show()
-        val positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-        positive.isEnabled = false
-        agree.setOnCheckedChangeListener { _, checked -> positive.isEnabled = checked }
+            render()
+            true
+        }
+        handle.setConfirmEnabled(false)
+        agree.setOnCheckedChangeListener { _, checked -> handle.setConfirmEnabled(checked) }
     }
 
-    // --- series screens ---
+    // --- countdown ---
 
     private val tickHandler = Handler(Looper.getMainLooper())
     private var ticker: Runnable? = null
@@ -434,47 +592,39 @@ class MainActivity : Activity() {
         super.onStop()
     }
 
-    private fun renderSeries(column: LinearLayout, series: Series, state: LockState) {
-        val n = series.kind.periods
-        val day = minOf(series.completedPeriods + 1, n)
-        column.addView(ui.text("Твоя серия активна", 22f, bold = true, center = true), ui.fill())
-        column.addView(ui.text("День $day из $n", 17f, Palette.MUTED, center = true), ui.gap(4))
-        val dots = ui.row().apply { gravity = Gravity.CENTER }
-        repeat(n) { i ->
-            val done = i < series.completedPeriods
-            dots.addView(
-                ui.badge("", if (done) Palette.FOREST else Palette.LINE, sizeDp = 16),
-                LinearLayout.LayoutParams(dp(16), dp(16)).apply { setMargins(dp(5), 0, dp(5), 0) },
-            )
-        }
-        column.addView(dots, ui.gap(14))
-
-        val status = ui.card()
-        val caption = ui.small("", center = true)
-        val big = ui.text("", 34f, bold = true, center = true)
-        status.addView(caption, ui.fill())
-        status.addView(big, ui.gap(4))
-        column.addView(status, ui.gap(18))
-        val z = series.window.zone
+    /** A live countdown card: until the lock starts, until it ends, or until an emergency pass ends. */
+    private fun countdownCard(column: LinearLayout, z: ZoneId, upcoming: String, idle: String = "") {
+        val caption = kit.text("", MamaType.OVERLINE, MamaColors.TextSecondary, center = true)
+        val big = kit.text("", MamaType.DIGITS_L, MamaColors.TextPrimary, center = true)
+        val sub = kit.caption("", center = true)
+        column.addView(kit.card(22).apply {
+            addView(caption, kit.fill())
+            addView(big, kit.gap(12))
+            addView(sub, kit.gap(10))
+        }, kit.gap(20))
         val tick = object : Runnable {
             override fun run() {
                 val now = Mama.trustedNow(this@MainActivity)
                 when (val st = Mama.state(this@MainActivity)) {
                     is LockState.Waiting -> {
-                        caption.text = "MAMA включится в ${Texts.time(st.startsAt, z)} через"
+                        caption.text = "До начала"
                         big.text = Texts.countdown(Duration.between(now, st.startsAt))
+                        sub.text = "$upcoming в ${Texts.time(st.startsAt, z)}"
                     }
                     is LockState.Locked -> {
-                        caption.text = "Блокировка идёт, осталось"
+                        caption.text = "Осталось"
                         big.text = Texts.countdown(Duration.between(now, st.endsAt))
+                        sub.text = "Блокировка до ${Texts.time(st.endsAt, z)}"
                     }
                     is LockState.EmergencyPass -> {
-                        caption.text = "Экстренный доступ, блокировка вернётся через"
+                        caption.text = "Экстренный доступ"
                         big.text = Texts.countdown(Duration.between(now, st.until))
+                        sub.text = "Блокировка вернётся в ${Texts.time(st.until, z)}"
                     }
                     LockState.Free -> {
-                        caption.text = "Следующий период планируется…"
+                        caption.text = ""
                         big.text = "—"
+                        sub.text = idle
                     }
                 }
                 tickHandler.postDelayed(this, 1_000)
@@ -482,215 +632,197 @@ class MainActivity : Activity() {
         }
         ticker = tick
         tick.run()
+    }
 
-        val info = ui.row()
-        info.addView(ui.card().apply {
-            addView(ui.small("Каждый день"))
-            addView(ui.text("${series.window.start} → ${series.window.end}", 16f, bold = true))
-        }, ui.weight().apply { rightMargin = dp(6) })
-        info.addView(ui.card().apply {
-            addView(ui.small("Серия"))
-            addView(ui.text(Texts.seriesName(series.kind), 16f, bold = true))
-        }, ui.weight().apply { leftMargin = dp(6) })
-        column.addView(info, ui.gap(12))
+    // --- single session (test mode or a plain lock) ---
 
-        column.addView(ui.card().apply {
-            addView(ui.small("Доверенный контакт"))
-            addView(ui.text(series.contact.name, 17f, bold = true))
-            addView(ui.small(series.contact.phone))
-        }, ui.gap(12))
-
+    private fun renderSession(column: LinearLayout, state: LockState) {
+        val session = Mama.session(this) ?: return
+        val z = session.plan.zone
+        val isTest = session.id == prefs.getString("testSession", null)
         column.addView(
-            ui.small(
-                "Если серия будет прервана: прогресс обнулится. Restart серии — " +
-                    "${Texts.price(series.kind.restartPriceRub)}, или бесплатная новая серия через " +
-                    "${StandardRules.FREE_START_AFTER.toDays()} дней.",
-            ),
-            ui.gap(16),
+            kit.text(if (isTest) "Тестовый режим" else "Режим «${Texts.mode(session.plan.mode)}»", MamaType.H1, center = true),
+            kit.gap(28),
         )
+        column.addView(
+            kit.caption("${Texts.dayTime(session.plan.start, z)} → ${Texts.dayTime(session.plan.end, z)}", center = true),
+            kit.gap(6),
+        )
+        countdownCard(column, z, "Блокировка начнётся")
+        column.addView(kit.contactSummary(session.contact.name, session.contact.phone), kit.gap(12))
+        if (isTest) {
+            column.addView(
+                kit.infoBlock("Это тест: он не входит в серии и не тратит FLEX-дни.", Tone.BRAND),
+                kit.gap(12),
+            )
+        }
+        if (state is LockState.Waiting) {
+            column.addView(kit.caption(
+                "До начала можно передумать. После — выйти можно только с кодом от доверенного контакта.",
+                center = true,
+            ), kit.gap(16))
+            column.addView(kit.brandButton("Отменить до начала", ButtonKind.SECONDARY) {
+                Mama.cancelBeforeStart(this)
+                render()
+            }, kit.gap(10))
+        }
+    }
+
+    // --- series screens ---
+
+    private fun renderSeries(column: LinearLayout, series: Series, state: LockState) {
+        val n = series.kind.periods
+        val day = minOf(series.completedPeriods + 1, n)
+        column.addView(kit.text("Твоя серия активна", MamaType.H1, center = true), kit.gap(28))
+        column.addView(kit.text("День $day из $n", MamaType.TITLE, MamaColors.TextSecondary, center = true), kit.gap(6))
+        column.addView(kit.dots(n, series.completedPeriods), kit.gap(14))
+
+        countdownCard(column, series.window.zone, "MAMA включится", idle = "Следующий период планируется…")
+
+        val info = kit.row()
+        info.addView(
+            kit.stat("Каждый день", "${Texts.hhmm(series.window.start)} → ${Texts.hhmm(series.window.end)}"),
+            kit.weight().apply { rightMargin = dp(6) },
+        )
+        info.addView(kit.stat("Серия", Texts.seriesName(series.kind)), kit.weight().apply { leftMargin = dp(6) })
+        column.addView(info, kit.gap(12))
+        column.addView(kit.contactSummary(series.contact.name, series.contact.phone), kit.gap(12))
+        column.addView(kit.infoBlock(
+            "Прогресс обнулится. Restart серии — ${Texts.price(series.kind.restartPriceRub)}, " +
+                "или бесплатная новая серия через ${StandardRules.FREE_START_AFTER.toDays()} дней.",
+            Tone.NEUTRAL,
+            "Если серия будет прервана",
+        ), kit.gap(12))
 
         if (state is LockState.Waiting) {
-            column.addView(ui.secondary("Прервать серию") { confirmBreak(series) }, ui.gap(20))
+            column.addView(kit.brandButton("Прервать серию", ButtonKind.SECONDARY) { confirmBreak(series) }, kit.gap(20))
         }
     }
 
     private fun confirmBreak(series: Series) {
-        val price = "\nRestart серии — ${Texts.price(series.kind.restartPriceRub)}, " +
-            "или бесплатная новая серия через ${StandardRules.FREE_START_AFTER.toDays()} дней."
-        AlertDialog.Builder(this)
-            .setTitle("Прервать серию?")
-            .setMessage("Пройдено ${series.completedPeriods} из ${series.kind.periods}. Прогресс обнулится.$price")
-            .setPositiveButton("Прервать") { _, _ ->
-                Mama.cancelBeforeStart(this)
-                render()
-            }
-            .setNegativeButton("Продолжить серию", null)
-            .show()
+        BrandDialog.show(
+            this,
+            "Прервать серию?",
+            message = "Пройдено ${series.completedPeriods} из ${series.kind.periods}. Прогресс обнулится.\n" +
+                "Restart серии — ${Texts.price(series.kind.restartPriceRub)}, или бесплатная новая серия через " +
+                "${StandardRules.FREE_START_AFTER.toDays()} дней.",
+            confirm = "Прервать",
+            confirmKind = ButtonKind.DANGER,
+            cancel = "Продолжить",
+        ) {
+            Mama.cancelBeforeStart(this)
+            render()
+            true
+        }
     }
 
     private fun renderBroken(column: LinearLayout, series: Series) {
-        column.addView(ui.badge("!", Palette.ALERT, sizeDp = 64).apply {
-            (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL
+        column.addView(kit.emblem("!", Tone.WARNING), kit.wrap().apply {
+            topMargin = dp(28)
+            gravity = Gravity.CENTER_HORIZONTAL
         })
-        column.addView(ui.text("Серия остановлена", 24f, bold = true, center = true), ui.gap(16))
-        column.addView(
-            ui.body(
-                "Вы прошли ${series.completedPeriods} из ${Texts.days(series.kind.periods)}. " +
-                    "Прогресс серии обнулён. Телефон разблокирован.",
-                center = true,
-            ),
-            ui.gap(8),
-        )
-        column.addView(ui.card().apply {
-            addView(ui.small("Restart серии прямо сейчас", center = true), ui.fill())
-            addView(ui.text(Texts.price(series.kind.restartPriceRub), 30f, bold = true, center = true), ui.gap(4))
-            addView(ui.primary("Начать заново") {
+        column.addView(kit.text("Серия остановлена", MamaType.H1, center = true), kit.gap(16))
+        column.addView(kit.body(
+            "Пройдено ${series.completedPeriods} из ${Texts.days(series.kind.periods)}. " +
+                "Прогресс серии обнулён. Телефон разблокирован.",
+            center = true,
+        ), kit.gap(8))
+        column.addView(kit.card(22).apply {
+            addView(kit.text("Restart серии прямо сейчас", MamaType.OVERLINE, MamaColors.TextSecondary, center = true), kit.fill())
+            addView(kit.text(Texts.price(series.kind.restartPriceRub), MamaType.DIGITS, center = true), kit.gap(8))
+            addView(kit.brandButton("Начать заново") {
                 Checkout.obtain(this@MainActivity, Product.Restart(series.kind), "Restart серии") { source ->
                     if (!Mama.restartSeries(this@MainActivity, source)) {
                         alert("Не получилось", "Restart сейчас недоступен.")
                     }
                     render()
                 }
-            }, ui.gap(12))
-        }, ui.gap(24))
+            }, kit.gap(16))
+        }, kit.gap(24))
         val days = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this))
         if (days > 0) {
-            column.addView(
-                ui.small("Без Restart бесплатная новая серия будет доступна через ${Texts.days(days.toInt())}.", center = true),
-                ui.gap(12),
-            )
+            column.addView(kit.infoBlock(
+                "Без Restart бесплатная новая серия будет доступна через ${Texts.days(days.toInt())}. Телефон при этом не заблокирован.",
+            ), kit.gap(12))
         }
-        column.addView(ui.secondary("Вернуться без серии") {
+        column.addView(kit.brandButton("Вернуться без серии", ButtonKind.SECONDARY) {
             Mama.dismissSeries(this)
             render()
-        }, ui.gap(16))
+        }, kit.gap(16))
     }
 
     private fun renderSuccess(column: LinearLayout, series: Series) {
-        column.addView(ui.badge("✓", Palette.FOREST, sizeDp = 64).apply {
-            (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL
+        column.addView(kit.emblem("✓", Tone.SUCCESS), kit.wrap().apply {
+            topMargin = dp(28)
+            gravity = Gravity.CENTER_HORIZONTAL
         })
-        column.addView(ui.text("Серия пройдена!", 26f, bold = true, center = true), ui.gap(16))
-        column.addView(
-            ui.body(
-                "${series.completedPeriods} из ${series.kind.periods}: решение выдержано до конца.",
-                center = true,
-            ),
-            ui.gap(8),
-        )
-        column.addView(ui.primary("Новая серия") {
+        column.addView(kit.text("Серия пройдена!", MamaType.H1, center = true), kit.gap(16))
+        column.addView(kit.body(
+            "${series.completedPeriods} из ${series.kind.periods}: решение выдержано до конца.",
+            center = true,
+        ), kit.gap(8))
+        column.addView(kit.brandButton("Новая серия") {
             Mama.dismissSeries(this)
             render()
-        }, ui.gap(28))
+        }, kit.gap(28))
     }
 
     // --- FLEX ---
 
     private fun renderFlex(column: LinearLayout, flex: FlexPackage, state: LockState) {
         val now = Mama.trustedNow(this)
-        column.addView(ui.text("MAMA FLEX", 24f, bold = true, center = true), ui.fill())
+        column.addView(kit.text("MAMA FLEX", MamaType.H1, center = true), kit.gap(28))
         column.addView(
-            ui.text("${flex.successful} из ${FlexPackage.PERIODS} выполнено", 17f, Palette.MUTED, center = true),
-            ui.gap(4),
+            kit.text("${flex.successful} из ${FlexPackage.PERIODS} выполнено", MamaType.TITLE, MamaColors.TextSecondary, center = true),
+            kit.gap(6),
         )
-        val dots = ui.row().apply { gravity = Gravity.CENTER }
-        repeat(FlexPackage.PERIODS) { i ->
-            val color = when {
-                i < flex.successful -> Palette.FOREST
-                i < flex.successful + flex.failed -> Palette.ALERT
-                else -> Palette.LINE
-            }
-            dots.addView(
-                ui.badge("", color, sizeDp = 16),
-                LinearLayout.LayoutParams(dp(16), dp(16)).apply { setMargins(dp(5), 0, dp(5), 0) },
-            )
-        }
-        column.addView(dots, ui.gap(14))
-        column.addView(
-            ui.body(
-                if (flex.rewardStillPossible) {
-                    "Пройди 7 из 7 — следующий FLEX бесплатно"
-                } else {
-                    "Следующий бесплатный FLEX доступен только при результате 7 из 7."
-                },
-                center = true,
-            ),
-            ui.gap(10),
-        )
+        column.addView(kit.dots(FlexPackage.PERIODS, flex.successful, flex.failed), kit.gap(14))
+        column.addView(kit.body(
+            if (flex.rewardStillPossible) {
+                "Пройди 7 из 7 — следующий FLEX бесплатно"
+            } else {
+                "Следующий бесплатный FLEX доступен только при результате 7 из 7."
+            },
+            center = true,
+        ), kit.gap(10))
         flex.lastBurntAt?.takeIf { Duration.between(it, now) < Duration.ofHours(18) }?.let {
-            column.addView(ui.card().apply {
-                addView(ui.text("Сегодняшний FLEX-день завершён досрочно.", 15f, bold = true))
-                addView(ui.small("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}. Остальные дни FLEX остаются доступны."))
-            }, ui.gap(12))
+            column.addView(kit.infoBlock(
+                "Успешно: ${flex.successful} из ${FlexPackage.PERIODS}. Остальные дни FLEX остаются доступны.",
+                Tone.WARNING,
+                "Сегодняшний FLEX-день завершён досрочно.",
+            ), kit.gap(12))
         }
 
-        val stats = ui.row()
+        val stats = kit.row()
         val daysLeft = maxOf(0L, Duration.between(now, flex.expiresAt).toDays())
         listOf(
-            "Осталось дней FLEX" to "${flex.remaining}",
+            "Осталось" to "${flex.remaining}",
             "Успешно" to "${flex.successful}",
-            "Действует ещё" to Texts.days(daysLeft.toInt()),
+            "Действует" to Texts.days(daysLeft.toInt()),
         ).forEachIndexed { i, (k, v) ->
-            stats.addView(ui.card(paddingDp = 12).apply {
-                addView(ui.small(k))
-                addView(ui.text(v, 17f, bold = true))
-            }, ui.weight().apply { if (i > 0) leftMargin = dp(8) })
+            stats.addView(kit.stat(k, v), kit.weight().apply { if (i > 0) leftMargin = dp(8) })
         }
-        column.addView(stats, ui.gap(14))
+        column.addView(stats, kit.gap(16))
         column.addView(
-            ui.small("Пакет действует до ${Texts.dayTime(flex.expiresAt, zone)}. Неиспользованные дни сгорают после этого срока."),
-            ui.gap(8),
+            kit.caption("Пакет действует до ${Texts.dayTime(flex.expiresAt, zone)}. Неиспользованные дни сгорают после этого срока."),
+            kit.gap(8),
         )
 
         if (flex.currentSessionId != null && state != LockState.Free) {
-            val caption = ui.small("", center = true)
-            val big = ui.text("", 32f, bold = true, center = true)
-            column.addView(ui.card().apply {
-                addView(caption, ui.fill())
-                addView(big, ui.gap(4))
-            }, ui.gap(16))
-            val tick = object : Runnable {
-                override fun run() {
-                    val t = Mama.trustedNow(this@MainActivity)
-                    when (val st = Mama.state(this@MainActivity)) {
-                        is LockState.Waiting -> {
-                            caption.text = "FLEX-период начнётся в ${Texts.time(st.startsAt, zone)} через"
-                            big.text = Texts.countdown(Duration.between(t, st.startsAt))
-                        }
-                        is LockState.Locked -> {
-                            caption.text = "FLEX-период идёт, осталось"
-                            big.text = Texts.countdown(Duration.between(t, st.endsAt))
-                        }
-                        is LockState.EmergencyPass -> {
-                            caption.text = "Экстренный доступ, блокировка вернётся через"
-                            big.text = Texts.countdown(Duration.between(t, st.until))
-                        }
-                        LockState.Free -> {
-                            caption.text = ""
-                            big.text = "—"
-                        }
-                    }
-                    tickHandler.postDelayed(this, 1_000)
-                }
-            }
-            ticker = tick
-            tick.run()
+            countdownCard(column, zone, "FLEX-период начнётся")
             if (state is LockState.Waiting) {
-                column.addView(
-                    ui.small("Отмена до начала не тратит FLEX-день.", center = true),
-                    ui.gap(8),
-                )
-                column.addView(ui.secondary("Отменить этот FLEX-период") {
+                column.addView(kit.caption("Отмена до начала не тратит FLEX-день.", center = true), kit.gap(12))
+                column.addView(kit.brandButton("Отменить этот FLEX-период", ButtonKind.SECONDARY) {
                     Mama.cancelBeforeStart(this)
                     render()
-                }, ui.gap(8))
+                }, kit.gap(8))
             }
         } else {
-            renderFlexPlanner(column)
+            renderFlexPlanner(column, flex)
         }
     }
 
-    // --- FLEX period planner: absolute local date + time, never in the past ---
+    // --- FLEX period planner: explicit date + 24-hour time, never in the past ---
 
     private var flexStartNow = true
     private var flexStart: LocalDateTime? = null
@@ -699,72 +831,83 @@ class MainActivity : Activity() {
     private fun nowLocal(): LocalDateTime =
         LocalDateTime.ofInstant(Mama.trustedNow(this), zone).truncatedTo(ChronoUnit.MINUTES)
 
-    private fun renderFlexPlanner(column: LinearLayout) {
+    /** Suggested end until the user picks one; a picked end is kept exactly as chosen. */
+    private fun defaultFlexEnd(start: LocalDateTime): LocalDateTime = if (flexStartNow) {
+        // 3 h after the real moment, rounded up to the minute (17:12:37 → 20:13).
+        LocalDateTime.ofInstant(FlexPackage.defaultEndForStartNow(Mama.trustedNow(this)), zone)
+    } else {
+        start.plus(FlexPackage.MIN_DURATION)
+    }
+
+    private fun renderFlexPlanner(column: LinearLayout, flex: FlexPackage) {
         val now = nowLocal()
-        val start = if (flexStartNow) now else (flexStart ?: now.plusHours(1))
-        // Until the user picks an end, suggest the shortest valid one. For "start now" it is
-        // 3 h after the real moment rounded up to the minute (17:12:37 → 20:13). Once picked,
-        // the end is kept exactly as chosen: never moved, never shifted to another day.
-        val end = flexEnd ?: if (flexStartNow) {
-            LocalDateTime.ofInstant(FlexPackage.defaultEndForStartNow(Mama.trustedNow(this)), zone)
-        } else {
-            start.plus(FlexPackage.MIN_DURATION)
-        }
-        if (!flexStartNow && flexStart == null) flexStart = start
-
-        column.addView(section("Новый FLEX-период"))
-        val modes = ui.row()
-        modes.addView(
-            (if (flexStartNow) ui.primary("Начать сейчас") {} else ui.secondary("Начать сейчас") {
-                flexStartNow = true
-                render()
-            }),
-            ui.weight().apply { rightMargin = dp(6) },
-        )
-        modes.addView(
-            (if (!flexStartNow) ui.primary("Запланировать") {} else ui.secondary("Запланировать") {
-                flexStartNow = false
-                render()
-            }),
-            ui.weight().apply { leftMargin = dp(6) },
-        )
-        column.addView(modes, ui.gap(4))
-
         val today = now.toLocalDate()
-        if (flexStartNow) {
-            column.addView(label("Начало: сейчас · ${Texts.relativeDayTime(now, today)}", 15f))
-        } else {
-            column.addView(button("Начало: ${Texts.relativeDayTime(start, today)}") {
-                pickDateTime(start) { flexStart = it; render() }
-            })
-        }
-        column.addView(button("Окончание: ${Texts.relativeDayTime(end, today)}") {
-            pickDateTime(end) { flexEnd = it; render() }
-        })
-        val length = Duration.between(start, end)
-        if (!length.isNegative && !length.isZero) {
-            column.addView(label("Продолжительность: ${Texts.flexDuration(length)} · ${zone.id}", 13f, MUTED))
-        }
+        val start = if (flexStartNow) now else (flexStart ?: now.plusHours(1))
+        val end = flexEnd ?: defaultFlexEnd(start)
+        if (!flexStartNow && flexStart == null) flexStart = start
+        val lastStartDay = maxOf(today, LocalDateTime.ofInstant(flex.expiresAt, zone).toLocalDate())
 
-        column.addView(ui.primary("Включить FLEX-период") { submitFlexPeriod() }, ui.gap(16))
-        column.addView(
-            ui.small(
-                "FLEX-день расходуется в момент начала блокировки. От 3 до 24 часов, можно через полночь. " +
-                    "Доверенный контакт: ${contactName.text}.",
-                center = true,
-            ),
-            ui.gap(8),
-        )
+        column.addView(kit.sectionTitle("Новый FLEX-период", "От 3 до 24 часов. Можно через полночь."))
+        column.addView(kit.segmented(listOf("Начать сейчас", "Запланировать"), if (flexStartNow) 0 else 1) { i ->
+            flexStartNow = i == 0
+            render()
+        }, kit.fill())
+
+        column.addView(kit.text("Начало", MamaType.TITLE), kit.gap(20))
+        val startRow = kit.row()
+        startRow.addView(kit.timeCard(
+            "Дата начала", Texts.date(start.toLocalDate()), Texts.dayName(start.toLocalDate(), today),
+            enabled = !flexStartNow, digits = false,
+        ) {
+            DateList.show(this, "Дата начала", start.toLocalDate(), today, lastStartDay) { d ->
+                flexStart = LocalDateTime.of(d, start.toLocalTime())
+                render()
+            }
+        }, kit.weight().apply { rightMargin = dp(6) })
+        startRow.addView(kit.timeCard(
+            "Время начала", Texts.hhmm(start.toLocalTime()), if (flexStartNow) "сейчас" else null,
+            enabled = !flexStartNow,
+        ) {
+            DigitalTimePicker.show(this, "Время начала", start.toLocalTime()) { t ->
+                flexStart = LocalDateTime.of(start.toLocalDate(), t)
+                render()
+            }
+        }, kit.weight().apply { leftMargin = dp(6) })
+        column.addView(startRow, kit.gap(8))
+
+        column.addView(kit.text("Окончание", MamaType.TITLE), kit.gap(16))
+        val endRow = kit.row()
+        endRow.addView(kit.timeCard(
+            "Дата окончания", Texts.date(end.toLocalDate()), Texts.dayName(end.toLocalDate(), today), digits = false,
+        ) {
+            DateList.show(this, "Дата окончания", end.toLocalDate(), today, lastStartDay.plusDays(1)) { d ->
+                flexEnd = LocalDateTime.of(d, end.toLocalTime())
+                render()
+            }
+        }, kit.weight().apply { rightMargin = dp(6) })
+        endRow.addView(kit.timeCard("Время окончания", Texts.hhmm(end.toLocalTime())) {
+            DigitalTimePicker.show(this, "Время окончания", end.toLocalTime()) { t ->
+                flexEnd = LocalDateTime.of(end.toLocalDate(), t)
+                render()
+            }
+        }, kit.weight().apply { leftMargin = dp(6) })
+        column.addView(endRow, kit.gap(8))
+
+        val length = Duration.between(start, end)
+        val lengthText = if (!length.isNegative && !length.isZero) Texts.flexDuration(length) else "—"
+        column.addView(kit.infoBlock("Часовой пояс: ${zone.id}", Tone.BRAND, "Продолжительность: $lengthText"), kit.gap(12))
+
+        column.addView(kit.brandButton("Включить FLEX-период") { submitFlexPeriod() }, kit.gap(20))
+        column.addView(kit.caption(
+            "FLEX-день расходуется в момент начала блокировки. Доверенный контакт: ${contactName.text}.",
+            center = true,
+        ), kit.gap(10))
     }
 
     private fun submitFlexPeriod() {
         val contact = readyContact() ?: return
         val start = if (flexStartNow) null else flexStart
-        val end = flexEnd ?: if (flexStartNow) {
-            LocalDateTime.ofInstant(FlexPackage.defaultEndForStartNow(Mama.trustedNow(this)), zone)
-        } else {
-            (start ?: return).plus(FlexPackage.MIN_DURATION)
-        }
+        val end = flexEnd ?: defaultFlexEnd(start ?: nowLocal())
         val result = Mama.startFlexPeriod(
             this,
             start?.atZone(zone)?.toInstant(),
@@ -782,70 +925,40 @@ class MainActivity : Activity() {
         render()
     }
 
-    /** Date, then time. Nothing is inferred: the chosen date and time are used as is. */
-    private fun pickDateTime(initial: LocalDateTime, set: (LocalDateTime) -> Unit) {
-        DatePickerDialog(this, { _, y, m, d ->
-            TimePickerDialog(this, { _, h, min ->
-                set(LocalDateTime.of(y, m + 1, d, h, min))
-            }, initial.hour, initial.minute, true).show()
-        }, initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
-    }
-
     private fun renderFlexResult(column: LinearLayout, flex: FlexPackage) {
         val perfect = flex.earnedReward
-        column.addView(ui.badge(if (perfect) "✓" else "•", if (perfect) Palette.FOREST else Palette.MOSS, sizeDp = 64).apply {
-            (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL
+        column.addView(kit.emblem(if (perfect) "✓" else "•", if (perfect) Tone.SUCCESS else Tone.BRAND), kit.wrap().apply {
+            topMargin = dp(28)
+            gravity = Gravity.CENTER_HORIZONTAL
         })
-        column.addView(ui.text("FLEX завершён", 24f, bold = true, center = true), ui.gap(16))
-        column.addView(
-            ui.body("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}.", center = true),
-            ui.gap(8),
-        )
+        column.addView(kit.text("FLEX завершён", MamaType.H1, center = true), kit.gap(16))
+        column.addView(kit.body("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}.", center = true), kit.gap(8))
         val credits = Mama.entitlements(this).freeFlexCredits
         if (credits > 0) {
-            column.addView(ui.body("Следующий FLEX — бесплатно.", center = true), ui.gap(8))
-            column.addView(ui.primary("Активировать бесплатный FLEX") {
+            column.addView(kit.body("Следующий FLEX — бесплатно.", center = true), kit.gap(8))
+            column.addView(kit.brandButton("Активировать бесплатный FLEX") {
                 Mama.dismissFlex(this)
                 activateFlex(GrantSource.REWARD)
-            }, ui.gap(20))
+            }, kit.gap(20))
         } else {
             column.addView(
-                ui.small("Следующий бесплатный FLEX доступен только при результате 7 из 7.", center = true),
-                ui.gap(8),
+                kit.caption("Следующий бесплатный FLEX доступен только при результате 7 из 7.", center = true),
+                kit.gap(8),
             )
-            column.addView(ui.secondary("Новый FLEX — ${Texts.price(FlexPackage.PRICE_RUB)}") {
+            column.addView(kit.brandButton("Новый FLEX — ${Texts.price(FlexPackage.PRICE_RUB)}") {
                 Checkout.obtain(this@MainActivity, Product.FlexPackage, "MAMA FLEX") { source ->
                     Mama.dismissFlex(this@MainActivity)
                     activateFlex(source)
                 }
-            }, ui.gap(20))
+            }, kit.gap(20))
         }
-        column.addView(ui.secondary("На главную") {
+        column.addView(kit.brandButton("На главную", ButtonKind.SECONDARY) {
             Mama.dismissFlex(this)
             render()
-        }, ui.gap(12))
+        }, kit.gap(12))
     }
 
-    private fun pickMode() {
-        val modes = SessionMode.entries
-        AlertDialog.Builder(this)
-            .setTitle("Режим")
-            .setSingleChoiceItems(modes.map { Texts.mode(it) }.toTypedArray(), modes.indexOf(mode)) { d, i ->
-                mode = modes[i]
-                saveForm()
-                d.dismiss()
-                render()
-            }
-            .show()
-    }
-
-    private fun pickTime(initial: LocalTime, set: (LocalTime) -> Unit) {
-        TimePickerDialog(this, { _, h, m ->
-            set(LocalTime.of(h, m))
-            saveForm()
-            render()
-        }, initial.hour, initial.minute, true).show()
-    }
+    // --- pickers ---
 
     private fun pickZone() {
         val now = Instant.now()
@@ -855,14 +968,19 @@ class MainActivity : Activity() {
             .sortedWith(compareBy<ZoneId> { it.rules.getOffset(now).totalSeconds }.thenBy { it.id })
         val system = ZoneId.systemDefault()
         val items = listOf(system) + zones.filter { it != system }
-        AlertDialog.Builder(this)
-            .setTitle("Часовой пояс")
-            .setItems(items.map { Texts.zone(it, now) }.toTypedArray()) { _, i ->
-                zone = items[i]
-                saveForm()
-                render()
-            }
-            .show()
+        BrandDialog.list(
+            this,
+            "Часовой пояс",
+            items.map { z ->
+                val offset = z.rules.getOffset(now).id.let { if (it == "Z") "+00:00" else it }
+                z.id to "UTC$offset"
+            },
+            items.indexOf(zone),
+        ) { i ->
+            zone = items[i]
+            saveForm()
+            render()
+        }
     }
 
     private fun pickContact() {
@@ -890,69 +1008,16 @@ class MainActivity : Activity() {
         }
     }
 
-    // --- small view helpers ---
+    // --- helpers ---
 
     private fun alert(title: String, message: String) {
-        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("Понятно", null).show()
+        BrandDialog.show(this, title, message)
     }
 
-    private fun section(text: String) = label(text, 13f, ACCENT, bold = true).apply {
-        setPadding(0, dp(20), 0, dp(6))
-        isAllCaps = true
-    }
-
-    private fun label(text: String, sizeSp: Float, color: Int = FG, bold: Boolean = false) = TextView(this).apply {
-        this.text = text
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        setTextColor(color)
-        if (bold) setTypeface(typeface, Typeface.BOLD)
-        setPadding(0, dp(4), 0, dp(4))
-    }
-
-    private fun input(hint: String, type: Int) = EditText(this).apply {
-        this.hint = hint
-        inputType = type
-        setSingleLine()
-    }
-
-    private fun button(
-        text: String,
-        primary: Boolean = false,
-        enabled: Boolean = true,
-        onClick: () -> Unit,
-    ) = Button(this).apply {
-        this.text = text
-        isAllCaps = false
-        isEnabled = enabled
-        gravity = Gravity.CENTER_VERTICAL or Gravity.START
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-        setTextColor(if (primary) Color.WHITE else FG)
-        background = GradientDrawable().apply {
-            setColor(if (primary) PRIMARY else SURFACE)
-            cornerRadius = dp(12).toFloat()
-        }
-        if (primary) gravity = Gravity.CENTER
-        setOnClickListener { onClick() }
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { setMargins(dp(2), dp(4), dp(2), dp(4)) }
-        setPadding(dp(16), dp(12), dp(16), dp(12))
-    }
-
-    private fun weighted() = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        .apply { setMargins(dp(2), dp(4), dp(2), dp(4)) }
-
-    private fun space(h: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, dp(h)) }
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun dp(v: Int) = kit.dp(v)
 
     private companion object {
         const val PICK_CONTACT = 10
         const val SETUP_ALL = 20
-        val FG = Color.rgb(0x1A, 0x1D, 0x22)
-        val MUTED = Color.rgb(0x6B, 0x72, 0x7C)
-        val ACCENT = Color.rgb(0x2B, 0x5C, 0xB8)
-        val PRIMARY = Color.rgb(0x2B, 0x5C, 0xB8)
-        val SURFACE = Color.rgb(0xEE, 0xF1, 0xF5)
     }
 }
