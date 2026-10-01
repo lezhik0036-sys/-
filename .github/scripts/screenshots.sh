@@ -12,7 +12,8 @@ for name in welcome permissions series time time_test contact promise review das
   echo "shot $i $name $(stat -c %s "shots/$(printf '%02d' $i)-$name.png") bytes"
 done
 adb shell am force-stop app.mama
-crash=$(adb logcat -d -b crash)
+# Only MAMA's own crashes count (system apps on emulator images crash too).
+crash=$(adb logcat -d -b crash | grep -E -A 40 "Process: app\.mama|>>> app\.mama <<<" || true)
 if [ -n "$crash" ]; then
   echo "::error::MAMA crashed during the screenshot tour"
   echo "$crash"

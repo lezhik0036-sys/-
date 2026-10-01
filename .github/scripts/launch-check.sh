@@ -7,7 +7,8 @@ adb install -r "$APK"
 adb logcat -c
 adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n app.mama/.ui.MainActivity
 sleep 10
-crash=$(adb logcat -d -b crash)
+# Only MAMA's own crashes count (system apps on emulator images crash too).
+crash=$(adb logcat -d -b crash | grep -E -A 40 "Process: app\.mama|>>> app\.mama <<<" || true)
 pid=$(adb shell pidof app.mama | tr -d '\r')
 focus=$(adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | tr -d '\r')
 echo "pid: ${pid:-none}"
