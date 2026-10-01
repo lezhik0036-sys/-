@@ -111,7 +111,7 @@ internal fun MainActivity.seriesDashboard(series: Series, state: () -> LockState
         Triple(Icon.MOON, "Окончание", Texts.hhmm(series.window.end)),
         Triple(Icon.REFRESH, "Серия", Texts.seriesName(series.kind)),
     )
-    b.addView(k.contactCard(series.contact.name, series.contact.phone, "Доверенный контакт", null), k.gap(12))
+    b.addView(k.contactCard(series.contact.name, Texts.phone(series.contact.phone), "Доверенный контакт", null), k.gap(12))
     if (st is LockState.Waiting) {
         b.addView(k.textButton("Прервать серию до начала") { confirmBreak(series) }, k.gap(10))
     }
@@ -150,7 +150,7 @@ internal fun MainActivity.sessionDashboard(session: Session, state: () -> LockSt
         Triple(Icon.MOON, "Окончание", Texts.time(session.plan.end, z)),
         Triple(Icon.FLASK, "Режим", if (isTest) "Тест" else "—"),
     )
-    b.addView(k.contactCard(session.contact.name, session.contact.phone, "Доверенный контакт", null), k.gap(12))
+    b.addView(k.contactCard(session.contact.name, Texts.phone(session.contact.phone), "Доверенный контакт", null), k.gap(12))
     if (state() is LockState.Waiting) {
         b.addView(k.textButton("Отменить до начала") { Mama.cancelBeforeStart(this); render() }, k.gap(10))
     }

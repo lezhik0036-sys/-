@@ -34,7 +34,7 @@ object Previews {
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
-    private val contact = TrustedContact("Жена", "+7 985 632-20-62")
+    private val contact = TrustedContact("Жена", "+79856322062")
 
     private fun series(done: Int, status: SeriesStatus = SeriesStatus.ACTIVE) = Series(
         id = "preview", kind = SeriesKind.SEVEN,
@@ -45,7 +45,7 @@ object Previews {
 
     fun render(a: MainActivity, name: String): Pair<View, Boolean> {
         a.contactName.setText(contact.name)
-        a.contactPhone.setText(contact.phone)
+        a.contactPhone.setText(Texts.phone(contact.phone))
         a.promiseField.setText("Хочу нормально высыпаться и чувствовать себя лучше утром.")
         a.zone = zone
         a.start = LocalTime.of(23, 0)

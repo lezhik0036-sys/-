@@ -227,7 +227,7 @@ internal fun MainActivity.contactScreen(): Pair<View, Boolean> {
     val name = contactName.text.toString().trim()
     val phone = contactPhone.text.toString().trim()
     if (name.isNotEmpty() && phone.isNotEmpty() && !manualContact) {
-        b.addView(kit.contactCard(name, phone, null) { pickContact() }, kit.gap(22))
+        b.addView(kit.contactCard(name, Texts.phone(phone), null) { pickContact() }, kit.gap(22))
     } else if (!manualContact) {
         b.addView(kit.contactCard("Контакт не выбран", "Нажмите, чтобы выбрать из контактов", null) { pickContact() }, kit.gap(22))
     }
@@ -301,7 +301,7 @@ internal fun MainActivity.promiseScreen(): Pair<View, Boolean> {
 internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
     val b = body()
     val contactLine = contactName.text.toString().trim()
-    val phoneLine = contactPhone.text.toString().trim()
+    val phoneLine = Texts.phone(contactPhone.text.toString().trim())
     val reason = promiseField.text.toString().trim().ifEmpty { Promise.get(this) }
     val card = kit.card(18).apply { setPadding(kit.dp(18), kit.dp(6), kit.dp(18), kit.dp(6)) }
     fun line(icon: Icon, label: String, value: String, note: String? = null) {

@@ -167,6 +167,14 @@ object Texts {
         return Triple("%02d".format(s / 3600), "%02d".format((s % 3600) / 60), "%02d".format(s % 60))
     }
 
+    /** "+79856322062" → "+7 985 632-20-62" for display; other numbers as stored. */
+    fun phone(raw: String): String {
+        val n = app.mama.core.TrustedContact.normalizePhone(raw) ?: return raw
+        if (!n.startsWith("+7") || n.length != 12) return n
+        val d = n.substring(2)
+        return "+7 ${d.substring(0, 3)} ${d.substring(3, 6)}-${d.substring(6, 8)}-${d.substring(8, 10)}"
+    }
+
     /** "1 из 7"-style day count: "День 3 из 7". */
     fun dayOf(day: Int, total: Int) = "День $day из $total"
 

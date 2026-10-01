@@ -117,7 +117,7 @@ class LockOverlay(private val service: LockService) : LockActions {
                 end = s.plan.end,
                 zone = s.plan.zone,
                 contactName = s.contact.name,
-                contactPhone = s.contact.phone,
+                contactPhone = Texts.phone(s.contact.phone),
                 dayLabel = dayLabel(s),
                 phrase = Texts.lockPhrase(s.id, Duration.between(s.plan.start, now).toMinutes()),
                 promise = Promise.get(service),

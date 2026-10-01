@@ -94,3 +94,21 @@ class StartupTest {
         launchAndCheck()
     }
 }
+
+/** Every screen of the screenshot tour renders (debug preview mode, sample data). */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class PreviewScreensTest {
+    @Test
+    fun `every preview screen renders without crashing`() {
+        for (name in Previews.names) {
+            val intent = android.content.Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_PREVIEW, name)
+            val controller = Robolectric.buildActivity(MainActivity::class.java, intent).setup()
+            val activity = controller.get()
+            assertFalse("preview $name finished", activity.isFinishing)
+            assertTrue("preview $name rendered nothing", activity.findViewById<ViewGroup>(android.R.id.content)!!.childCount > 0)
+            controller.pause().stop().destroy()
+        }
+    }
+}
