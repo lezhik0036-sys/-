@@ -15,7 +15,10 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.os.Handler
+import android.os.Looper
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -24,9 +27,15 @@ import android.widget.Toast
 import app.mama.core.DailyWindow
 import app.mama.core.LockPlan
 import app.mama.core.LockState
+import app.mama.core.Series
+import app.mama.core.SeriesKind
+import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
 import app.mama.core.SessionStatus
 import app.mama.core.TrustedContact
+import app.mama.billing.Billing
+import app.mama.billing.Product
+import app.mama.billing.PurchaseResult
 import app.mama.platform.Mama
 import java.time.Duration
 import java.time.Instant
@@ -43,6 +52,7 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("mama_setup", Context.MODE_PRIVATE) }
 
     private var mode = SessionMode.SLEEP
+    private var seriesKind = SeriesKind.SEVEN
     private var start = LocalTime.of(23, 0)
     private var end = LocalTime.of(7, 0)
     private var zone: ZoneId = ZoneId.systemDefault()
@@ -52,6 +62,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mode = runCatching { SessionMode.valueOf(prefs.getString("mode", null)!!) }.getOrDefault(SessionMode.SLEEP)
+        seriesKind = runCatching { SeriesKind.valueOf(prefs.getString("series", null)!!) }
+            .getOrDefault(SeriesKind.SEVEN).takeIf { it.packagePriceRub == null } ?: SeriesKind.SEVEN
         start = runCatching { LocalTime.parse(prefs.getString("start", null)) }.getOrDefault(start)
         end = runCatching { LocalTime.parse(prefs.getString("end", null)) }.getOrDefault(end)
         zone = runCatching { ZoneId.of(prefs.getString("zone", null)) }.getOrDefault(zone)
@@ -135,6 +147,7 @@ class MainActivity : Activity() {
     private fun saveForm() {
         prefs.edit()
             .putString("mode", mode.name)
+            .putString("series", seriesKind.name)
             .putString("start", start.toString())
             .putString("end", end.toString())
             .putString("zone", zone.id)
@@ -155,11 +168,19 @@ class MainActivity : Activity() {
         column.addView(label("MAMA  ${Texts.version(this)}", 30f, bold = true))
         column.addView(label("Добровольная блокировка телефона на выбранное время", 15f, MUTED))
         column.addView(space(16))
-        when (state) {
-            LockState.Free -> renderForm(column)
+        stopTicker()
+        val series = Mama.series(this)
+        when {
+            series != null && series.status == SeriesStatus.BROKEN -> renderBroken(column, series)
+            series != null && series.status == SeriesStatus.COMPLETED -> renderSuccess(column, series)
+            series != null -> renderSeries(column, series, state)
+            state == LockState.Free -> renderForm(column)
             else -> renderSession(column, state)
         }
-        setContentView(ScrollView(this).apply { addView(column) })
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(Palette.PAPER)
+            addView(column)
+        })
     }
 
     // --- session in progress ---
@@ -199,6 +220,10 @@ class MainActivity : Activity() {
             column.addView(space(12))
         }
 
+        column.addView(section("Серия"))
+        column.addView(label("Сколько дней подряд ты готов не менять своё решение?", 14f, MUTED))
+        SeriesKind.entries.forEach { kind -> column.addView(seriesOption(kind), ui.gap(8)) }
+
         column.addView(section("Режим"))
         column.addView(button(Texts.mode(mode)) { pickMode() })
 
@@ -229,7 +254,43 @@ class MainActivity : Activity() {
         }
 
         column.addView(space(20))
-        column.addView(button("Запустить MAMA", primary = true) { confirmStart() })
+        column.addView(ui.primary("Начать серию: ${Texts.seriesName(seriesKind)}") { confirmStart() }, ui.fill())
+    }
+
+    private val ui by lazy { Ui(this) }
+
+    /** One selectable series card. FLEX is shown but not sold yet. */
+    private fun seriesOption(kind: SeriesKind): View {
+        val flex = kind.packagePriceRub != null
+        val selected = !flex && kind == seriesKind
+        val fg = if (selected) Color.WHITE else Palette.INK
+        val sub = if (selected) Palette.CHIP else Palette.MUTED
+        return ui.card(selected).apply {
+            val line = ui.row()
+            line.addView(ui.text(Texts.seriesName(kind), 20f, fg, bold = true), ui.weight())
+            if (selected) line.addView(ui.text("✓", 18f, Color.WHITE, bold = true))
+            if (flex) line.addView(ui.text(Texts.price(kind.packagePriceRub!!), 15f, Palette.INK, bold = true))
+            addView(line)
+            addView(
+                ui.text(
+                    if (flex) {
+                        "${kind.periods} периодов в любые дни за ${kind.withinDays} дней · пакет, без подписки · скоро"
+                    } else {
+                        "Restart при срыве — ${Texts.price(kind.restartPriceRub!!)}"
+                    },
+                    13f, sub,
+                ),
+            )
+            if (flex) {
+                alpha = 0.55f
+            } else {
+                setOnClickListener {
+                    seriesKind = kind
+                    saveForm()
+                    render()
+                }
+            }
+        }
     }
 
     private fun plan(): LockPlan =
@@ -269,24 +330,206 @@ class MainActivity : Activity() {
             return
         }
         val contact = TrustedContact(name, phone)
-        val p = plan()
-        AlertDialog.Builder(this)
-            .setTitle("Запустить блокировку?")
-            .setMessage(
-                "${preview()}\n\nПосле начала отменить блокировку сможете только с кодом, " +
-                    "который придёт $name ($phone). Перезагрузка её не снимет.",
-            )
-            .setPositiveButton("Запустить") { _, _ -> doStart(p, contact) }
+        val kind = seriesKind
+        val restart = Texts.price(kind.restartPriceRub!!)
+        val message = "Серия: ${Texts.seriesName(kind)}\n" +
+            "Каждый день: $start → $end (${zone.id})\n" +
+            "Доверенный контакт: $name, $phone\n\n" +
+            "Если серия будет прервана:\nпрогресс обнулится.\nRestart серии — $restart.\n\n" +
+            "Выйти по коду доверенного контакта можно всегда, это бесплатно. " +
+            "Если серия завершена успешно — платить не нужно."
+        val agree = CheckBox(this).apply {
+            text = "Я понимаю условия и принимаю ответственность за своё решение"
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(agree)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Проверь условия")
+            .setMessage(message)
+            .setView(box)
+            .setPositiveButton("Начать серию") { _, _ ->
+                if (!Mama.startSeries(this, kind, DailyWindow(start, end, zone), contact, mode)) {
+                    alert("Не получилось", "Серию сейчас начать нельзя. Проверьте, что нет активной блокировки.")
+                }
+                render()
+            }
             .setNegativeButton("Назад", null)
+            .show()
+        val positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        positive.isEnabled = false
+        agree.setOnCheckedChangeListener { _, checked -> positive.isEnabled = checked }
+    }
+
+    // --- series screens ---
+
+    private val tickHandler = Handler(Looper.getMainLooper())
+    private var ticker: Runnable? = null
+
+    private fun stopTicker() {
+        ticker?.let(tickHandler::removeCallbacks)
+        ticker = null
+    }
+
+    override fun onStop() {
+        stopTicker()
+        super.onStop()
+    }
+
+    private fun renderSeries(column: LinearLayout, series: Series, state: LockState) {
+        val n = series.kind.periods
+        val day = minOf(series.completedPeriods + 1, n)
+        column.addView(ui.text("Твоя серия активна", 22f, bold = true, center = true), ui.fill())
+        column.addView(ui.text("День $day из $n", 17f, Palette.MUTED, center = true), ui.gap(4))
+        val dots = ui.row().apply { gravity = Gravity.CENTER }
+        repeat(n) { i ->
+            val done = i < series.completedPeriods
+            dots.addView(
+                ui.badge("", if (done) Palette.FOREST else Palette.LINE, sizeDp = 16),
+                LinearLayout.LayoutParams(dp(16), dp(16)).apply { setMargins(dp(5), 0, dp(5), 0) },
+            )
+        }
+        column.addView(dots, ui.gap(14))
+
+        val status = ui.card()
+        val caption = ui.small("", center = true)
+        val big = ui.text("", 34f, bold = true, center = true)
+        status.addView(caption, ui.fill())
+        status.addView(big, ui.gap(4))
+        column.addView(status, ui.gap(18))
+        val z = series.window.zone
+        val tick = object : Runnable {
+            override fun run() {
+                val now = Mama.trustedNow(this@MainActivity)
+                when (val st = Mama.state(this@MainActivity)) {
+                    is LockState.Waiting -> {
+                        caption.text = "MAMA включится в ${Texts.time(st.startsAt, z)} через"
+                        big.text = Texts.countdown(Duration.between(now, st.startsAt))
+                    }
+                    is LockState.Locked -> {
+                        caption.text = "Блокировка идёт, осталось"
+                        big.text = Texts.countdown(Duration.between(now, st.endsAt))
+                    }
+                    is LockState.EmergencyPass -> {
+                        caption.text = "Экстренный доступ, блокировка вернётся через"
+                        big.text = Texts.countdown(Duration.between(now, st.until))
+                    }
+                    LockState.Free -> {
+                        caption.text = "Следующий период планируется…"
+                        big.text = "—"
+                    }
+                }
+                tickHandler.postDelayed(this, 1_000)
+            }
+        }
+        ticker = tick
+        tick.run()
+
+        val info = ui.row()
+        info.addView(ui.card().apply {
+            addView(ui.small("Каждый день"))
+            addView(ui.text("${series.window.start} → ${series.window.end}", 16f, bold = true))
+        }, ui.weight().apply { rightMargin = dp(6) })
+        info.addView(ui.card().apply {
+            addView(ui.small("Серия"))
+            addView(ui.text(Texts.seriesName(series.kind), 16f, bold = true))
+        }, ui.weight().apply { leftMargin = dp(6) })
+        column.addView(info, ui.gap(12))
+
+        column.addView(ui.card().apply {
+            addView(ui.small("Доверенный контакт"))
+            addView(ui.text(series.contact.name, 17f, bold = true))
+            addView(ui.small(series.contact.phone))
+        }, ui.gap(12))
+
+        series.kind.restartPriceRub?.let { price ->
+            column.addView(
+                ui.small("Если серия будет прервана: прогресс обнулится. Restart серии — ${Texts.price(price)}."),
+                ui.gap(16),
+            )
+        }
+
+        if (state is LockState.Waiting) {
+            column.addView(ui.secondary("Прервать серию") { confirmBreak(series) }, ui.gap(20))
+        }
+    }
+
+    private fun confirmBreak(series: Series) {
+        val price = series.kind.restartPriceRub?.let { "\nRestart серии — ${Texts.price(it)}." }.orEmpty()
+        AlertDialog.Builder(this)
+            .setTitle("Прервать серию?")
+            .setMessage("Пройдено ${series.completedPeriods} из ${series.kind.periods}. Прогресс обнулится.$price")
+            .setPositiveButton("Прервать") { _, _ ->
+                Mama.cancelBeforeStart(this)
+                render()
+            }
+            .setNegativeButton("Продолжить серию", null)
             .show()
     }
 
-    private fun doStart(plan: LockPlan, contact: TrustedContact) {
-        when (val r = Mama.start(this, plan, contact)) {
-            is Mama.StartResult.Started -> render()
-            is Mama.StartResult.Rejected -> alert("Не получилось", Texts.createError(r.reason))
-            Mama.StartResult.AlreadyRunning -> render()
+    private fun renderBroken(column: LinearLayout, series: Series) {
+        column.addView(ui.badge("!", Palette.ALERT, sizeDp = 64).apply {
+            (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL
+        })
+        column.addView(ui.text("Серия остановлена", 24f, bold = true, center = true), ui.gap(16))
+        column.addView(
+            ui.body(
+                "Вы прошли ${series.completedPeriods} из ${Texts.days(series.kind.periods)}. " +
+                    "Вы можете начать заново прямо сейчас.",
+                center = true,
+            ),
+            ui.gap(8),
+        )
+        series.kind.restartPriceRub?.let { price ->
+            column.addView(ui.card().apply {
+                addView(ui.small("Restart серии", center = true), ui.fill())
+                addView(ui.text(Texts.price(price), 30f, bold = true, center = true), ui.gap(4))
+                addView(ui.primary("Начать заново") { purchaseRestart(series) }, ui.gap(12))
+            }, ui.gap(24))
         }
+        column.addView(ui.secondary("Вернуться без серии") {
+            Mama.dismissSeries(this)
+            render()
+        }, ui.gap(16))
+    }
+
+    private fun purchaseRestart(series: Series) {
+        Billing.payments.purchase(this, Product.Restart(series.kind)) { result ->
+            when (result) {
+                PurchaseResult.Paid -> {
+                    Mama.restartSeries(this)
+                    render()
+                }
+                PurchaseResult.Cancelled -> Unit
+                is PurchaseResult.Failed -> alert("Оплата не прошла", result.reason)
+                PurchaseResult.Unavailable -> alert(
+                    "Оплата пока недоступна",
+                    "В этой версии оплата Restart ещё не подключена, поэтому Restart недоступен. " +
+                        "Можно вернуться без серии.",
+                )
+            }
+        }
+    }
+
+    private fun renderSuccess(column: LinearLayout, series: Series) {
+        column.addView(ui.badge("✓", Palette.FOREST, sizeDp = 64).apply {
+            (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL
+        })
+        column.addView(ui.text("Серия пройдена!", 26f, bold = true, center = true), ui.gap(16))
+        column.addView(
+            ui.body(
+                "${series.completedPeriods} из ${series.kind.periods}: решение выдержано до конца.",
+                center = true,
+            ),
+            ui.gap(8),
+        )
+        column.addView(ui.primary("Новая серия") {
+            Mama.dismissSeries(this)
+            render()
+        }, ui.gap(28))
     }
 
     private fun pickMode() {

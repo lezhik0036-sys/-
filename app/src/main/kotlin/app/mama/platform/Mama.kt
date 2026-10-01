@@ -14,6 +14,7 @@ import app.mama.core.Recovery
 import app.mama.core.Series
 import app.mama.core.SeriesEngine
 import app.mama.core.SeriesKind
+import app.mama.core.SeriesStatus
 import app.mama.core.Session
 import app.mama.core.SessionMode
 import app.mama.core.Snapshot
@@ -111,6 +112,8 @@ object Mama {
         contact: TrustedContact,
         mode: SessionMode,
     ): Boolean {
+        // TODO(flex): FLEX is a paid package; start it only after a confirmed purchase.
+        if (kind.packagePriceRub != null) return false
         val r = reconcile(context)
         if (r.state != LockState.Free || r.snapshot.series?.active == true) return false
         val u = seriesEngine.start(
@@ -133,12 +136,16 @@ object Mama {
         return true
     }
 
-    /** Starts a broken series again from zero, with the same settings. */
+    /**
+     * Starts a broken series again from zero, with the same settings. Call only
+     * after the Restart purchase was confirmed by the store.
+     */
     @Synchronized
     fun restartSeries(context: Context): Boolean {
         val r = reconcile(context)
         val series = r.snapshot.series ?: return false
-        if (series.active || r.state != LockState.Free) return false
+        if (series.status != SeriesStatus.BROKEN || series.kind.restartPriceRub == null) return false
+        if (r.state != LockState.Free) return false
         val u = seriesEngine.restart(series, UUID.randomUUID().toString(), UUID.randomUUID().toString(), r.trustedNow)
         SessionStore(context.applicationContext).save(r.snapshot.copy(series = u.series, session = u.session))
         sync(context)

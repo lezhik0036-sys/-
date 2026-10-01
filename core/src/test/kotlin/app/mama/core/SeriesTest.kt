@@ -26,8 +26,9 @@ class SeriesTest {
     }
 
     @Test
-    fun `prices for restart`() {
-        assertEquals(listOf(99, 199, 299, 399), SeriesKind.entries.map { it.restartPriceRub })
+    fun `prices`() {
+        assertEquals(listOf(99, 199, 299, null), SeriesKind.entries.map { it.restartPriceRub })
+        assertEquals(listOf(null, null, null, 399), SeriesKind.entries.map { it.packagePriceRub })
         assertEquals(30, SeriesKind.FLEX.withinDays)
     }
 

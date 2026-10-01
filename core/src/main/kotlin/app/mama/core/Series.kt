@@ -4,22 +4,28 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * A series is several lock periods in a row with the same daily window and
- * trusted contact. Finishing it is free; breaking it (exit with the contact's
- * code, or cancelling an upcoming night) stops it, and starting it again
- * costs [restartPriceRub].
+ * A series is several lock periods with the same daily window and trusted
+ * contact. Leaving a lock with the contact's code is always free. Money is
+ * only ever involved in buying something new:
+ * - 3/5/7 days: starting is free; an immediate Restart after the series broke
+ *   costs [restartPriceRub].
+ * - FLEX: a one-off package ([packagePriceRub], no subscription, no
+ *   auto-renewal) of 7 periods on any days within 30 calendar days.
  */
 enum class SeriesKind(
     /** Lock periods needed to complete the series. */
     val periods: Int,
     /** FLEX: the periods may be any days within this many days; null = every day in a row. */
     val withinDays: Int?,
-    val restartPriceRub: Int,
+    /** Price of an immediate Restart after a break; null = no Restart for this kind. */
+    val restartPriceRub: Int?,
+    /** Price of buying the series itself; null = free to start. */
+    val packagePriceRub: Int?,
 ) {
-    THREE(3, null, 99),
-    FIVE(5, null, 199),
-    SEVEN(7, null, 299),
-    FLEX(7, 30, 399),
+    THREE(3, null, restartPriceRub = 99, packagePriceRub = null),
+    FIVE(5, null, restartPriceRub = 199, packagePriceRub = null),
+    SEVEN(7, null, restartPriceRub = 299, packagePriceRub = null),
+    FLEX(7, 30, restartPriceRub = null, packagePriceRub = 399),
     ;
 
     val flexible: Boolean get() = withinDays != null
