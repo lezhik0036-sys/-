@@ -15,12 +15,18 @@ android {
         targetSdk = 35
         versionCode = 13
         versionName = "0.4.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
         }
+    }
+
+    testOptions {
+        // Robolectric startup tests use the real manifest, theme and resources.
+        unitTests.isIncludeAndroidResources = true
     }
 
     compileOptions {
@@ -35,4 +41,12 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
