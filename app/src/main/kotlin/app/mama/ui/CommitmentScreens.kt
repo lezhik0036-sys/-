@@ -85,8 +85,9 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
     if (restart) {
         b.addView(kit.hintRow(
             Icon.LOCK,
-            "После Restart серия будет запланирована. До первой блокировки условия можно изменить. " +
-                "Restart с баланса MAMA засчитывается, только когда серия начнётся: если отменить запуск, он вернётся на баланс.",
+            "После Restart серия будет запланирована с тем же временем и той же длиной. До первой блокировки можно изменить " +
+                "доверенный контакт, личную причину и Цену слова. Restart с баланса MAMA засчитывается, только когда серия начнётся: " +
+                "если отменить запуск, он вернётся на баланс.",
         ), kit.gap(14))
     }
     b.addView(kit.hintRow(
@@ -162,7 +163,7 @@ private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
         return
     }
     val commitment = commitmentKop
-    val note = "До первой блокировки условия можно изменить. Restart с баланса MAMA засчитывается, только когда серия начнётся; " +
+    val note = "Время и длина — как у сорванной серии. Restart с баланса MAMA засчитывается, только когда серия начнётся; " +
         "если отменить запуск до первой блокировки, он вернётся на баланс." +
         (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
     Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0, note = note) { source ->

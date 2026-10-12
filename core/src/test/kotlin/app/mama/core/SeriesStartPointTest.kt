@@ -69,20 +69,32 @@ class SeriesStartPointTest {
     @Test
     fun `2 - changing the trusted contact before the start saves the new contact`() {
         val u = scheduled()
-        val edited = assertIs<SeriesEngine.EditResult.Edited>(
-            series.edit(u.series, u.session, u.series.kind, u.series.window, sister, u.series.mode, "n2", at15),
-        ).update
+        val edited = assertIs<SeriesEngine.EditResult.Edited>(series.edit(u.series, u.session, sister, at15)).update
         assertEquals(sister, edited.series.contact)
         assertEquals(sister, edited.session!!.contact, "the planned lock sends codes to the new contact")
         assertEquals(SeriesStatus.SCHEDULED, edited.series.status)
-        // The same edit can change the series and the time too; the countdown follows the new start.
-        val later = DailyWindow(LocalTime.of(23, 30), LocalTime.of(7, 30), MSK)
-        val again = assertIs<SeriesEngine.EditResult.Edited>(
-            series.edit(edited.series, edited.session, SeriesKind.THREE, later, sister, SessionMode.SLEEP, "n3", at15),
-        ).update
-        assertEquals(SeriesKind.THREE, again.series.kind)
-        assertEquals(t("2026-10-12T20:30:00Z"), again.session!!.plan.start)
-        assertEquals(LockState.Waiting(t("2026-10-12T20:30:00Z"), t("2026-10-13T04:30:00Z")), engine.stateOf(again.session, at15))
+    }
+
+    @Test
+    fun `the schedule of a confirmed standard series is fixed - length and time window never change`() {
+        val u = scheduled()
+        val edited = assertIs<SeriesEngine.EditResult.Edited>(series.edit(u.series, u.session, sister, at15)).update
+        // Same length, same daily window, same planned first lock (only the contact differs).
+        assertEquals(SeriesKind.SEVEN, edited.series.kind)
+        assertEquals(window, edited.series.window)
+        assertEquals(u.session!!.id, edited.session!!.id)
+        assertEquals(u.session!!.plan, edited.session!!.plan)
+        assertEquals(u.series.copy(contact = sister), edited.series)
+        // Every following night uses the same 23:00-07:00 window.
+        var active = SeriesEngine.Update(series.confirmActive(begin(edited).series, engine.advance(edited.session!!, at23), at23)!!, engine.advance(edited.session!!, at23))
+        repeat(3) {
+            val end = active.session!!.plan.end
+            active = series.afterSession(active.series, engine.advance(active.session!!, end), "night$it", end)
+            val next = active.session!!.plan
+            assertEquals(java.time.LocalTime.of(23, 0), next.start.atZone(MSK).toLocalTime())
+            assertEquals(java.time.LocalTime.of(7, 0), next.end.atZone(MSK).toLocalTime())
+        }
+        assertEquals(window, active.series.window)
     }
 
     @Test
@@ -155,14 +167,14 @@ class SeriesStartPointTest {
     @Test
     fun `6 - after ACTIVE the contact cannot be changed and the series cannot be cancelled`() {
         val u = active()
-        assertIs<SeriesEngine.EditResult.NotAllowed>(series.edit(u.series, u.session, u.series.kind, u.series.window, sister, u.series.mode, "n3", at23.plusSeconds(5)))
+        assertIs<SeriesEngine.EditResult.NotAllowed>(series.edit(u.series, u.session, sister, at23.plusSeconds(5)))
         assertNull(series.cancelScheduled(u.series, u.session, at23.plusSeconds(5)))
         // Also between nights (day 2 afternoon) nothing can be changed.
         val night = engine.advance(u.session!!, u.session!!.plan.end)
         val day2 = series.afterSession(u.series, night, "n4", u.session!!.plan.end)
         assertEquals(1, day2.series.completedPeriods)
         val afternoon = t("2026-10-13T12:00:00Z")
-        assertIs<SeriesEngine.EditResult.NotAllowed>(series.edit(day2.series, day2.session, day2.series.kind, day2.series.window, sister, day2.series.mode, "n5", afternoon))
+        assertIs<SeriesEngine.EditResult.NotAllowed>(series.edit(day2.series, day2.session, sister, afternoon))
         assertNull(series.cancelScheduled(day2.series, day2.session, afternoon))
         assertEquals(MOM, day2.series.contact)
     }
@@ -260,12 +272,12 @@ class SeriesStartPointTest {
         assertEquals(SeriesStatus.SCHEDULED, again.series.status)
         assertEquals(t("2026-10-13T20:00:00Z"), again.session!!.plan.start)
         assertNull(again.series.protectionMissedAt)
-        // Or "Изменить условия": saving is the confirmation too.
-        val edited = assertIs<SeriesEngine.EditResult.Edited>(
-            series.edit(failed.series, failed.session, SeriesKind.FIVE, window, sister, SessionMode.SLEEP, "n6", fixedAt),
-        ).update
-        assertEquals(SeriesStatus.SCHEDULED, edited.series.status)
+        // "Изменить условия" changes the contact but is not a new launch: nothing is planned.
+        val edited = assertIs<SeriesEngine.EditResult.Edited>(series.edit(failed.series, failed.session, sister, fixedAt)).update
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, edited.series.status)
         assertEquals(sister, edited.series.contact)
+        assertEquals(LockState.Free, engine.stateOf(edited.session, t("2026-10-13T21:00:00Z")))
+        assertEquals(sister, series.reschedule(edited.series, "n6", fixedAt)!!.session!!.contact)
         // Or "Отменить запуск".
         assertEquals(SeriesStatus.CANCELLED_BEFORE_START, series.cancelScheduled(failed.series, failed.session, fixedAt)!!.series.status)
         // Nothing to reschedule for a series that is not waiting for attention.
@@ -330,9 +342,7 @@ class SeriesStartPointTest {
         val at2310 = t("2026-10-12T20:10:00Z")
         // Confirmed at 23:10 (first lock tomorrow), changed at 23:20, still inside tonight's window.
         val u = series.start("s2", "m1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, at2310)
-        val edited = assertIs<SeriesEngine.EditResult.Edited>(
-            series.edit(u.series, u.session, u.series.kind, u.series.window, sister, u.series.mode, "n2", at2310.plusSeconds(600)),
-        ).update
+        val edited = assertIs<SeriesEngine.EditResult.Edited>(series.edit(u.series, u.session, sister, at2310.plusSeconds(600))).update
         assertEquals(SeriesStatus.SCHEDULED, edited.series.status)
         assertEquals(t("2026-10-13T20:00:00Z"), edited.session!!.plan.start)
         val activating = begin(scheduled())

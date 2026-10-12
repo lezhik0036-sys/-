@@ -104,13 +104,15 @@ class SeriesFlowTest {
     }
 
     @Test
-    fun `a Restart keeps the length of the failed series, other conditions can change before the start`() {
+    fun `a Restart keeps length and time of the failed series, contact and commitment can change before the start`() {
         val r = restarted()
-        assertIs<SeriesFlow.Result.NotAllowed>(flow.edit(r, SeriesKind.THREE, window, MOM, SessionMode.SLEEP, 1_000 * rub, "n3", now))
-        val later = DailyWindow(LocalTime.of(22, 0), LocalTime.of(6, 0), MSK)
-        val edited = done(flow.edit(r, SeriesKind.SEVEN, later, sister, SessionMode.SLEEP, 2_000 * rub, "n3", now))
+        assertEquals(SeriesKind.SEVEN, r.series!!.kind)
+        assertEquals(window, r.series!!.window)
+        val edited = done(flow.edit(r, sister, 2_000 * rub, now))
         assertEquals(sister, edited.series!!.contact)
-        assertEquals(later, edited.series!!.window)
+        assertEquals(window, edited.series!!.window)
+        assertEquals(SeriesKind.SEVEN, edited.series!!.kind)
+        assertEquals(r.session!!.plan, edited.session!!.plan)
         assertEquals(2_000 * rub, edited.wallet.reservedKop)
         assertEquals(299 * rub, edited.wallet.restartReservedKop)
         assertEquals(10_000 * rub - 299 * rub - 2_000 * rub, edited.wallet.availableKop)

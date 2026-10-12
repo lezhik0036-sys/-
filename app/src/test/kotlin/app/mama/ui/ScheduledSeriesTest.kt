@@ -75,11 +75,16 @@ class ScheduledSeriesTest {
         assertTrue(Mama.state(context) is LockState.Waiting)
         assertEquals(5_000_00L, Mama.wallet(context).availableKop)
 
-        // "Изменить условия": another contact, another time, a smaller "Цена слова".
-        assertEquals(Mama.SeriesEdit.Saved, Mama.editScheduledSeries(context, SeriesKind.SEVEN, windowIn(9), sister, SessionMode.SLEEP, 1_000_00))
+        // "Изменить условия": another contact and a smaller "Цена слова"; length and time stay.
+        val before = Mama.series(context)!!
+        val firstLock = Mama.session(context)!!.plan
+        assertEquals(Mama.SeriesEdit.Saved, Mama.editScheduledSeries(context, sister, 1_000_00))
         assertEquals(sister, Mama.series(context)!!.contact)
         assertEquals(sister, Mama.session(context)!!.contact)
         assertEquals(SeriesStatus.SCHEDULED, Mama.series(context)!!.status)
+        assertEquals(before.window, Mama.series(context)!!.window)
+        assertEquals(before.kind, Mama.series(context)!!.kind)
+        assertEquals(firstLock, Mama.session(context)!!.plan)
         assertEquals(9_000_00L, Mama.wallet(context).availableKop)
         assertEquals(1_000_00L, Mama.wallet(context).reservedKop)
 
@@ -125,8 +130,10 @@ class ScheduledSeriesTest {
         assertEquals(5_000_00L, r.snapshot.wallet.availableKop)
         // No new launch until the protection is fixed and the user confirms.
         assertTrue(Mama.relaunchSeries(context) is Mama.SeriesEdit.ProtectionMissing)
-        assertTrue(Mama.editScheduledSeries(context, SeriesKind.SEVEN, windowIn(9), mom, SessionMode.SLEEP, 5_000_00) is Mama.SeriesEdit.ProtectionMissing)
+        // Changing the contact is allowed but is not a new launch.
+        assertEquals(Mama.SeriesEdit.Saved, Mama.editScheduledSeries(context, sister, 5_000_00))
         assertEquals(SeriesStatus.NEEDS_ATTENTION, Mama.series(context)!!.status)
+        assertEquals(sister, Mama.series(context)!!.contact)
         assertEquals(LockState.Free, Mama.sync(context))
 
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
@@ -158,8 +165,9 @@ class ScheduledSeriesTest {
         assertEquals(10_000_00L - 299_00L - 1_000_00L, Mama.wallet(context).availableKop)
         assertEquals(299_00L, Mama.wallet(context).restartReservedKop)
         assertEquals(failedAt, Mama.entitlements(context).standardFailedAt)
-        // A Restart keeps the length of the failed series.
-        assertEquals(Mama.SeriesEdit.NotAllowed, Mama.editScheduledSeries(context, SeriesKind.THREE, restarted.window, mom, SessionMode.SLEEP, 1_000_00))
+        // A Restart keeps the length and time of the failed series.
+        assertEquals(SeriesKind.SEVEN, restarted.kind)
+        assertEquals(failed.window, restarted.window)
 
         assertTrue(Mama.cancelScheduledSeries(context))
         assertEquals(10_000_00L, Mama.wallet(context).availableKop)

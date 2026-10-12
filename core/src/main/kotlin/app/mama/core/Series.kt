@@ -74,8 +74,8 @@ data class Series(
     /** Start of the current activation attempt (ACTIVATING). */
     val activatingSince: Instant? = null,
     /**
-     * Set for a Restart: the id of the failed series it restarts. Its length
-     * stays that of the failed series, whose Restart price was paid.
+     * Set for a Restart: the id of the failed series it restarts (same length
+     * and time window; its Restart price was paid).
      */
     val restartOf: String? = null,
 ) {
@@ -130,38 +130,24 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
 
         /** Only a series that has not begun can be changed; once ACTIVE everything is fixed. */
         data object NotAllowed : EditResult
-
-        data class Rejected(val reason: LockEngine.CreateError) : EditResult
     }
 
     /**
-     * Changes the conditions of a series that has not begun, free of charge:
-     * series length (not for a Restart), daily window, trusted contact, mode.
-     * The planned first lock is replaced, so the countdown follows the new
-     * time. Saving from NEEDS_ATTENTION is the user's explicit new launch.
+     * Changes the trusted contact of a series that has not begun, free of
+     * charge. The schedule is NOT editable: series length and the daily
+     * window are fixed when the series is confirmed (to use another time the
+     * user cancels the launch and creates a new series). The planned first
+     * lock stays exactly as it was; only its contact changes. The state does
+     * not change either: after NEEDS_ATTENTION a new launch is a separate,
+     * explicit [reschedule].
      */
-    fun edit(
-        series: Series,
-        session: Session?,
-        kind: SeriesKind,
-        window: DailyWindow,
-        contact: TrustedContact,
-        mode: SessionMode,
-        newSessionId: String,
-        now: Instant,
-    ): EditResult {
+    fun edit(series: Series, session: Session?, contact: TrustedContact, now: Instant): EditResult {
         if (series.status != SeriesStatus.SCHEDULED && series.status != SeriesStatus.NEEDS_ATTENTION) return EditResult.NotAllowed
-        if (series.isRestart && kind != series.kind) return EditResult.NotAllowed
-        // A lock that is already running is never replaced.
-        if (session != null && engine.advance(session, now).status == SessionStatus.ACTIVE) return EditResult.NotAllowed
-        // The first lock is again the next full window of the (new) time.
-        return when (val created = engine.create(newSessionId, window.nextFullPlan(now, mode), contact, now)) {
-            is LockEngine.CreateResult.Rejected -> EditResult.Rejected(created.reason)
-            is LockEngine.CreateResult.Created -> {
-                val edited = series.copy(kind = kind, window = window, contact = contact, mode = mode, protectionMissedAt = null)
-                EditResult.Edited(Update(enter(edited, created.session, now), created.session))
-            }
-        }
+        val s = session?.let { engine.advance(it, now) }
+        // A lock that is already running is never touched.
+        if (s?.status == SessionStatus.ACTIVE) return EditResult.NotAllowed
+        val planned = if (s?.status == SessionStatus.SCHEDULED) s.copy(contact = contact) else session
+        return EditResult.Edited(Update(series.copy(contact = contact), planned))
     }
 
     /**

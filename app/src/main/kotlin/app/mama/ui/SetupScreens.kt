@@ -28,8 +28,8 @@ import java.time.LocalDateTime
 /** Steps for the current choice (FLEX periods get their time later, per period). */
 internal fun MainActivity.steps(): List<Step> =
     if (editing) {
-        // "Изменить условия": every setting opens from the summary and returns to it.
-        listOfNotNull(Step.SERIES, Step.TIME, Step.CONTACT, Step.PROMISE, Step.COMMITMENT.takeIf { FeatureFlags.WALLET_ENABLED })
+        // "Изменить условия": only these open from the summary (length and time are fixed).
+        listOfNotNull(Step.CONTACT, Step.PROMISE, Step.COMMITMENT.takeIf { FeatureFlags.WALLET_ENABLED })
     } else if (choice == Choice.FLEX) {
         listOf(Step.PERMISSIONS, Step.SERIES, Step.CONTACT, Step.PROMISE)
     } else {
@@ -143,34 +143,32 @@ internal fun MainActivity.permissionsScreen(): Pair<View, Boolean> {
 
 internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
     val b = body()
-    b.addView(kit.sectionHeader("Выбери свою серию", if (editing) "Серия ещё не началась — длину можно изменить." else "Сколько дней ты готов не менять своё решение?"))
+    b.addView(kit.sectionHeader("Выбери свою серию", "Сколько дней ты готов не менять своё решение?"))
     var first = true
     fun option(c: Choice, icon: Icon, title: String, subtitle: String, trailing: String? = null) {
         b.addView(kit.selectableCard(icon, title, subtitle, choice == c, trailing) { choice = c; saveForm(); render() }, kit.gap(if (first) 22 else 10))
         first = false
     }
-    if (FeatureFlags.TEST_MODE_ENABLED && !editing) {
+    if (FeatureFlags.TEST_MODE_ENABLED) {
         option(Choice.TEST, Icon.FLASK, "Тестовый режим — 15 минут", "Только для тестирования. Ровно 15 минут. Бесплатно.")
     }
     option(Choice.THREE, Icon.LEAF, "3 дня", "Restart при срыве — ${Texts.price(SeriesPrices.THREE)}")
     option(Choice.FIVE, Icon.LEAF, "5 дней", "Restart при срыве — ${Texts.price(SeriesPrices.FIVE)}")
     option(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Restart при срыве — ${Texts.price(SeriesPrices.SEVEN)}")
-    if (!editing) {
-        val free = Mama.entitlements(this).freeFlexCredits > 0
-        option(
-            Choice.FLEX, Icon.INFINITY, "FLEX",
-            "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.toDays()} дней. Пройди 7 из 7 — следующий FLEX бесплатно.",
-            if (free) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB),
-        )
-    }
+    val free = Mama.entitlements(this).freeFlexCredits > 0
+    option(
+        Choice.FLEX, Icon.INFINITY, "FLEX",
+        "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.toDays()} дней. Пройди 7 из 7 — следующий FLEX бесплатно.",
+        if (free) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB),
+    )
     val wait = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this))
-    if (wait > 0 && choice.series != null && !editing) {
+    if (wait > 0 && choice.series != null) {
         b.addView(kit.infoCard(
             "Телефон при этом не заблокирован. Сразу — только Restart сорванной серии.",
             Icon.CALENDAR, Tone.WARNING, "Следующая бесплатная серия через ${Texts.days(wait.toInt())}",
         ), kit.gap(14))
     }
-    val cta = kit.primaryButton(nextLabel(), Icon.ARROW_RIGHT) { go(nextStep(Step.SERIES)) }
+    val cta = kit.primaryButton("Далее", Icon.ARROW_RIGHT) { go(nextStep(Step.SERIES)) }
     return lightFrame(header(Step.SERIES), b, cta)
 }
 
@@ -221,7 +219,7 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         }, kit.gap(10))
         if (start == end) b.addView(kit.infoCard("Начало и окончание совпадают.", Icon.ALERT, Tone.WARNING), kit.gap(12))
     }
-    val cta = kit.primaryButton(nextLabel(), Icon.ARROW_RIGHT) {
+    val cta = kit.primaryButton("Далее", Icon.ARROW_RIGHT) {
         if (choice != Choice.TEST && start == end) alert("Проверьте время", "Начало и окончание совпадают.") else go(nextStep(Step.TIME))
     }
     return lightFrame(header(Step.TIME), b, cta)

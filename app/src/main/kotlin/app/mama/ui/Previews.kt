@@ -82,7 +82,7 @@ object Previews {
                 series(0, SeriesStatus.SCHEDULED).copy(restartOf = "failed"), null,
                 RestartHold("preview", 299_00, now), protectionMissing = emptyList(),
             ) { waiting }
-            "edit" -> { a.editing = true; a.commitmentKop = 5_000_00; a.step = Step.REVIEW; a.editScreen() }
+            "edit" -> { a.editing = true; a.commitmentKop = 5_000_00; a.step = Step.REVIEW; a.editScreen(series(0, SeriesStatus.SCHEDULED)) }
             "cancel_launch" -> {
                 val s = series(0, SeriesStatus.SCHEDULED)
                 a.window.decorView.post { a.confirmCancelLaunch(s) }

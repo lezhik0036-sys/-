@@ -123,22 +123,15 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         return Cancelled(s.copy(series = s.restartedFrom, restartedFrom = null, session = u.session, wallet = wallet), u.series)
     }
 
-    /** "Изменить условия" before ACTIVE ([commitmentKop] null = without "Цена слова"). */
-    fun edit(
-        s: Snapshot,
-        kind: SeriesKind,
-        window: DailyWindow,
-        contact: TrustedContact,
-        mode: SessionMode,
-        commitmentKop: Long?,
-        sessionId: String,
-        now: Instant,
-    ): Result {
+    /**
+     * "Изменить условия" before ACTIVE: trusted contact and "Цена слова"
+     * ([commitmentKop] null = without). Length and time window are fixed.
+     */
+    fun edit(s: Snapshot, contact: TrustedContact, commitmentKop: Long?, now: Instant): Result {
         val current = s.series ?: return Result.NotAllowed
-        val u = when (val e = series.edit(current, s.session, kind, window, contact, mode, sessionId, now)) {
+        val u = when (val e = series.edit(current, s.session, contact, now)) {
             is SeriesEngine.EditResult.Edited -> e.update
             SeriesEngine.EditResult.NotAllowed -> return Result.NotAllowed
-            is SeriesEngine.EditResult.Rejected -> return Result.Rejected
         }
         val wallet = when (val r = WalletEngine.changeScheduled(s.wallet, current.id, commitmentKop?.takeIf { it > 0 }, now)) {
             is WalletEngine.Result.Ok -> r.wallet

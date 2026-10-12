@@ -270,27 +270,16 @@ object Mama {
     }
 
     /**
-     * "Изменить условия" before ACTIVE, free: series (not for a Restart),
-     * time, trusted contact and "Цена слова" ([commitmentKop] null =
-     * without). The planned first lock and the scheduled reserve are replaced
-     * in one save; nothing is lost and no failure rule applies. Saving after
-     * NEEDS_ATTENTION is the user's explicit new launch.
+     * "Изменить условия" before ACTIVE, free: trusted contact and "Цена слова"
+     * ([commitmentKop] null = without); the reason is stored by the UI. The
+     * series length and its daily window are fixed once the series is
+     * confirmed: another time means "Отменить запуск" and a new series. One
+     * save; nothing is lost and no failure rule applies.
      */
     @Synchronized
-    fun editScheduledSeries(
-        context: Context,
-        kind: SeriesKind,
-        window: DailyWindow,
-        contact: TrustedContact,
-        mode: SessionMode,
-        commitmentKop: Long?,
-    ): SeriesEdit {
+    fun editScheduledSeries(context: Context, contact: TrustedContact, commitmentKop: Long?): SeriesEdit {
         val r = reconcile(context)
-        if (r.snapshot.series?.status == SeriesStatus.NEEDS_ATTENTION) {
-            Protection.missing(context).takeIf { it.isNotEmpty() }?.let { return SeriesEdit.ProtectionMissing(it) }
-        }
-        val result = flow.edit(r.snapshot, kind, window, contact, mode, commitmentKop, UUID.randomUUID().toString(), r.trustedNow)
-        return when (result) {
+        return when (val result = flow.edit(r.snapshot, contact, commitmentKop, r.trustedNow)) {
             is SeriesFlow.Result.Done -> {
                 SessionStore(context.applicationContext).save(result.snapshot)
                 sync(context)

@@ -129,7 +129,7 @@ internal fun MainActivity.seriesDashboard(
     b.addView(k.text(subtitle, MamaType.BODY, MamaColors.OnNightMuted, center = true), k.gap(6))
     b.addView(k.dots(n, series.completedPeriods), k.gap(14))
     if (editSaved && series.status == SeriesStatus.SCHEDULED) {
-        b.addView(k.infoCard("Таймер пересчитан по новым условиям.", Icon.CHECK, Tone.SUCCESS, "Изменения сохранены"), k.gap(14))
+        b.addView(k.infoCard("Время и длина серии остались прежними.", Icon.CHECK, Tone.SUCCESS, "Изменения сохранены"), k.gap(14))
     }
     if (series.status == SeriesStatus.SCHEDULED && protectionMissing.isNotEmpty()) {
         b.addView(k.infoCard(
