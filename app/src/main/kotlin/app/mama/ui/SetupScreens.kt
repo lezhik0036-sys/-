@@ -110,7 +110,7 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         topMargin = k.dp(26); gravity = Gravity.CENTER_HORIZONTAL
     })
     val footer = k.column().apply {
-        addView(k.primaryButton("Начать", Icon.ARROW_RIGHT) { go(Step.PERMISSIONS) }, k.fill())
+        addView(k.primaryButton("Начать", Icon.ARROW_RIGHT) { beginDraft(); go(Step.PERMISSIONS) }, k.fill())
         addView(k.text("Решение принято. Осталось его выдержать.", MamaType.CAPTION, MamaColors.OnNightMuted, center = true), k.gap(14))
     }
     return nightFrame(Scene.DAWN, b, footer)
@@ -182,6 +182,7 @@ internal object SeriesPrices {
 // ---------------- 4. Time ----------------
 
 internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
+    if (choice != Choice.TEST) ensureDraftTime()
     val b = body()
     val now = Mama.trustedNow(this)
     val today = LocalDateTime.ofInstant(now, zone).toLocalDate()
@@ -385,8 +386,7 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
             "Прогресс обнулится. Сразу начать заново — Restart за ${Texts.price(choice.series!!.restartPriceRub)}, " +
                 "бесплатная новая серия — через ${StandardRules.FREE_START_AFTER.toDays()} дней.\n\n" +
                 "Доверенный выход всегда доступен и не требует отдельной оплаты.\n\n" +
-                "Если серия будет завершена досрочно, она считается сорванной.\n\n" +
-                "Если установлена «Цена слова», через 24 часа ${CommitmentConfig.RETURN_PERCENT}% этой суммы вернётся на баланс MAMA.",
+                "Если серия будет завершена досрочно, она считается сорванной. Если установлена «Цена слова», она применяется.",
             Icon.ALERT, Tone.WARNING, "Если серия будет прервана",
         ), kit.gap(14))
     }
@@ -408,7 +408,10 @@ internal fun MainActivity.startChosen() {
     val contact = readyContact() ?: return
     when (choice) {
         Choice.TEST -> when (val r = Mama.startTest(this, contact, zone, mode)) {
-            is Mama.TestStart.Started -> prefs.edit().putString("testSession", r.sessionId).apply()
+            is Mama.TestStart.Started -> {
+                prefs.edit().putString("testSession", r.sessionId).apply()
+                closeDraft()
+            }
             Mama.TestStart.Busy -> alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
             is Mama.TestStart.Rejected -> alert("Не получилось", Texts.createError(r.reason))
         }
@@ -421,7 +424,10 @@ internal fun MainActivity.startChosen() {
             return
         }
         else -> when (val r = Mama.startSeries(this, choice.series!!, DailyWindow(start, end, zone), contact, mode, commitmentKop)) {
-            Mama.SeriesStart.Started -> commitmentKop = null
+            Mama.SeriesStart.Started -> {
+                commitmentKop = null
+                closeDraft()
+            }
             Mama.SeriesStart.Busy -> return alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
             is Mama.SeriesStart.Waiting -> return alert(
                 "Бесплатная серия пока недоступна",
@@ -442,6 +448,7 @@ internal fun MainActivity.activateFlex(source: GrantSource) {
     if (!Mama.activateFlex(this, source)) {
         alert("Не получилось", "FLEX можно активировать, когда нет активной серии или блокировки.")
     } else {
+        closeDraft()
         agreed = false
         step = Step.WELCOME
         tab = 0

@@ -94,6 +94,8 @@ class MainActivity : Activity() {
             runCatching { Choice.valueOf(prefs.getString("series", null)!!) }.getOrDefault(Choice.SEVEN)
         }
         if (choice == Choice.TEST && !FeatureFlags.TEST_MODE_ENABLED) choice = Choice.SEVEN
+        // Back on the same wizard step after a screen rotation or recreation.
+        savedInstanceState?.getString(STATE_STEP)?.let { s -> runCatching { step = Step.valueOf(s) } }
         start = runCatching { LocalTime.parse(prefs.getString("start", null)) }.getOrDefault(start)
         end = runCatching { LocalTime.parse(prefs.getString("end", null)) }.getOrDefault(end)
         zone = runCatching { ZoneId.of(prefs.getString("zone", null)) }.getOrDefault(zone)
@@ -142,6 +144,42 @@ class MainActivity : Activity() {
                 base
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_STEP, step.name)
+    }
+
+    // ---------------- series draft ----------------
+
+    /**
+     * «Начать»: a NEW draft starts unless one is already open (the user came
+     * back with Back, or the app was recreated): an open draft keeps its values.
+     */
+    internal fun beginDraft() {
+        if (prefs.getBoolean(DRAFT_OPEN, false)) return
+        prefs.edit().putBoolean(DRAFT_OPEN, true).putBoolean(DRAFT_TIME_SET, false).apply()
+        zone = ZoneId.systemDefault()
+    }
+
+    /**
+     * A new draft's time starts from now (never the previous series' window),
+     * once; after that the user's choice is kept.
+     */
+    internal fun ensureDraftTime() {
+        // Screenshot tour: sample data only.
+        if (preview != null || prefs.getBoolean(DRAFT_TIME_SET, false)) return
+        val (s, e) = app.mama.core.SeriesDraft.freshTimes(Mama.trustedNow(this), zone)
+        start = s
+        end = e
+        prefs.edit().putBoolean(DRAFT_TIME_SET, true).apply()
+        saveForm()
+    }
+
+    /** The draft became a series (or test / FLEX): the next one starts fresh. */
+    internal fun closeDraft() {
+        prefs.edit().putBoolean(DRAFT_OPEN, false).putBoolean(DRAFT_TIME_SET, false).apply()
     }
 
     override fun onResume() {
@@ -443,6 +481,9 @@ class MainActivity : Activity() {
 
     companion object {
         const val EXTRA_PREVIEW = "mama.preview"
+        private const val STATE_STEP = "step"
+        internal const val DRAFT_OPEN = "draft.open"
+        internal const val DRAFT_TIME_SET = "draft.timeSet"
         private const val PICK_CONTACT = 10
         private const val SETUP_ALL = 20
     }

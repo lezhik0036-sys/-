@@ -74,3 +74,18 @@ data class DailyWindow(
         error("unreachable: a daily window always recurs within two days")
     }
 }
+
+/**
+ * Default times of a NEW standard series draft: never the previous series'
+ * window. The start is the current local time to the minute, the end the
+ * usual length later. An existing draft keeps whatever the user chose.
+ */
+object SeriesDraft {
+    /** Default length of a new window (the former 23:00–07:00 default). */
+    val DEFAULT_LENGTH: Duration = Duration.ofHours(8)
+
+    fun freshTimes(now: Instant, zone: ZoneId): Pair<LocalTime, LocalTime> {
+        val start = now.atZone(zone).toLocalTime().withSecond(0).withNano(0)
+        return start to start.plus(DEFAULT_LENGTH)
+    }
+}

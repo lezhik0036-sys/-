@@ -20,6 +20,12 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest --console=plain
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain
+      - name: Release build has no test credits
+        run: |
+          ./gradlew :app:generateReleaseBuildConfig --console=plain
+          f=$(find app/build/generated -path '*release*' -name BuildConfig.java | head -n 1)
+          echo "checking $f"
+          grep -q "PILOT_TEST_CREDITS = false" "$f" || { echo "::error::release build enables test credits"; cat "$f"; exit 1; }
       - name: Name the APK after its version
         id: apk
         run: |

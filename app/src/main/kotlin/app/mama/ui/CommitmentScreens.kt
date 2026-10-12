@@ -78,7 +78,7 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
 
     b.addView(kit.infoCard(
         "Если серия пройдена — вся сумма снова доступна на твоём балансе MAMA.\n" +
-            "Если серия будет завершена досрочно, она считается сорванной. Через 24 часа ${CommitmentConfig.RETURN_PERCENT}% этой суммы вернётся на баланс MAMA.\n" +
+            "Если серия будет завершена досрочно, она считается сорванной, и Цена слова применяется.\n" +
             "Баланс MAMA — только внутри приложения: его нельзя вывести или перевести.",
         Icon.SHIELD, Tone.NEUTRAL, "Как это работает",
     ), kit.gap(14))
@@ -163,8 +163,7 @@ private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
         return
     }
     val commitment = commitmentKop
-    val note = "Время и длина — как у сорванной серии. Restart с баланса MAMA засчитывается, только когда серия начнётся; " +
-        "если отменить запуск до первой блокировки, он вернётся на баланс." +
+    val note = "Время и длина — как у сорванной серии. Если отменить запуск до первой блокировки, Restart вернётся на баланс." +
         (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
     Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0, note = note) { source ->
         when (Mama.restartSeries(this, source, commitment)) {
@@ -237,7 +236,11 @@ internal fun MainActivity.balanceCard(wallet: Wallet, compact: Boolean = false):
 
 /** Ledger history (newest first), for the settings screen. */
 internal fun MainActivity.ledgerList(wallet: Wallet, zone: ZoneId): View = kit.card(paddingDp = 0).apply {
-    val entries = wallet.entries.sortedByDescending { it.dueAt ?: it.at }.take(12)
+    // A partial return is not announced: it appears only once it has really been credited.
+    val entries = wallet.entries
+        .filterNot { it.type == LedgerType.COMMITMENT_PARTIAL_RETURN && it.status == LedgerStatus.SCHEDULED }
+        .sortedByDescending { it.at }
+        .take(12)
     if (entries.isEmpty()) {
         addView(kit.caption("Операций пока нет.").apply { setPadding(kit.dp(16), kit.dp(14), kit.dp(16), kit.dp(14)) })
         return@apply
@@ -248,8 +251,7 @@ internal fun MainActivity.ledgerList(wallet: Wallet, zone: ZoneId): View = kit.c
         val (title, sign) = ledgerLabel(e, wallet)
         val t = kit.column()
         t.addView(kit.text(title, MamaType.CAPTION, MamaColors.Graphite).apply { typeface = MamaFonts.ui(context, 600) })
-        val whenText = if (e.status == LedgerStatus.SCHEDULED && e.dueAt != null) "вернётся ${Texts.dayTime(e.dueAt!!, zone)}" else Texts.dayTime(e.at, zone)
-        t.addView(kit.text(whenText, MamaType.SMALL, MamaColors.TextSecondary), kit.gap(2))
+        t.addView(kit.text(Texts.dayTime(e.at, zone), MamaType.SMALL, MamaColors.TextSecondary), kit.gap(2))
         row.addView(t, kit.weight())
         val color = when (sign) {
             "+" -> MamaColors.Success
@@ -266,10 +268,9 @@ private fun ledgerLabel(e: LedgerEntry, wallet: Wallet): Pair<String, String> = 
     LedgerType.COMMITMENT_RESERVED -> "Цена слова: в резерве" to ""
     LedgerType.COMMITMENT_RELEASED_BEFORE_START -> "Цена слова: резерв снят до начала серии" to "+"
     LedgerType.COMMITMENT_RELEASED_SUCCESS -> "Слово сдержано: сумма снова доступна" to "+"
-    LedgerType.COMMITMENT_FORFEITED_FAILURE -> "Цена слова: серия завершена досрочно" to "−"
-    LedgerType.COMMITMENT_PARTIAL_RETURN ->
-        (if (e.status == LedgerStatus.SCHEDULED) "Возврат ${CommitmentConfig.RETURN_PERCENT}% (ожидается)" else "Возврат ${CommitmentConfig.RETURN_PERCENT}% на баланс") to
-            (if (e.status == LedgerStatus.SCHEDULED) "" else "+")
+    LedgerType.COMMITMENT_FORFEITED_FAILURE -> "Цена слова применена" to "−"
+    // Only credited returns are listed (see ledgerList).
+    LedgerType.COMMITMENT_PARTIAL_RETURN -> "Возврат от MAMA" to "+"
     // A held Restart left the available balance when it was held; using it moves nothing.
     LedgerType.RESTART_PURCHASE_TEST ->
         if (wallet.entries.any { it.type == LedgerType.RESTART_RESERVED_TEST && it.seriesId == e.seriesId }) "Restart использован: серия началась" to ""
@@ -279,7 +280,10 @@ private fun ledgerLabel(e: LedgerEntry, wallet: Wallet): Pair<String, String> = 
     LedgerType.FLEX_PURCHASE_TEST -> "MAMA FLEX (тест)" to "−"
 }
 
-/** Shows "Мы вернули … на ваш баланс MAMA" once per credited return. */
+/**
+ * The partial return of "Цена слова" is a surprise: never announced before,
+ * shown once it has really been credited.
+ */
 internal fun MainActivity.showReturnNoticeIfAny() {
     if (!FeatureFlags.WALLET_ENABLED || returnNoticeOpen) return
     val unseen = Mama.wallet(this).unseenReturns
@@ -287,8 +291,8 @@ internal fun MainActivity.showReturnNoticeIfAny() {
     returnNoticeOpen = true
     val amount = unseen.sumOf { it.returnKop }
     BrandDialog.show(
-        this, "Мы вернули ${Texts.money(amount)} на ваш баланс MAMA.",
-        message = "Средства доступны для внутренних функций приложения.",
+        this, returnTitle(amount),
+        message = "$RETURN_TEXT\nПопробуй ещё раз.",
         confirm = "Понятно",
         cancel = null,
         onConfirm = {
@@ -307,15 +311,17 @@ internal fun MainActivity.commitmentOutcome(seriesId: String, night: Boolean, zo
         CommitmentState.RELEASED -> k.infoCard(
             "${Texts.money(c.amountKop)} снова доступны на твоём балансе MAMA.", Icon.CHECK, Tone.SUCCESS, "Ты сдержал слово.",
         )
-        CommitmentState.FORFEITED -> k.infoCard(
-            if (c.returnProcessed) {
-                "Мы вернули ${Texts.money(c.returnKop)} на ваш баланс MAMA. Средства доступны для внутренних функций приложения."
-            } else {
-                "Через 24 часа ${Texts.money(c.returnKop)} вернутся на баланс MAMA." +
-                    (c.returnDueAt?.let { "\nНачисление: ${Texts.dayTime(it, zone)}" } ?: "")
-            },
-            Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(c.amountKop)}",
-        )
+        // Before the return is credited: only the fact, no promise of a return.
+        CommitmentState.FORFEITED -> if (c.returnProcessed) {
+            k.infoCard("$RETURN_TEXT Попробуй ещё раз.", Icon.HEART, Tone.SUCCESS, returnTitle(c.returnKop))
+        } else {
+            k.infoCard("Цена слова применена.", Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(c.amountKop)}")
+        }
         CommitmentState.SCHEDULED, CommitmentState.RESERVED -> null
     }
 }
+
+/** "MAMA вернула тебе 250 ₽": the partial return, once credited. */
+internal fun returnTitle(amountKop: Long) = "MAMA вернула тебе ${Texts.money(amountKop)}"
+
+internal const val RETURN_TEXT = "Сумма уже на твоём балансе MAMA."

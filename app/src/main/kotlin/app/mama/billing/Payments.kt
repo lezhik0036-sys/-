@@ -122,25 +122,52 @@ object Checkout {
         }
         val priceKop = product.priceRub * 100L
         val available = Mama.wallet(activity).availableKop
-        val fromBalance = FeatureFlags.WALLET_ENABLED && FeatureFlags.WALLET_SPEND_ENABLED && available - reserveAheadKop >= priceKop
-        if (FeatureFlags.TEST_GRANTS_ENABLED || fromBalance) {
+        val walletOn = FeatureFlags.WALLET_ENABLED && FeatureFlags.WALLET_SPEND_ENABLED
+        // One balance: test credits are ordinary available balance in pilot builds.
+        val fromBalance = walletOn && available - reserveAheadKop >= priceKop
+        if (FeatureFlags.TEST_GRANTS_ENABLED || walletOn) {
             val kit = Kit(activity)
             val content = kit.column()
             note?.let { content.addView(kit.infoCard(it, app.mama.ui.Icon.LOCK), kit.fill().apply { bottomMargin = kit.dp(14) }) }
             lateinit var handle: app.mama.ui.BrandDialogHandle
             if (fromBalance) {
                 content.addView(kit.primaryButton("Оплатить с баланса MAMA") { handle.dismiss(); onGranted(GrantSource.INTERNAL_BALANCE) }, kit.fill())
-                content.addView(kit.caption("На балансе ${Texts.money(available)}. Тестовые кредиты, не деньги."), kit.gap(6))
+                content.addView(kit.caption(balanceLine(available)), kit.gap(6))
+            } else if (walletOn) {
+                content.addView(
+                    kit.infoCard(
+                        "Доступно ${Texts.money(available)}." +
+                            (if (reserveAheadKop > 0) " Цена слова ${Texts.money(reserveAheadKop)} резервируется отдельно." else ""),
+                        app.mama.ui.Icon.INFO, app.mama.ui.Tone.NEUTRAL, NOT_ENOUGH,
+                    ),
+                    kit.fill(),
+                )
+                if (FeatureFlags.WALLET_TEST_TOPUP_ENABLED) {
+                    // Pilot builds only: top up with test credits and continue the same payment.
+                    content.addView(kit.secondaryButton("+${Texts.money(TEST_TOPUP_KOP)} · тест") {
+                        handle.dismiss()
+                        Mama.topUpTest(activity, TEST_TOPUP_KOP)
+                        obtain(activity, product, title, reserveAheadKop, note, onGranted)
+                    }, kit.gap(10))
+                }
             }
             if (FeatureFlags.TEST_GRANTS_ENABLED) {
-                content.addView(kit.secondaryButton("Активировать для теста") { handle.dismiss(); onGranted(GrantSource.TEST_NO_PAYMENT) }, kit.gap(if (fromBalance) 14 else 0))
-                content.addView(kit.caption("Тестовая версия: оплата не подключена и не проводится."), kit.gap(6))
+                content.addView(kit.secondaryButton("Активировать для теста") { handle.dismiss(); onGranted(GrantSource.TEST_NO_PAYMENT) }, kit.gap(14))
+                content.addView(kit.caption("Тестовая версия: без оплаты и без списания с баланса."), kit.gap(6))
             }
             handle = BrandDialog.show(activity, "$title — ${Texts.price(product.priceRub)}", content = content, confirm = null, cancel = "Отмена")
             return
         }
         info(activity, "Оплата пока недоступна", "В этой версии оплата не подключена.")
     }
+
+    const val NOT_ENOUGH = "На балансе MAMA недостаточно средств."
+
+    /** Pilot builds: the quick test top-up offered when the balance is short. */
+    const val TEST_TOPUP_KOP = 1_000_00L
+
+    private fun balanceLine(available: Long) =
+        "На балансе ${Texts.money(available)}." + if (FeatureFlags.WALLET_TEST_TOPUP_ENABLED) " Тестовые кредиты, не деньги." else ""
 
     private fun info(activity: Activity, title: String, message: String) {
         BrandDialog.show(activity, title, message)
