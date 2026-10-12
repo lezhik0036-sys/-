@@ -165,4 +165,58 @@ class SeriesFlowTest {
         assertEquals("old", decoded.restartedFrom!!.id)
         assertEquals(at23, decoded.series!!.activatingSince)
     }
+
+    @Test
+    fun `failed 1 Oct, Restart 5 Oct, cancelled 6 Oct before the first lock - free series still from 31 Oct`() {
+        val failedOn = t("2026-10-01T09:00:00Z")
+        val failure = afterFailure().let {
+            it.copy(series = it.series!!.copy(endedAt = failedOn), entitlements = Entitlements(standardFailedAt = failedOn))
+        }
+        val freeFrom = t("2026-10-31T09:00:00Z")
+        assertEquals(freeFrom, StandardRules.freeStartAt(failure.entitlements))
+
+        val oct5 = t("2026-10-05T09:00:00Z")
+        val restarted = done(flow.restart(failure, GrantSource.INTERNAL_BALANCE, "new", "n1", 1_000 * rub, oct5))
+        assertEquals(SeriesStatus.SCHEDULED, restarted.series!!.status)
+        assertEquals(freeFrom, StandardRules.freeStartAt(restarted.entitlements))
+
+        val oct6 = t("2026-10-06T09:00:00Z")
+        val c = flow.cancel(restarted, oct6)!!
+        assertEquals(SeriesStatus.CANCELLED_BEFORE_START, c.cancelled.status)
+        // Restart reserve and «Цена слова» fully back.
+        assertEquals(10_000 * rub, c.snapshot.wallet.availableKop)
+        assertEquals(0, c.snapshot.wallet.restartReservedKop)
+        assertEquals(0, c.snapshot.wallet.reservedKop)
+        // Not a new failure, no new 30 days: the same date as before the Restart.
+        assertEquals(failedOn, c.snapshot.entitlements.standardFailedAt)
+        assertEquals(freeFrom, StandardRules.freeStartAt(c.snapshot.entitlements))
+        assertEquals(25, StandardRules.daysUntilFreeStart(c.snapshot.entitlements, oct6))
+        assertEquals(false, StandardRules.canStartFree(c.snapshot.entitlements, t("2026-10-30T09:00:00Z")))
+        assertEquals(true, StandardRules.canStartFree(c.snapshot.entitlements, freeFrom))
+        // Folding later never moves the date either.
+        assertEquals(freeFrom, StandardRules.freeStartAt(flow.fold(c.snapshot, "n9", t("2026-10-20T09:00:00Z")).entitlements))
+    }
+
+    @Test
+    fun `cancelled before start never creates a cooldown by itself - the first free series can be created again at once`() {
+        val empty = Snapshot(wallet = Wallet(availableKop = 10_000 * rub))
+        fun scheduled() = done(flow.schedule(empty, "s1", "n1", SeriesKind.SEVEN, window, MOM, SessionMode.SLEEP, 5_000 * rub, now))
+        val cancelledStates = listOf(
+            // SCHEDULED
+            flow.cancel(scheduled(), now.plusSeconds(60))!!,
+            // ACTIVATING
+            flow.cancel(lockStarts(scheduled()), at23.plusSeconds(1))!!,
+            // NEEDS_ATTENTION
+            flow.cancel(flow.protectionFailed(lockStarts(scheduled()), at23.plusSeconds(2))!!, at23.plusSeconds(60))!!,
+        )
+        for (c in cancelledStates) {
+            assertEquals(SeriesStatus.CANCELLED_BEFORE_START, c.cancelled.status)
+            assertNull(c.snapshot.entitlements.standardFailedAt)
+            assertTrue(StandardRules.canStartFree(c.snapshot.entitlements, at23.plusSeconds(60)))
+            assertEquals(10_000 * rub, c.snapshot.wallet.availableKop)
+            assertIs<SeriesFlow.Result.Done>(
+                flow.schedule(c.snapshot, "s2", "n2", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, null, at23.plusSeconds(60)),
+            )
+        }
+    }
 }
