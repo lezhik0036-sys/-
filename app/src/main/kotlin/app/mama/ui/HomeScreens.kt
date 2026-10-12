@@ -329,21 +329,13 @@ internal fun MainActivity.failureScreen(
     val t = kit.column()
     t.addView(kit.text("Restart серии", MamaType.TITLE))
     t.addView(kit.text(Texts.price(series.kind.restartPriceRub), MamaType.H1), kit.gap(2))
-    t.addView(kit.text("Та же серия, ${Texts.seriesName(series.kind)}, сначала", MamaType.SMALL, MamaColors.TextSecondary), kit.gap(2))
+    t.addView(kit.text("Та же серия, ${Texts.seriesName(series.kind)}, сначала. Время выберешь заново.", MamaType.SMALL, MamaColors.TextSecondary), kit.gap(2))
     head.addView(t, kit.weight().apply { leftMargin = kit.dp(14) })
     card.addView(head)
     card.addView(kit.primaryButton("Начать заново") {
-        if (FeatureFlags.WALLET_ENABLED) {
-            // "Цена слова" is asked again before the Restart series (optional).
-            commitmentKop = null
-            restartFlow = true
-            render()
-        } else {
-            Checkout.obtain(this, Product.Restart(series.kind), "Restart серии") { source ->
-                if (Mama.restartSeries(this, source) != Mama.SeriesStart.Started) alert("Не получилось", "Restart сейчас недоступен.")
-                render()
-            }
-        }
+        // A new launch: time first (a new draft from the current time), then "Цена слова", then payment.
+        beginRestart(series.kind)
+        render()
     }, kit.gap(16))
     b.addView(card, k.gap(26))
     commitmentOutcome(series.id, night = true, zone = series.window.zone, sample = sampleCommitment)?.let { b.addView(it, k.gap(12)) }
@@ -352,7 +344,7 @@ internal fun MainActivity.failureScreen(
     if (days > 0) {
         b.addView(k.infoCard("Без Restart — бесплатно, телефон при этом не заблокирован.", Icon.CALENDAR, Tone.NEUTRAL, "Следующая бесплатная серия через ${Texts.days(days.toInt())}"), k.gap(12))
     }
-    val footer = k.secondaryButton("Вернуться на главную") { Mama.dismissSeries(this); render() }
+    val footer = k.secondaryButton("Вернуться на главную") { closeDraft(); Mama.dismissSeries(this); render() }
     return nightFrame(Scene.DUSK, b, footer)
 }
 
@@ -368,7 +360,7 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     commitmentOutcome(series.id, night = false, zone = series.window.zone, sample = sampleCommitment)?.let { b.addView(it, k.gap(18)) }
     b.addView(k.text("Платить не нужно: Restart бывает только после срыва.", MamaType.CAPTION, MamaColors.TextSecondary, center = true), k.gap(18))
     val footer = k.column().apply {
-        addView(k.primaryButton("Новая серия", Icon.ARROW_RIGHT) { Mama.dismissSeries(this@successScreen); render() }, k.fill())
+        addView(k.primaryButton("Новая серия", Icon.ARROW_RIGHT) { closeDraft(); Mama.dismissSeries(this@successScreen); render() }, k.fill())
     }
     return nightFrame(Scene.DAWN, b, footer)
 }

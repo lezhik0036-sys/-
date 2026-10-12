@@ -85,7 +85,7 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
     if (restart) {
         b.addView(kit.hintRow(
             Icon.LOCK,
-            "После Restart серия будет запланирована с тем же временем и той же длиной. До первой блокировки можно изменить " +
+            "После Restart серия будет запланирована: длина та же, время — выбранное. До первой блокировки можно изменить " +
                 "доверенный контакт, личную причину и Цену слова. Restart с баланса MAMA засчитывается, только когда серия начнётся: " +
                 "если отменить запуск, он вернётся на баланс.",
         ), kit.gap(14))
@@ -103,7 +103,7 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
     footer.addView(kit.textButton(if (editing) "Без Цены слова" else "Пропустить") { commitmentKop = null; proceedCommitment(restart, kind) }, kit.gap(4))
 
     val header = when {
-        restart -> kit.stepHeader(null, 0) { restartFlow = false; render() }
+        restart -> kit.stepHeader(2, 2) { restartStep = Step.TIME; render() }
         editing -> kit.stepHeader(null, 0) { back() }
         else -> kit.stepHeader(steps().indexOf(Step.COMMITMENT) + 1, steps().size) { back() }
     }
@@ -162,16 +162,24 @@ private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
         go(Step.REVIEW)
         return
     }
+    payRestart(kind)
+}
+
+/** Restart payment for the chosen time and "Цена слова" (if any); the series is then SCHEDULED. */
+internal fun MainActivity.payRestart(kind: SeriesKind) {
     val commitment = commitmentKop
-    val note = "Время и длина — как у сорванной серии. Если отменить запуск до первой блокировки, Restart вернётся на баланс." +
+    val window = app.mama.core.DailyWindow(start, end, zone)
+    val note = "${Texts.seriesName(kind)}, ${Texts.hhmm(start)} → ${Texts.hhmm(end)} каждый день. " +
+        "Если отменить запуск до первой блокировки, Restart вернётся на баланс." +
         (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
     Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0, note = note) { source ->
-        when (Mama.restartSeries(this, source, commitment)) {
+        when (Mama.restartSeries(this, source, window, commitment)) {
             app.mama.platform.Mama.SeriesStart.Started -> {
                 restartFlow = false
                 commitmentKop = null
+                closeDraft()
             }
-            is app.mama.platform.Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; proceedCommitment(true, kind) }
+            is app.mama.platform.Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; payRestart(kind) }
             else -> alert("Не получилось", "Restart сейчас недоступен.")
         }
         render()

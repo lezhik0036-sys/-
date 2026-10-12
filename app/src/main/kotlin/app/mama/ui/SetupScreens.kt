@@ -192,7 +192,11 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         b.addView(kit.timeField("Окончание", "Сегодня, ${Texts.date(today)}", Texts.time(now + TestMode.DURATION, zone), null, null), kit.gap(12))
         b.addView(kit.hintRow(Icon.FLASK, "Только для тестирования: бесплатно, не входит в серии, не тратит FLEX-дни."), kit.gap(18))
     } else {
-        b.addView(kit.sectionHeader("Выбери время", "Одно окно, которое повторяется каждый день серии."))
+        b.addView(kit.sectionHeader(
+            "Выбери время",
+            (if (restartFlow) "Restart: ${Texts.seriesName(choice.series ?: app.mama.core.SeriesKind.SEVEN)}. " else "") +
+                "Одно окно, которое повторяется каждый день серии.",
+        ))
         // A standard series always starts with a full window (never one already in progress).
         val plan = DailyWindow(start, end, zone).nextFullPlan(now, mode)
         val firstStart = LocalDateTime.ofInstant(plan.start, zone).toLocalDate()
@@ -221,9 +225,26 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         if (start == end) b.addView(kit.infoCard("Начало и окончание совпадают.", Icon.ALERT, Tone.WARNING), kit.gap(12))
     }
     val cta = kit.primaryButton("Далее", Icon.ARROW_RIGHT) {
-        if (choice != Choice.TEST && start == end) alert("Проверьте время", "Начало и окончание совпадают.") else go(nextStep(Step.TIME))
+        when {
+            choice != Choice.TEST && start == end -> alert("Проверьте время", "Начало и окончание совпадают.")
+            restartFlow -> {
+                saveForm()
+                if (FeatureFlags.WALLET_ENABLED) {
+                    restartStep = Step.COMMITMENT
+                    render()
+                } else {
+                    payRestart(choice.series ?: app.mama.core.SeriesKind.SEVEN)
+                }
+            }
+            else -> go(nextStep(Step.TIME))
+        }
     }
-    return lightFrame(header(Step.TIME), b, cta)
+    val header = if (restartFlow) {
+        kit.stepHeader(1, if (FeatureFlags.WALLET_ENABLED) 2 else 1) { restartFlow = false; render() }
+    } else {
+        header(Step.TIME)
+    }
+    return lightFrame(header, b, cta)
 }
 
 internal fun MainActivity.pickZone() {

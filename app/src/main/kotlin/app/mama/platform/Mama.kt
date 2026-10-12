@@ -212,7 +212,8 @@ object Mama {
     }
 
     /**
-     * Restart of a failed series with the same settings. Call only after the
+     * Restart of a failed series: the same length (3/5/7), a newly chosen daily
+     * [window] (never the failed series' time). Call only after the
      * Restart was granted (paid, a test grant, or [GrantSource.INTERNAL_BALANCE],
      * in which case the Restart price is held from the balance here until the
      * new series becomes ACTIVE). The new series is SCHEDULED; cancelling it
@@ -220,11 +221,11 @@ object Mama {
      * "Цена слова" is asked again and is never added to the Restart price.
      */
     @Synchronized
-    fun restartSeries(context: Context, source: GrantSource, commitmentKop: Long? = null): SeriesStart {
+    fun restartSeries(context: Context, source: GrantSource, window: DailyWindow, commitmentKop: Long? = null): SeriesStart {
         val r = reconcile(context)
         if (r.snapshot.series?.status != SeriesStatus.BROKEN || r.state != LockState.Free) return SeriesStart.Rejected
         Log.i(TAG, "Restart of ${r.snapshot.series?.kind} granted: $source")
-        val result = flow.restart(r.snapshot, source, UUID.randomUUID().toString(), UUID.randomUUID().toString(), commitmentKop, r.trustedNow)
+        val result = flow.restart(r.snapshot, source, window, UUID.randomUUID().toString(), UUID.randomUUID().toString(), commitmentKop, r.trustedNow)
         return saveStart(context, result)
     }
 

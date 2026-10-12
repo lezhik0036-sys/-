@@ -49,15 +49,25 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
     /**
      * Restart of the failed series in [s], once granted (paid, a test grant,
      * or [GrantSource.INTERNAL_BALANCE]: the Restart price is held from the
-     * balance here). The new series is SCHEDULED like any other: the Restart
-     * is used, and the 30-day wait of the failure lifted, only when it
-     * becomes ACTIVE. Until then the failed series is kept aside, so a cancel
-     * puts everything back as it was before the Restart.
+     * balance here). It keeps only the failed series' length (3/5/7, whose
+     * Restart price was paid); its daily [window] is a new choice, never the
+     * failed series' time. The new series is SCHEDULED like any other: the
+     * Restart is used, and the 30-day wait of the failure lifted, only when
+     * it becomes ACTIVE. Until then the failed series is kept aside, so a
+     * cancel puts everything back as it was before the Restart.
      *
      * TODO(payments): a store-paid Restart cancelled before ACTIVE needs a
      * store refund or credit; decide with the payment integration.
      */
-    fun restart(s: Snapshot, source: GrantSource, seriesId: String, sessionId: String, commitmentKop: Long?, now: Instant): Result {
+    fun restart(
+        s: Snapshot,
+        source: GrantSource,
+        window: DailyWindow,
+        seriesId: String,
+        sessionId: String,
+        commitmentKop: Long?,
+        now: Instant,
+    ): Result {
         val failed = s.series?.takeIf { it.status == SeriesStatus.BROKEN } ?: return Result.NotAllowed
         var wallet = s.wallet
         if (source == GrantSource.INTERNAL_BALANCE) {
@@ -67,7 +77,7 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
                 is WalletEngine.Result.Invalid -> return Result.Rejected
             }
         }
-        val u = series.start(seriesId, sessionId, failed.kind, failed.window, failed.contact, failed.mode, now, restartOf = failed.id)
+        val u = series.start(seriesId, sessionId, failed.kind, window, failed.contact, failed.mode, now, restartOf = failed.id)
         wallet = when (val r = reserveCommitment(wallet, seriesId, commitmentKop, now)) {
             is WalletEngine.Result.Ok -> r.wallet
             is WalletEngine.Result.Insufficient -> return Result.NotEnoughBalance(r.availableKop)

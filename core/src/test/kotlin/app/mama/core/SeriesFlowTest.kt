@@ -32,7 +32,7 @@ class SeriesFlowTest {
     private fun done(r: SeriesFlow.Result) = assertIs<SeriesFlow.Result.Done>(r).snapshot
 
     /** Restart from the balance (299 for a 7-day series) with "Цена слова" 1 000. */
-    private fun restarted() = done(flow.restart(afterFailure(), GrantSource.INTERNAL_BALANCE, "new", "n1", 1_000 * rub, now))
+    private fun restarted() = done(flow.restart(afterFailure(), GrantSource.INTERNAL_BALANCE, window, "new", "n1", 1_000 * rub, now))
 
     /** 23:00: the first lock of [s] starts. */
     private fun lockStarts(s: Snapshot) = flow.fold(s.copy(session = lock.advance(s.session!!, at23)), "n2", at23)
@@ -64,7 +64,7 @@ class SeriesFlowTest {
         assertEquals("old", c.snapshot.series!!.id)
         assertEquals(SeriesStatus.BROKEN, c.snapshot.series!!.status)
         assertNull(c.snapshot.restartedFrom)
-        assertIs<SeriesFlow.Result.Done>(flow.restart(c.snapshot, GrantSource.INTERNAL_BALANCE, "new2", "n3", null, now + Duration.ofHours(3)))
+        assertIs<SeriesFlow.Result.Done>(flow.restart(c.snapshot, GrantSource.INTERNAL_BALANCE, window, "new2", "n3", null, now + Duration.ofHours(3)))
     }
 
     @Test
@@ -104,7 +104,18 @@ class SeriesFlowTest {
     }
 
     @Test
-    fun `a Restart keeps length and time of the failed series, contact and commitment can change before the start`() {
+    fun `a Restart keeps the length of the failed series and takes a newly chosen time, never the failed one`() {
+        // Failed series 15:46 -> 07:00; the Restart draft chose 16:20 -> 00:20.
+        val failedAt1546 = afterFailure().let { it.copy(series = it.series!!.copy(window = DailyWindow(LocalTime.of(15, 46), LocalTime.of(7, 0), MSK))) }
+        val chosen = DailyWindow(LocalTime.of(16, 20), LocalTime.of(0, 20), MSK)
+        val fresh = done(flow.restart(failedAt1546, GrantSource.INTERNAL_BALANCE, chosen, "new", "n1", null, now))
+        assertEquals(SeriesKind.SEVEN, fresh.series!!.kind, "same length")
+        assertEquals(chosen, fresh.series!!.window, "new time, not 15:46")
+        assertEquals(t("2026-10-12T13:20:00Z"), fresh.session!!.plan.start, "first full window today 16:20")
+    }
+
+    @Test
+    fun `once confirmed, a Restart's time is fixed - contact and commitment can change before the start`() {
         val r = restarted()
         assertEquals(SeriesKind.SEVEN, r.series!!.kind)
         assertEquals(window, r.series!!.window)
@@ -121,9 +132,9 @@ class SeriesFlowTest {
     @Test
     fun `a Restart paid from the balance needs the available balance`() {
         val poor = afterFailure().copy(wallet = Wallet(availableKop = 100 * rub))
-        assertEquals(100 * rub, assertIs<SeriesFlow.Result.NotEnoughBalance>(flow.restart(poor, GrantSource.INTERNAL_BALANCE, "new", "n1", null, now)).availableKop)
+        assertEquals(100 * rub, assertIs<SeriesFlow.Result.NotEnoughBalance>(flow.restart(poor, GrantSource.INTERNAL_BALANCE, window, "new", "n1", null, now)).availableKop)
         // A test grant holds nothing; a cancel still restores the failure as it was.
-        val granted = done(flow.restart(poor, GrantSource.TEST_NO_PAYMENT, "new", "n1", null, now))
+        val granted = done(flow.restart(poor, GrantSource.TEST_NO_PAYMENT, window, "new", "n1", null, now))
         assertEquals(0, granted.wallet.restartReservedKop)
         val c = flow.cancel(granted, now.plusSeconds(60))!!.snapshot
         assertEquals(100 * rub, c.wallet.availableKop)
@@ -176,7 +187,7 @@ class SeriesFlowTest {
         assertEquals(freeFrom, StandardRules.freeStartAt(failure.entitlements))
 
         val oct5 = t("2026-10-05T09:00:00Z")
-        val restarted = done(flow.restart(failure, GrantSource.INTERNAL_BALANCE, "new", "n1", 1_000 * rub, oct5))
+        val restarted = done(flow.restart(failure, GrantSource.INTERNAL_BALANCE, window, "new", "n1", 1_000 * rub, oct5))
         assertEquals(SeriesStatus.SCHEDULED, restarted.series!!.status)
         assertEquals(freeFrom, StandardRules.freeStartAt(restarted.entitlements))
 

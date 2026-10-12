@@ -35,7 +35,7 @@ object Previews {
         "welcome", "permissions", "series", "time", "contact", "promise", "review",
         "dashboard", "lock", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
         "commitment", "restart_commitment", "dashboard_active", "edit", "cancel_launch",
-        "needs_attention", "restart_scheduled", "emergency",
+        "needs_attention", "restart_scheduled", "emergency", "restart_time",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -100,6 +100,13 @@ object Previews {
                 Commitment("preview", 5_000_00, now.minus(7, ChronoUnit.DAYS), CommitmentState.RELEASED, now),
             )
             "commitment" -> { a.commitmentKop = 5_000_00; a.choice = Choice.THREE; a.commitmentScreen(false, SeriesKind.THREE) }
+            "restart_time" -> {
+                // Restart 7/7 after a failure at 15:46: a new time draft from "now" (16:20).
+                a.restartFlow = true
+                a.start = LocalTime.of(16, 20)
+                a.end = LocalTime.of(0, 20)
+                a.timeScreen()
+            }
             "restart_commitment" -> { a.commitmentKop = null; a.commitmentScreen(true, SeriesKind.THREE) }
             "flex" -> a.flexDashboard(FlexPackage("p", now.minus(6, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 5, successful = 5)) { LockState.Free }
             "flex_plan" -> { a.flexStartNow = false; a.flexPlannerScreen(FlexPackage("p", now, GrantSource.TEST_NO_PAYMENT)) }

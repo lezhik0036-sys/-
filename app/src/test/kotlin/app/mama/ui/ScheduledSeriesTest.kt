@@ -158,16 +158,17 @@ class ScheduledSeriesTest {
         )
         seed(Snapshot(series = failed, entitlements = Entitlements(standardFailedAt = failedAt), wallet = Wallet(availableKop = 10_000_00)))
 
-        assertEquals(Mama.SeriesStart.Started, Mama.restartSeries(context, GrantSource.INTERNAL_BALANCE, 1_000_00))
+        val chosen = windowIn(3)
+        assertEquals(Mama.SeriesStart.Started, Mama.restartSeries(context, GrantSource.INTERNAL_BALANCE, chosen, 1_000_00))
         val restarted = Mama.series(context)!!
         assertEquals(SeriesStatus.SCHEDULED, restarted.status)
         assertEquals("old", restarted.restartOf)
         assertEquals(10_000_00L - 299_00L - 1_000_00L, Mama.wallet(context).availableKop)
         assertEquals(299_00L, Mama.wallet(context).restartReservedKop)
         assertEquals(failedAt, Mama.entitlements(context).standardFailedAt)
-        // A Restart keeps the length and time of the failed series.
+        // A Restart keeps only the length of the failed series; the time is the newly chosen one.
         assertEquals(SeriesKind.SEVEN, restarted.kind)
-        assertEquals(failed.window, restarted.window)
+        assertEquals(chosen, restarted.window)
 
         assertTrue(Mama.cancelScheduledSeries(context))
         assertEquals(10_000_00L, Mama.wallet(context).availableKop)

@@ -62,8 +62,11 @@ class MainActivity : Activity() {
     /** "Цена слова" chosen for the series about to start (kopecks), or null. Never carried forward. */
     internal var commitmentKop: Long? = null
 
-    /** Failure screen: the user chose "Начать заново" and is choosing "Цена слова" for the Restart. */
+    /** Failure screen: the user chose "Начать заново": Restart time, then "Цена слова", then payment. */
     internal var restartFlow = false
+
+    /** Current step of the Restart flow: [Step.TIME] or [Step.COMMITMENT]. */
+    internal var restartStep = Step.TIME
 
     /** "Изменить условия" of a SCHEDULED series: the wizard edits a draft of its conditions. */
     internal var editing = false
@@ -96,6 +99,7 @@ class MainActivity : Activity() {
         if (choice == Choice.TEST && !FeatureFlags.TEST_MODE_ENABLED) choice = Choice.SEVEN
         // Back on the same wizard step after a screen rotation or recreation.
         savedInstanceState?.getString(STATE_STEP)?.let { s -> runCatching { step = Step.valueOf(s) } }
+        savedInstanceState?.getString(STATE_RESTART_STEP)?.let { s -> runCatching { restartStep = Step.valueOf(s); restartFlow = true } }
         start = runCatching { LocalTime.parse(prefs.getString("start", null)) }.getOrDefault(start)
         end = runCatching { LocalTime.parse(prefs.getString("end", null)) }.getOrDefault(end)
         zone = runCatching { ZoneId.of(prefs.getString("zone", null)) }.getOrDefault(zone)
@@ -149,6 +153,7 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_STEP, step.name)
+        if (restartFlow) outState.putString(STATE_RESTART_STEP, restartStep.name)
     }
 
     // ---------------- series draft ----------------
@@ -177,6 +182,19 @@ class MainActivity : Activity() {
         saveForm()
     }
 
+    /**
+     * «Начать заново» on the failure screen: a Restart is a new launch with the
+     * same length; its time is a new draft (current time), never the failed
+     * series' time. Coming back into the same Restart keeps the draft.
+     */
+    internal fun beginRestart(kind: SeriesKind) {
+        beginDraft()
+        choice = Choice.entries.first { it.series == kind }
+        commitmentKop = null
+        restartFlow = true
+        restartStep = Step.TIME
+    }
+
     /** The draft became a series (or test / FLEX): the next one starts fresh. */
     internal fun closeDraft() {
         prefs.edit().putBoolean(DRAFT_OPEN, false).putBoolean(DRAFT_TIME_SET, false).apply()
@@ -199,7 +217,10 @@ class MainActivity : Activity() {
         when {
             preview != null -> super.onBackPressed()
             flexPlanning -> { flexPlanning = false; render() }
-            restartFlow -> { restartFlow = false; render() }
+            restartFlow -> {
+                if (restartStep == Step.COMMITMENT) restartStep = Step.TIME else restartFlow = false
+                render()
+            }
             editing -> back()
             tab != 0 && onDashboard -> { tab = 0; render() }
             onWizard && step != Step.WELCOME -> back()
@@ -250,8 +271,12 @@ class MainActivity : Activity() {
         onWizard = false
         onDashboard = false
         val (view, key) = when {
-            series != null && series.status == SeriesStatus.BROKEN && restartFlow && FeatureFlags.WALLET_ENABLED ->
-                commitmentScreen(restart = true, kind = series.kind) to "restartCommitment"
+            series != null && series.status == SeriesStatus.BROKEN && restartFlow ->
+                if (restartStep == Step.COMMITMENT) {
+                    commitmentScreen(restart = true, kind = series.kind) to "restartCommitment"
+                } else {
+                    timeScreen() to "restartTime"
+                }
             series != null && series.status == SeriesStatus.BROKEN -> failureScreen(series) to "failure"
             series != null && series.status == SeriesStatus.COMPLETED -> successScreen(series) to "success"
             flex != null && flex.over -> flexResultScreen(flex) to "flexResult"
@@ -482,6 +507,7 @@ class MainActivity : Activity() {
     companion object {
         const val EXTRA_PREVIEW = "mama.preview"
         private const val STATE_STEP = "step"
+        private const val STATE_RESTART_STEP = "restartStep"
         internal const val DRAFT_OPEN = "draft.open"
         internal const val DRAFT_TIME_SET = "draft.timeSet"
         private const val PICK_CONTACT = 10

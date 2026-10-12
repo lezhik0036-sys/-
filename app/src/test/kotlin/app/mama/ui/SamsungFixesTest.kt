@@ -142,6 +142,56 @@ class SamsungFixesTest {
         }
     }
 
+    @Test
+    fun `Restart 7_7 after a 15_46 failure - the time is a new draft from now, only the length is kept`() {
+        val failed = broken.copy(window = DailyWindow(LocalTime.of(15, 46), LocalTime.of(7, 0), zone))
+        seed(Snapshot(series = failed, entitlements = Entitlements(standardFailedAt = failedAt), wallet = Wallet(availableKop = 1_000_00)))
+        // Left over from the failed series' wizard.
+        context.getSharedPreferences("mama_setup", Context.MODE_PRIVATE).edit()
+            .putString("start", "15:46").putString("end", "07:00").putString("choice", "SEVEN").commit()
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val a = controller.get()
+        val before = LocalTime.now(zone).withSecond(0).withNano(0)
+        find(content(a), "Начать заново")!!.performClick()
+        val after = LocalTime.now(zone).withSecond(0).withNano(0)
+        assertTrue(a.restartFlow)
+        assertEquals(Step.TIME, a.restartStep)
+        assertEquals(MainActivity.Choice.SEVEN, a.choice)
+        assertTrue("restart draft start ${a.start}, now $before..$after", a.start == before || a.start == after)
+        assertEquals(a.start.plusHours(8), a.end)
+        assertTrue(texts(content(a)).toString(), texts(content(a)).any { it.startsWith("Restart: 7 дней") })
+
+        // The user picks a time; it survives going on, coming back and a recreated screen.
+        a.start = LocalTime.of(16, 20)
+        a.end = LocalTime.of(0, 20)
+        find(content(a), "Далее")!!.performClick()
+        assertEquals(Step.COMMITMENT, a.restartStep)
+        a.onBackPressed()
+        assertEquals(Step.TIME, a.restartStep)
+        assertEquals(LocalTime.of(16, 20), a.start)
+        controller.recreate()
+        val b = controller.get()
+        assertTrue(b.restartFlow)
+        assertEquals(LocalTime.of(16, 20), b.start)
+
+        // Confirmed: SCHEDULED with the chosen time and the failed series' length, fixed from now on.
+        find(content(b), "Далее")!!.performClick()
+        find(content(b), "Пропустить")!!.performClick()
+        find(dialogRoot(), "Оплатить с баланса MAMA")!!.performClick()
+        val restarted = Mama.series(context)!!
+        assertEquals(SeriesStatus.SCHEDULED, restarted.status)
+        assertEquals(SeriesKind.SEVEN, restarted.kind)
+        assertEquals(DailyWindow(LocalTime.of(16, 20), LocalTime.of(0, 20), zone), restarted.window)
+        assertFalse(b.restartFlow)
+        // The next launch draft starts from the current time again.
+        b.beginDraft()
+        b.ensureDraftTime()
+        val now = LocalTime.now(zone).withSecond(0).withNano(0)
+        if (now != LocalTime.of(16, 20) && now.minusMinutes(1) != LocalTime.of(16, 20)) {
+            assertFalse("a new draft does not reuse 16:20", b.start == LocalTime.of(16, 20))
+        }
+    }
+
     // ---------------- 2. the 50% return is a surprise ----------------
 
     private val announcing = listOf("50%", "50 %", "24 час", "вернутся", "Начисление", "половин")
@@ -196,6 +246,7 @@ class SamsungFixesTest {
         assertTrue(Mama.topUpTest(context, 1_000_00))
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         find(content(a), "Начать заново")!!.performClick()
+        find(content(a), "Далее")!!.performClick()
         find(content(a), "Пропустить")!!.performClick()
         val pay = find(dialogRoot(), "Оплатить с баланса MAMA")
         assertNotNull("pay from balance is offered", pay)
@@ -219,6 +270,7 @@ class SamsungFixesTest {
         failedSeries(availableKop = 200_00)
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         find(content(a), "Начать заново")!!.performClick()
+        find(content(a), "Далее")!!.performClick()
         find(content(a), "Пропустить")!!.performClick()
         val first = texts(dialogRoot())
         assertTrue(first.toString(), "На балансе MAMA недостаточно средств." in first)
