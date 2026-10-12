@@ -162,10 +162,13 @@ enum class CallObservation { ACTIVE, NONE, UNKNOWN }
 object EmergencyCallPolicy {
     /**
      * EMERGENCY_DIAL_GRACE_PERIOD: how long the dialer may stay open before a
-     * call starts. Generous on purpose: the person may be in shock or in a
-     * hurry. TODO(product): tune after tests on real phones; configurable.
+     * call starts. The number is already entered, so pressing "call" takes
+     * seconds; a minute leaves room for shock or a SIM choice. It is only an
+     * extra limit: other numbers are refused by the call control
+     * ([OutgoingCallRules]) anyway, and a call that has started is never cut.
+     * TODO(product): tune after tests on real phones; configurable.
      */
-    val DIAL_GRACE_PERIOD: Duration = Duration.ofMinutes(2)
+    val DIAL_GRACE_PERIOD: Duration = Duration.ofSeconds(60)
 
     /** Before the call: no call screen visible for this long means the user went back. */
     val LEFT_DIALER_AFTER: Duration = Duration.ofSeconds(3)
@@ -219,4 +222,46 @@ object EmergencyCallPolicy {
     /** The lock screen steps aside only for the call flow, and only during a session. */
     fun overlayMayStepAside(s: EmergencyCallSession?, lastFront: FrontWindow): Boolean =
         s != null && lastFront == FrontWindow.CALL_FLOW
+}
+
+/**
+ * Outgoing calls while the phone is locked (Android's call redirection, see
+ * the app's MamaCallRedirectionService). Real emergency calls never get here:
+ * Android places them itself. Of the rest, only the trusted contact of the
+ * running lock may be called; any other number is cancelled, so the phone's
+ * dialer cannot be used as a way around the lock (for example by erasing 112
+ * in the dialer and typing another number). Outside a lock MAMA does not
+ * interfere with calls at all.
+ */
+object OutgoingCallRules {
+    enum class Decision { ALLOW, BLOCK }
+
+    /**
+     * [locked]: the strict lock is on right now. [isEmergency]: what Android
+     * says about the number (null = it cannot tell). [trustedContact]: the
+     * contact frozen in the running lock.
+     */
+    fun decide(locked: Boolean, dialed: String, isEmergency: Boolean?, trustedContact: TrustedContact?): Decision = when {
+        // Never interfere with an emergency call (defensive: Android does not send them here).
+        isEmergency == true -> Decision.ALLOW
+        !locked -> Decision.ALLOW
+        trustedContact != null && samePhone(dialed, trustedContact.phone) -> Decision.ALLOW
+        else -> Decision.BLOCK
+    }
+
+    /**
+     * The same phone number however it is written: "+7 900 123-45-67",
+     * "8 (900) 123-45-67", "89001234567", "9001234567" all match
+     * "+79001234567". Different numbers never match.
+     */
+    fun samePhone(dialed: String, normalized: String): Boolean {
+        TrustedContact.normalizePhone(dialed)?.let { return it == normalized }
+        // Written without a country code: compare the national part (last 10 digits).
+        val digits = dialed.filter { it.isDigit() }
+        val target = normalized.filter { it.isDigit() }
+        if (dialed.any { !it.isDigit() && it !in "+-() " }) return false
+        return digits.length == NATIONAL_DIGITS && target.length > NATIONAL_DIGITS && target.endsWith(digits)
+    }
+
+    private const val NATIONAL_DIGITS = 10
 }

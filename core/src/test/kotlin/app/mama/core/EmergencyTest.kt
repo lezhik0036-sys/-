@@ -104,8 +104,8 @@ class EmergencyTest {
     @Test
     fun `the dialer stays while the number is being dialled`() {
         var s: EmergencyCallSession? = opened
-        for (t in 1..60) s = EmergencyCallPolicy.tick(s!!, 1_000L + t * 1_000, CallObservation.NONE, callFlowOnScreen = true)
-        assertNotNull(s, "a minute in the dialer is fine")
+        for (t in 1..45) s = EmergencyCallPolicy.tick(s!!, 1_000L + t * 1_000, CallObservation.NONE, callFlowOnScreen = true)
+        assertNotNull(s, "45 seconds in the dialer are fine")
         // Keyboard or a system dialog in front changes nothing.
         assertEquals(s, EmergencyCallPolicy.onFront(s, FrontWindow.NEUTRAL))
     }

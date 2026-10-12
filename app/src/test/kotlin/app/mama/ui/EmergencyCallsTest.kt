@@ -13,6 +13,7 @@ import app.mama.core.EmergencyNumberCatalog
 import app.mama.core.FrontWindow
 import app.mama.core.LockPlan
 import app.mama.core.LockState
+import app.mama.core.OutgoingCallRules
 import app.mama.core.Series
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
@@ -136,5 +137,40 @@ class EmergencyCallsTest {
         assertNull("no failure, no cooldown", after.snapshot.entitlements.standardFailedAt)
         assertEquals(before.snapshot.wallet, after.snapshot.wallet)
         assertEquals(CommitmentState.RESERVED, after.snapshot.wallet.commitmentFor("s1")!!.state)
+    }
+
+    // ---------------- call control (Android call redirection) ----------------
+
+    @Test
+    fun `during the lock only emergency numbers and the trusted contact may be called`() {
+        activeSeries()
+        assertTrue(Mama.reconcile(context).state is LockState.Locked)
+        assertEquals(OutgoingCallRules.Decision.BLOCK, Mama.outgoingCall(context, "+79991112233", false))
+        assertEquals(OutgoingCallRules.Decision.BLOCK, Mama.outgoingCall(context, "89991112233", null))
+        assertEquals("trusted contact", OutgoingCallRules.Decision.ALLOW, Mama.outgoingCall(context, "8 (900) 123-45-67", false))
+        assertEquals("emergency", OutgoingCallRules.Decision.ALLOW, Mama.outgoingCall(context, "112", true))
+    }
+
+    @Test
+    fun `without a running lock MAMA does not interfere with calls`() {
+        assertEquals(OutgoingCallRules.Decision.ALLOW, Mama.outgoingCall(context, "+79991112233", false))
+    }
+
+    @Test
+    fun `112 erased in the dialer and another number called - refused, session over, lock screen back, nothing failed`() {
+        activeSeries()
+        val before = Mama.reconcile(context)
+        assertEquals(EmergencyCalls.Start.Opened, EmergencyCalls.start(context, "112"))
+        assertTrue(EmergencyCalls.overlayMayStepAside(context))
+        // The dialer now asks Android to call an ordinary number: the call control refuses it.
+        assertEquals(OutgoingCallRules.Decision.BLOCK, Mama.outgoingCall(context, "+79991112233", false))
+        EmergencyCalls.onCallBlocked(context)
+        assertNull(EmergencyCalls.session(context))
+        assertFalse(EmergencyCalls.overlayMayStepAside(context))
+        val after = Mama.reconcile(context)
+        assertEquals(SeriesStatus.ACTIVE, after.snapshot.series!!.status)
+        assertTrue(after.state is LockState.Locked)
+        assertNull(after.snapshot.entitlements.standardFailedAt)
+        assertEquals(before.snapshot.wallet, after.snapshot.wallet)
     }
 }

@@ -14,7 +14,10 @@ import app.mama.ui.Requirement
  *   settings, recents or Settings during the lock;
  * - device administrator: MAMA cannot be uninstalled during the lock;
  * - phone and SMS: Trusted Exit works (the code reaches the contact), so a
- *   binding series always has its way out.
+ *   binding series always has its way out;
+ * - "Контроль исходящих звонков" (call redirection role, Android 10+): during
+ *   the lock only emergency numbers and the trusted contact can be called, so
+ *   the dialer of an emergency call is no way around the lock.
  * Exact alarms, battery and notifications are not part of it: a lock that is
  * already running does not depend on them.
  */

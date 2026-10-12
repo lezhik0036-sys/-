@@ -59,6 +59,11 @@ class LockService : Service() {
 
         private const val SYNC_EVERY_TICKS = 15
 
+        /** Something ended a step-aside (e.g. a refused call): put the lock screen back now. */
+        fun restoreLock() {
+            instance?.let { s -> s.handler.post { s.render() } }
+        }
+
         /** Called by the guard on every foreground change. */
         fun onForeground(screen: Calls.Screen) {
             foreground = screen

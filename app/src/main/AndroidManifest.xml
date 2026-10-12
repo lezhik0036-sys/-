@@ -75,6 +75,17 @@
                 android:resource="@xml/guard_service" />
         </service>
 
+        <!-- "Контроль исходящих звонков": during a lock only emergency calls and the trusted contact. -->
+        <service
+            android:name=".platform.MamaCallRedirectionService"
+            android:directBootAware="true"
+            android:exported="true"
+            android:permission="android.permission.BIND_CALL_REDIRECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallRedirectionService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".platform.SystemEventsReceiver"
             android:directBootAware="true"

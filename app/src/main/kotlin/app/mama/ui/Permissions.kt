@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import app.mama.lock.GuardService
 import app.mama.platform.Alarms
+import app.mama.platform.CallControl
 import app.mama.platform.MamaDeviceAdmin
 
 /** Everything the strict lock depends on, with a way to grant each item. */
@@ -21,6 +22,11 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
     GUARD("Специальные возможности", "Не даёт открыть шторку, «Недавние» и настройки во время блокировки.", true, Icon.ACCESSIBILITY),
     ADMIN("Администратор устройства", "MAMA нельзя удалить, пока идёт блокировка.", true, Icon.SHIELD),
     SMS("Телефон, SMS и звонки", "Код для выхода приходит доверенному контакту. Звонки работают с экрана блокировки.", true, Icon.PHONE),
+    CALL_CONTROL(
+        "Контроль исходящих звонков",
+        "MAMA разрешает экстренные и доверенные звонки, но не позволяет использовать телефонные звонки как обход блокировки.",
+        true, Icon.SHIELD,
+    ),
     EXACT_ALARMS("Будильники и напоминания", "Блокировка начинается и заканчивается точно вовремя.", true, Icon.ALARM),
     BATTERY("Работа без ограничений батареи", "Система не усыпит MAMA ночью.", false, Icon.BATTERY),
     NOTIFICATIONS("Уведомления", "Напомним, когда блокировка начнётся и закончится.", false, Icon.BELL),
@@ -30,7 +36,7 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
      * Part of the strict-mode contour that strictProtectionReady requires
      * before a series can become ACTIVE (see app.mama.platform.Protection).
      */
-    val strict: Boolean get() = this == OVERLAY || this == GUARD || this == ADMIN || this == SMS
+    val strict: Boolean get() = this == OVERLAY || this == GUARD || this == ADMIN || this == SMS || this == CALL_CONTROL
 
     fun isGranted(context: Context): Boolean = when (this) {
         OVERLAY -> Settings.canDrawOverlays(context)
@@ -39,6 +45,8 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
         ADMIN -> context.getSystemService(DevicePolicyManager::class.java)!!
             .isAdminActive(ComponentName(context, MamaDeviceAdmin::class.java))
         SMS -> smsPermissions.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        // Android 10+; on older phones there is nothing to grant.
+        CALL_CONTROL -> CallControl.held(context)
         EXACT_ALARMS -> Alarms.canScheduleExact(context)
         BATTERY -> context.getSystemService(PowerManager::class.java)!!
             .isIgnoringBatteryOptimizations(context.packageName)
@@ -64,6 +72,10 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
                     .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Так MAMA нельзя будет удалить во время блокировки."),
             )
             SMS -> activity.requestPermissions(smsPermissions, 1)
+            CALL_CONTROL -> CallControl.requestIntent(activity)?.let {
+                @Suppress("DEPRECATION")
+                activity.startActivityForResult(it, 3)
+            }
             EXACT_ALARMS -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))
             }
@@ -93,6 +105,7 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
             GUARD -> "Установленные приложения → «MAMA — защита блокировки» → включить. " +
                 "Если серое: Приложения → MAMA → ⋮ → «Разрешить ограниченные настройки»."
             ADMIN -> "Нажмите «Активировать»."
+            CALL_CONTROL -> "Выберите MAMA и подтвердите."
             EXACT_ALARMS -> "Включите разрешение для MAMA."
             BATTERY -> "Нажмите «Разрешить»."
             else -> null

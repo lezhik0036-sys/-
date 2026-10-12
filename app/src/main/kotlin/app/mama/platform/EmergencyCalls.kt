@@ -212,7 +212,9 @@ object EmergencyCalls {
             pkg == context.packageName ->
                 // MAMA's own app is somewhere else than the call; its overlay windows say nothing.
                 if (className?.startsWith("app.mama.ui") == true) FrontWindow.OTHER else FrontWindow.NEUTRAL
-            isCallFlow(context, p, className, s) -> FrontWindow.CALL_FLOW
+            isCallFlow(context, p, className, s) ->
+                // The phone app's own settings are not part of a call (generic, not vendor-specific).
+                if (settingsScreen(className)) FrontWindow.OTHER else FrontWindow.CALL_FLOW
             p == "android" || p == "com.android.systemui" || "telephonyui" in p || "aodservice" in p || "biometrics" in p ||
                 p in inputMethods(context) -> FrontWindow.NEUTRAL
             else -> FrontWindow.OTHER
@@ -233,6 +235,11 @@ object EmergencyCalls {
         return Calls.classify(p, className) == Calls.Screen.EMERGENCY
     }
 
+    private fun settingsScreen(className: String?): Boolean {
+        val c = className?.lowercase() ?: return false
+        return "setting" in c || "preference" in c
+    }
+
     private fun inputMethods(context: Context): Set<String> = runCatching {
         context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
             ?.enabledInputMethodList?.map { it.packageName.lowercase() }?.toSet()
@@ -248,6 +255,16 @@ object EmergencyCalls {
         } catch (e: RuntimeException) {
             Log.w(TAG, "Cannot show the in-call screen", e)
         }
+    }
+
+    /**
+     * The call control refused a non-emergency number during the lock (for
+     * example 112 was erased in the dialer and another number typed): the
+     * session is over and the lock screen comes back. Not a failure.
+     */
+    fun onCallBlocked(context: Context) {
+        if (session(context) != null) end(context, "another number was dialled")
+        app.mama.lock.LockService.restoreLock()
     }
 
     /** The lock is over: nothing to step aside for any more. */

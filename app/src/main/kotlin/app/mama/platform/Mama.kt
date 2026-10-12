@@ -18,6 +18,7 @@ import app.mama.core.LockPlan
 import app.mama.core.LockState
 import app.mama.core.Reconciliation
 import app.mama.core.Recovery
+import app.mama.core.OutgoingCallRules
 import app.mama.core.Series
 import app.mama.core.SeriesFlow
 import app.mama.core.SeriesKind
@@ -475,6 +476,17 @@ object Mama {
         SessionStore(context.applicationContext).save(r.snapshot.copy(session = result.session))
         sync(context)
         return true
+    }
+
+    /**
+     * Call control: may this outgoing call go ahead? Only during the strict
+     * lock are calls limited, to emergency numbers and the lock's trusted
+     * contact ([OutgoingCallRules]).
+     */
+    @Synchronized
+    fun outgoingCall(context: Context, number: String, isEmergency: Boolean?): OutgoingCallRules.Decision {
+        val r = reconcile(context)
+        return OutgoingCallRules.decide(r.state is LockState.Locked, number, isEmergency, r.snapshot.session?.contact)
     }
 
     sealed interface CodeRequest {
