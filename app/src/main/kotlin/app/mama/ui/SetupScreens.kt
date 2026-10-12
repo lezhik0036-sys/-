@@ -29,7 +29,11 @@ internal fun MainActivity.steps(): List<Step> =
     if (choice == Choice.FLEX) {
         listOf(Step.PERMISSIONS, Step.SERIES, Step.CONTACT, Step.PROMISE)
     } else {
-        listOf(Step.PERMISSIONS, Step.SERIES, Step.TIME, Step.CONTACT, Step.PROMISE)
+        listOfNotNull(
+            Step.PERMISSIONS, Step.SERIES, Step.TIME, Step.CONTACT, Step.PROMISE,
+            // "Цена слова" is offered before every standard series (not the test mode).
+            Step.COMMITMENT.takeIf { choice.series != null && FeatureFlags.WALLET_ENABLED },
+        )
     }
 
 internal fun MainActivity.nextStep(from: Step): Step = when (from) {
@@ -60,6 +64,7 @@ internal fun MainActivity.wizardScreen(): Pair<View, Boolean> = when (step) {
     Step.TIME -> timeScreen()
     Step.CONTACT -> contactScreen()
     Step.PROMISE -> promiseScreen()
+    Step.COMMITMENT -> commitmentScreen(restart = false, kind = choice.series ?: app.mama.core.SeriesKind.SEVEN)
     Step.REVIEW -> reviewScreen()
 }
 
@@ -289,7 +294,7 @@ internal fun MainActivity.promiseScreen(): Pair<View, Boolean> {
             alert("Одна фраза", "Напиши, зачем тебе эта пауза — хотя бы несколько слов.")
         } else {
             Promise.set(this, text)
-            go(Step.REVIEW)
+            go(nextStep(Step.PROMISE))
         }
     }
     return lightFrame(header(Step.PROMISE), b, cta)
@@ -339,6 +344,14 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
             line(Icon.PERSON, "Доверенный контакт", contactLine, phoneLine)
             line(Icon.HEART, "Моя причина", "«$reason»")
             line(Icon.REFRESH, "Restart при срыве", Texts.price(kind.restartPriceRub), "Старт серии бесплатный")
+            if (FeatureFlags.WALLET_ENABLED) {
+                val c = commitmentKop
+                line(
+                    Icon.SHIELD, "Цена слова",
+                    if (c != null) Texts.money(c) else "Без цены слова",
+                    if (c != null) "резерв с баланса MAMA · к Restart не прибавляется" else null,
+                )
+            }
             ctaLabel = "Начать ${Texts.seriesName(kind)}"
             needsAgreement = true
         }
@@ -375,13 +388,18 @@ private fun MainActivity.startChosen() {
             }
             return
         }
-        else -> when (val r = Mama.startSeries(this, choice.series!!, DailyWindow(start, end, zone), contact, mode)) {
-            Mama.SeriesStart.Started -> Unit
-            Mama.SeriesStart.Busy -> alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
-            is Mama.SeriesStart.Waiting -> alert(
+        else -> when (val r = Mama.startSeries(this, choice.series!!, DailyWindow(start, end, zone), contact, mode, commitmentKop)) {
+            Mama.SeriesStart.Started -> commitmentKop = null
+            Mama.SeriesStart.Busy -> return alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
+            is Mama.SeriesStart.Waiting -> return alert(
                 "Бесплатная серия пока недоступна",
                 "Следующая бесплатная серия через ${Texts.days(r.days.toInt())}. Телефон при этом не заблокирован.",
             )
+            is Mama.SeriesStart.NotEnoughBalance -> return alert(
+                "Не хватает на балансе",
+                "Для «Цены слова» нужно ${Texts.money(commitmentKop ?: 0)}, доступно ${Texts.money(r.availableKop)}.",
+            )
+            Mama.SeriesStart.Rejected -> return alert("Не получилось", "Серию сейчас нельзя начать.")
         }
     }
     agreed = false

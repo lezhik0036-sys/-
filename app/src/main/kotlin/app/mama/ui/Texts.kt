@@ -30,7 +30,15 @@ object Texts {
         SeriesKind.SEVEN -> "7 дней"
     }
 
-    fun price(rub: Int) = "$rub ₽"
+    fun price(rub: Int) = money(rub * 100L)
+
+    /** Kopecks as "5 000 ₽" or "2 500,50 ₽" (thin-space thousands). */
+    fun money(kop: Long): String {
+        val rub = kop / 100
+        val rest = kop % 100
+        val grouped = rub.toString().reversed().chunked(3).joinToString("\u00A0").reversed()
+        return if (rest == 0L) "$grouped ₽" else "$grouped,%02d ₽".format(rest)
+    }
 
     fun localDayTime(t: java.time.LocalDateTime): String = dayTime.format(t)
 

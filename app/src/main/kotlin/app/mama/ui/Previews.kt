@@ -1,6 +1,8 @@
 package app.mama.ui
 
 import android.view.View
+import app.mama.core.Commitment
+import app.mama.core.CommitmentState
 import app.mama.core.DailyWindow
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
@@ -31,6 +33,7 @@ object Previews {
     val names = listOf(
         "welcome", "permissions", "series", "time", "contact", "promise", "review",
         "dashboard", "lock", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
+        "commitment", "restart_commitment",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -63,8 +66,19 @@ object Previews {
             "promise" -> a.promiseScreen()
             "review" -> { a.agreed = true; a.step = Step.REVIEW; a.reviewScreen() }
             "dashboard" -> a.seriesDashboard(series(0)) { waiting }
-            "failure" -> a.failureScreen(series(4, SeriesStatus.BROKEN), freeInDays = 30)
-            "success" -> a.successScreen(series(7, SeriesStatus.COMPLETED))
+            "failure" -> a.failureScreen(
+                series(4, SeriesStatus.BROKEN), freeInDays = 30,
+                sampleCommitment = Commitment(
+                    "preview", 5_000_00, now.minus(4, ChronoUnit.DAYS), CommitmentState.FORFEITED, now,
+                    returnKop = 2_500_00, returnDueAt = now.plus(24, ChronoUnit.HOURS),
+                ),
+            )
+            "success" -> a.successScreen(
+                series(7, SeriesStatus.COMPLETED),
+                Commitment("preview", 5_000_00, now.minus(7, ChronoUnit.DAYS), CommitmentState.RELEASED, now),
+            )
+            "commitment" -> { a.commitmentKop = 5_000_00; a.choice = Choice.THREE; a.commitmentScreen(false, SeriesKind.THREE) }
+            "restart_commitment" -> { a.commitmentKop = null; a.commitmentScreen(true, SeriesKind.THREE) }
             "flex" -> a.flexDashboard(FlexPackage("p", now.minus(6, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 5, successful = 5)) { LockState.Free }
             "flex_plan" -> { a.flexStartNow = false; a.flexPlannerScreen(FlexPackage("p", now, GrantSource.TEST_NO_PAYMENT)) }
             "stats" -> { a.tab = 1; a.statisticsScreen() }

@@ -11,6 +11,7 @@ data class Snapshot(
     val lastTrusted: Instant? = null,
     val series: Series? = null,
     val entitlements: Entitlements = Entitlements(),
+    val wallet: Wallet = Wallet(),
 )
 
 /**
@@ -58,6 +59,27 @@ object StateCodec {
             it.settledSessionId?.let { v -> put("fx.settled", v) }
             it.endedAt?.let { v -> put("fx.endedAt", v.toString()) }
             it.lastBurntAt?.let { v -> put("fx.burntAt", v.toString()) }
+        }
+        val w = snapshot.wallet
+        put("wl.available", w.availableKop.toString())
+        put("wl.reserved", w.reservedKop.toString())
+        w.entries.forEachIndexed { i, e ->
+            put(
+                "wl.e.$i",
+                listOf(
+                    e.id, e.at.toString(), e.amountKop.toString(), e.type.name, e.seriesId.orEmpty(), e.flexId.orEmpty(),
+                    e.status.name, e.dueAt?.toString().orEmpty(),
+                ).joinToString(SEP),
+            )
+        }
+        w.commitments.forEachIndexed { i, c ->
+            put(
+                "wl.c.$i",
+                listOf(
+                    c.seriesId, c.amountKop.toString(), c.reservedAt.toString(), c.state.name, c.settledAt?.toString().orEmpty(),
+                    c.returnKop.toString(), c.returnDueAt?.toString().orEmpty(), c.returnProcessed.toString(), c.returnSeen.toString(),
+                ).joinToString(SEP),
+            )
         }
         val s = snapshot.session ?: return@buildMap
         put("s.id", s.id)
@@ -162,7 +184,34 @@ object StateCodec {
             flex = flex,
             freeFlexCredits = map["en.freeFlex"]?.toInt() ?: 0,
         )
-        return Snapshot(session, anchor, lastTrusted, series, entitlements)
+        return Snapshot(session, anchor, lastTrusted, series, entitlements, decodeWallet(map))
+    }
+
+    private const val SEP = "|"
+
+    private fun decodeWallet(map: Map<String, String>): Wallet {
+        fun opt(v: String) = v.ifEmpty { null }
+        val entries = generateSequence(0) { it + 1 }.map { map["wl.e.$it"] }.takeWhile { it != null }.map { line ->
+            val p = line!!.split(SEP)
+            LedgerEntry(
+                id = p[0], at = Instant.parse(p[1]), amountKop = p[2].toLong(), type = LedgerType.valueOf(p[3]),
+                seriesId = opt(p[4]), flexId = opt(p[5]), status = LedgerStatus.valueOf(p[6]), dueAt = opt(p[7])?.let(Instant::parse),
+            )
+        }.toList()
+        val commitments = generateSequence(0) { it + 1 }.map { map["wl.c.$it"] }.takeWhile { it != null }.map { line ->
+            val p = line!!.split(SEP)
+            Commitment(
+                seriesId = p[0], amountKop = p[1].toLong(), reservedAt = Instant.parse(p[2]), state = CommitmentState.valueOf(p[3]),
+                settledAt = opt(p[4])?.let(Instant::parse), returnKop = p[5].toLong(), returnDueAt = opt(p[6])?.let(Instant::parse),
+                returnProcessed = p[7].toBoolean(), returnSeen = p[8].toBoolean(),
+            )
+        }.toList()
+        return Wallet(
+            availableKop = map["wl.available"]?.toLong() ?: 0,
+            reservedKop = map["wl.reserved"]?.toLong() ?: 0,
+            entries = entries,
+            commitments = commitments,
+        )
     }
 
     private fun Map<String, String>.req(key: String): String =

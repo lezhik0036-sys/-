@@ -15,6 +15,9 @@ enum class GrantSource {
 
     /** Earned: a FLEX package completed 7 of 7. */
     REWARD,
+
+    /** Paid from the internal MAMA balance (pilot: test credits). */
+    INTERNAL_BALANCE,
 }
 
 /**

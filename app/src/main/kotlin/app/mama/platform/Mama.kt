@@ -6,6 +6,10 @@ import app.mama.core.ClockGuard
 import app.mama.core.CorePolicy
 import app.mama.core.DailyWindow
 import app.mama.core.Entitlements
+import app.mama.core.FlexPackage
+import app.mama.core.LedgerType
+import app.mama.core.Wallet
+import app.mama.core.WalletEngine
 import app.mama.core.ExitKind
 import app.mama.core.FlexEngine
 import app.mama.core.GrantSource
@@ -88,8 +92,15 @@ object Mama {
                 if (u.pkg.over) History.recordFlex(app, u.pkg)
             }
         }
+        // "Цена слова": settle a finished series once, credit due partial returns once.
+        var wallet = r.snapshot.wallet
+        r.snapshot.series?.let { wallet = WalletEngine.settle(wallet, it, r.trustedNow) }
+        val before = wallet
+        wallet = WalletEngine.processDue(wallet, r.trustedNow)
+        if (wallet != r.snapshot.wallet) r = r.copy(snapshot = r.snapshot.copy(wallet = wallet))
         store.save(r.snapshot)
         cached = r
+        if (wallet != before) Notifications.balanceReturn(app, wallet.availableKop - before.availableKop)
         return r
     }
 
@@ -97,7 +108,7 @@ object Mama {
     @Synchronized
     fun sync(context: Context): LockState {
         val r = reconcile(context)
-        Alarms.schedule(context, r.state.nextChangeAt, r.trustedNow)
+        Alarms.schedule(context, nextWake(r), r.trustedNow)
         when (r.state) {
             is LockState.Locked, is LockState.EmergencyPass -> LockService.start(context)
             else -> LockService.stop(context)
@@ -109,9 +120,14 @@ object Mama {
     @Synchronized
     fun syncFromService(context: Context): Reconciliation {
         val r = reconcile(context)
-        Alarms.schedule(context, r.state.nextChangeAt, r.trustedNow)
+        Alarms.schedule(context, nextWake(r), r.trustedNow)
         return r
     }
+
+    /** Next lock change or pending "Цена слова" return, whichever comes first. */
+    private fun nextWake(r: Reconciliation) = listOfNotNull(r.state.nextChangeAt, r.snapshot.wallet.nextReturnDue).minOrNull()
+
+    fun wallet(context: Context): Wallet = (cached ?: reconcile(context)).snapshot.wallet
 
     fun state(context: Context): LockState = (cached ?: reconcile(context)).state
 
@@ -140,9 +156,17 @@ object Mama {
 
         /** After a failure: free start only after the 30-day wait (or pay for Restart). */
         data class Waiting(val days: Long) : SeriesStart
+
+        /** Not enough internal balance for the chosen "Цена слова" (or the Restart from balance). */
+        data class NotEnoughBalance(val availableKop: Long) : SeriesStart
+        data object Rejected : SeriesStart
     }
 
-    /** Starts a free standard series. Tonight's window is locked automatically. */
+    /**
+     * Starts a free standard series. Tonight's window is locked automatically.
+     * [commitmentKop] ("Цена слова", optional) is reserved from the internal
+     * balance in the same save as the series, so they cannot get out of step.
+     */
     @Synchronized
     fun startSeries(
         context: Context,
@@ -150,6 +174,7 @@ object Mama {
         window: DailyWindow,
         contact: TrustedContact,
         mode: SessionMode,
+        commitmentKop: Long? = null,
     ): SeriesStart {
         val r = reconcile(context)
         if (!idle(r)) return SeriesStart.Busy
@@ -157,24 +182,33 @@ object Mama {
         if (!StandardRules.canStartFree(ent, r.trustedNow)) {
             return SeriesStart.Waiting(StandardRules.daysUntilFreeStart(ent, r.trustedNow))
         }
-        save(context, r, kind, window, contact, mode, ent)
-        return SeriesStart.Started
+        return save(context, r, kind, window, contact, mode, ent, r.snapshot.wallet, commitmentKop)
     }
 
     /**
      * Immediate Restart of a failed series with the same settings. Call only
-     * after the Restart was granted (paid, or a test grant in test builds).
+     * after the Restart was granted (paid, a test grant, or [GrantSource.INTERNAL_BALANCE],
+     * in which case the standard Restart price is taken from the balance here).
+     * "Цена слова" is asked again and is never added to the Restart price.
      */
     @Synchronized
-    fun restartSeries(context: Context, source: GrantSource): Boolean {
+    fun restartSeries(context: Context, source: GrantSource, commitmentKop: Long? = null): SeriesStart {
         val r = reconcile(context)
-        val series = r.snapshot.series ?: return false
-        if (series.status != SeriesStatus.BROKEN || r.state != LockState.Free) return false
+        val series = r.snapshot.series ?: return SeriesStart.Rejected
+        if (series.status != SeriesStatus.BROKEN || r.state != LockState.Free) return SeriesStart.Rejected
+        var wallet = r.snapshot.wallet
+        if (source == GrantSource.INTERNAL_BALANCE) {
+            val price = series.kind.restartPriceRub * 100L
+            wallet = when (val paid = WalletEngine.spend(wallet, price, LedgerType.RESTART_PURCHASE_TEST, "restart-" + UUID.randomUUID(), r.trustedNow, seriesId = series.id)) {
+                is WalletEngine.Result.Ok -> paid.wallet
+                is WalletEngine.Result.Insufficient -> return SeriesStart.NotEnoughBalance(paid.availableKop)
+                is WalletEngine.Result.Invalid -> return SeriesStart.Rejected
+            }
+        }
         Log.i(TAG, "Restart of ${series.kind} granted: $source")
         // The Restart replaces the free-start wait caused by this failure.
         val ent = r.snapshot.entitlements.copy(standardFailedAt = null)
-        save(context, r, series.kind, series.window, series.contact, series.mode, ent)
-        return true
+        return save(context, r, series.kind, series.window, series.contact, series.mode, ent, wallet, commitmentKop)
     }
 
     private fun save(
@@ -185,13 +219,46 @@ object Mama {
         contact: TrustedContact,
         mode: SessionMode,
         ent: Entitlements,
-    ) {
+        wallet: Wallet,
+        commitmentKop: Long?,
+    ): SeriesStart {
         val u = seriesEngine.start(
             UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, window, contact, mode, r.trustedNow,
         )
+        var w = wallet
+        if (commitmentKop != null && commitmentKop > 0) {
+            w = when (val res = WalletEngine.reserve(w, u.series.id, commitmentKop, r.trustedNow)) {
+                is WalletEngine.Result.Ok -> res.wallet
+                is WalletEngine.Result.Insufficient -> return SeriesStart.NotEnoughBalance(res.availableKop)
+                is WalletEngine.Result.Invalid -> return SeriesStart.Rejected
+            }
+        }
         SessionStore(context.applicationContext)
-            .save(r.snapshot.copy(series = u.series, session = u.session, entitlements = ent))
+            .save(r.snapshot.copy(series = u.series, session = u.session, entitlements = ent, wallet = w))
         sync(context)
+        return SeriesStart.Started
+    }
+
+    /** Pilot: adds test credits to the internal balance (not money). */
+    @Synchronized
+    fun topUpTest(context: Context, amountKop: Long): Boolean {
+        if (!FeatureFlags.WALLET_TEST_TOPUP_ENABLED) return false
+        val r = reconcile(context)
+        val res = WalletEngine.topUpTest(r.snapshot.wallet, amountKop, "topup-" + UUID.randomUUID(), r.trustedNow)
+        if (res !is WalletEngine.Result.Ok) return false
+        SessionStore(context.applicationContext).save(r.snapshot.copy(wallet = res.wallet))
+        reconcile(context)
+        return true
+    }
+
+    /** The user has seen the "part of the amount came back" message. */
+    @Synchronized
+    fun markReturnsSeen(context: Context) {
+        val r = reconcile(context)
+        val w = WalletEngine.markReturnsSeen(r.snapshot.wallet)
+        if (w == r.snapshot.wallet) return
+        SessionStore(context.applicationContext).save(r.snapshot.copy(wallet = w))
+        reconcile(context)
     }
 
     /** Forgets a finished (completed or failed) series; the failure date is kept. */
@@ -217,8 +284,14 @@ object Mama {
             if (ent.freeFlexCredits <= 0) return false
             ent = ent.copy(freeFlexCredits = ent.freeFlexCredits - 1)
         }
-        ent = ent.copy(flex = flexEngine.activate(UUID.randomUUID().toString(), source, r.trustedNow))
-        SessionStore(context.applicationContext).save(r.snapshot.copy(entitlements = ent))
+        val id = UUID.randomUUID().toString()
+        var wallet = r.snapshot.wallet
+        if (source == GrantSource.INTERNAL_BALANCE) {
+            val paid = WalletEngine.spend(wallet, FlexPackage.PRICE_RUB * 100L, LedgerType.FLEX_PURCHASE_TEST, "flex-$id", r.trustedNow, flexId = id)
+            wallet = (paid as? WalletEngine.Result.Ok)?.wallet ?: return false
+        }
+        ent = ent.copy(flex = flexEngine.activate(id, source, r.trustedNow))
+        SessionStore(context.applicationContext).save(r.snapshot.copy(entitlements = ent, wallet = wallet))
         reconcile(context)
         return true
     }

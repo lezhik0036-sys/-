@@ -3,7 +3,10 @@ package app.mama.billing
 import android.app.Activity
 import app.mama.core.GrantSource
 import app.mama.core.SeriesKind
+import app.mama.platform.Mama
 import app.mama.ui.BrandDialog
+import app.mama.ui.Kit
+import app.mama.ui.Texts
 
 /**
  * What MAMA can sell. Nothing here ever unlocks a phone: Trusted Exit (the
@@ -56,6 +59,19 @@ object FeatureFlags {
      * not FLEX, no payment and no Restart. TODO(release): decide whether to keep it.
      */
     const val TEST_MODE_ENABLED = true
+
+    /**
+     * Internal MAMA balance and "Цена слова" (pilot). Internal only: no
+     * withdrawal, no cash-out, no transfers. TODO(legal/billing): review
+     * before any real money is accepted.
+     */
+    const val WALLET_ENABLED = true
+
+    /** Pilot only: test credits can be added to the balance. Never real money. */
+    const val WALLET_TEST_TOPUP_ENABLED = true
+
+    /** Pilot: Restart and FLEX may be paid from the internal balance. */
+    const val WALLET_SPEND_ENABLED = true
 }
 
 /** Used while payments are paused: never reports a successful payment. */
@@ -75,7 +91,12 @@ object Billing {
  * grant came from: a confirmed payment, or a clearly labelled test grant.
  */
 object Checkout {
-    fun obtain(activity: Activity, product: Product, title: String, onGranted: (GrantSource) -> Unit) {
+    /**
+     * [reserveAheadKop]: balance that must stay available after paying (the
+     * "Цена слова" about to be reserved), so paying from the balance never
+     * leaves too little for it.
+     */
+    fun obtain(activity: Activity, product: Product, title: String, reserveAheadKop: Long = 0, onGranted: (GrantSource) -> Unit) {
         val payments = Billing.payments
         if (FeatureFlags.PAYMENTS_ENABLED && payments.available) {
             payments.purchase(activity, product) { result ->
@@ -88,19 +109,22 @@ object Checkout {
             }
             return
         }
-        if (FeatureFlags.TEST_GRANTS_ENABLED) {
-            BrandDialog.show(
-                activity,
-                "$title — ${product.priceRub} ₽",
-                message = "Тестовая версия: оплата не подключена и не проводится.\n\n" +
-                    "Можно активировать для проверки без оплаты. В рабочей версии здесь будет оплата " +
-                    "${product.priceRub} ₽.",
-                confirm = "Активировать для теста",
-                cancel = "Отмена",
-            ) {
-                onGranted(GrantSource.TEST_NO_PAYMENT)
-                true
+        val priceKop = product.priceRub * 100L
+        val available = Mama.wallet(activity).availableKop
+        val fromBalance = FeatureFlags.WALLET_ENABLED && FeatureFlags.WALLET_SPEND_ENABLED && available - reserveAheadKop >= priceKop
+        if (FeatureFlags.TEST_GRANTS_ENABLED || fromBalance) {
+            val kit = Kit(activity)
+            val content = kit.column()
+            lateinit var handle: app.mama.ui.BrandDialogHandle
+            if (fromBalance) {
+                content.addView(kit.primaryButton("Оплатить с баланса MAMA") { handle.dismiss(); onGranted(GrantSource.INTERNAL_BALANCE) }, kit.fill())
+                content.addView(kit.caption("На балансе ${Texts.money(available)}. Тестовые кредиты, не деньги."), kit.gap(6))
             }
+            if (FeatureFlags.TEST_GRANTS_ENABLED) {
+                content.addView(kit.secondaryButton("Активировать для теста") { handle.dismiss(); onGranted(GrantSource.TEST_NO_PAYMENT) }, kit.gap(if (fromBalance) 14 else 0))
+                content.addView(kit.caption("Тестовая версия: оплата не подключена и не проводится."), kit.gap(6))
+            }
+            handle = BrandDialog.show(activity, "$title — ${Texts.price(product.priceRub)}", content = content, confirm = null, cancel = "Отмена")
             return
         }
         info(activity, "Оплата пока недоступна", "В этой версии оплата не подключена.")

@@ -42,7 +42,7 @@ class MainActivity : Activity() {
         TEST(null), THREE(SeriesKind.THREE), FIVE(SeriesKind.FIVE), SEVEN(SeriesKind.SEVEN), FLEX(null)
     }
 
-    enum class Step { WELCOME, PERMISSIONS, SERIES, TIME, CONTACT, PROMISE, REVIEW }
+    enum class Step { WELCOME, PERMISSIONS, SERIES, TIME, CONTACT, PROMISE, COMMITMENT, REVIEW }
 
     internal val prefs by lazy { getSharedPreferences("mama_setup", Context.MODE_PRIVATE) }
     internal val kit by lazy { Kit(this) }
@@ -58,6 +58,13 @@ class MainActivity : Activity() {
     internal lateinit var promiseField: EditText
     internal var manualContact = false
     internal var agreed = false
+
+    /** "Цена слова" chosen for the series about to start (kopecks), or null. Never carried forward. */
+    internal var commitmentKop: Long? = null
+
+    /** Failure screen: the user chose "Начать заново" and is choosing "Цена слова" for the Restart. */
+    internal var restartFlow = false
+    internal var returnNoticeOpen = false
 
     internal var step = Step.WELCOME
     /** Bottom navigation tab on dashboards: 0 home, 1 statistics, 2 settings. */
@@ -147,6 +154,7 @@ class MainActivity : Activity() {
         when {
             preview != null -> super.onBackPressed()
             flexPlanning -> { flexPlanning = false; render() }
+            restartFlow -> { restartFlow = false; render() }
             tab != 0 && onDashboard -> { tab = 0; render() }
             onWizard && step != Step.WELCOME -> back()
             else -> @Suppress("DEPRECATION") super.onBackPressed()
@@ -190,6 +198,8 @@ class MainActivity : Activity() {
         onWizard = false
         onDashboard = false
         val (view, key) = when {
+            series != null && series.status == SeriesStatus.BROKEN && restartFlow && FeatureFlags.WALLET_ENABLED ->
+                commitmentScreen(restart = true, kind = series.kind) to "restartCommitment"
             series != null && series.status == SeriesStatus.BROKEN -> failureScreen(series) to "failure"
             series != null && series.status == SeriesStatus.COMPLETED -> successScreen(series) to "success"
             flex != null && flex.over -> flexResultScreen(flex) to "flexResult"
@@ -212,6 +222,7 @@ class MainActivity : Activity() {
             }
         }
         showScreen(view, key)
+        showReturnNoticeIfAny()
     }
 
     private fun showScreen(view: Pair<View, Boolean>, key: String) {
