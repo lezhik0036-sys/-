@@ -4,7 +4,7 @@
 set -u
 mkdir -p shots
 i=0
-for name in welcome permissions series time time_test contact promise commitment review dashboard edit cancel_launch dashboard_active lock exit code failure restart_commitment success flex flex_plan stats settings; do
+for name in welcome permissions series time time_test contact promise commitment review dashboard edit cancel_launch dashboard_active needs_attention restart_scheduled lock exit code failure restart_commitment success flex flex_plan stats settings; do
   i=$((i + 1))
   adb shell am start -W -S -n app.mama/.ui.MainActivity --es mama.preview "$name" > /dev/null
   sleep 3

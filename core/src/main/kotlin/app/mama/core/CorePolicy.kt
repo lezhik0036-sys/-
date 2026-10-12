@@ -29,6 +29,14 @@ data class CorePolicy(
     val minDuration: Duration = Duration.ofMinutes(15),
     /** Longest lock that can be scheduled. */
     val maxDuration: Duration = Duration.ofHours(24),
+    /**
+     * ACTIVATING is a short technical state: if strict protection is not
+     * confirmed within this time after the first lock started, the series
+     * goes to NEEDS_ATTENTION. The clock waits while the phone has not been
+     * unlocked since a reboot (the guard cannot run before that).
+     * TODO(product): tune after tests on real phones; configurable.
+     */
+    val activationTimeout: Duration = Duration.ofMinutes(2),
 ) {
     init {
         require(codeLength in 4..9)

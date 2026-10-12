@@ -19,7 +19,7 @@ import app.mama.core.LockState
 import app.mama.core.Reconciliation
 import app.mama.core.Recovery
 import app.mama.core.Series
-import app.mama.core.SeriesEngine
+import app.mama.core.SeriesFlow
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.Session
@@ -30,6 +30,7 @@ import app.mama.core.TestMode
 import app.mama.core.TrustedContact
 import app.mama.billing.FeatureFlags
 import app.mama.lock.LockService
+import app.mama.ui.Requirement
 import app.mama.ui.Texts
 import java.time.Instant
 import java.time.ZoneId
@@ -46,7 +47,7 @@ object Mama {
     val policy = CorePolicy()
     private val engine = LockEngine(policy)
     private val recovery = Recovery(engine)
-    private val seriesEngine = SeriesEngine(engine, policy)
+    private val flow = SeriesFlow(engine, policy)
     private val flexEngine = FlexEngine(engine, policy)
 
     @Volatile private var cached: Reconciliation? = null
@@ -64,21 +65,7 @@ object Mama {
             Snapshot()
         }
         var r = recovery.reconcile(snapshot, DeviceClock.wallNow(), DeviceClock.elapsedMs(), DeviceClock.bootId(app))
-        // Standard series: a started first lock makes it ACTIVATING; once ACTIVE,
-        // count a finished night, plan the next one, or mark it failed.
-        val series = r.snapshot.series
-        if (series != null && series.inProgress) {
-            val u = seriesEngine.afterSession(series, r.snapshot.session, UUID.randomUUID().toString(), r.trustedNow)
-            if (u.series != series || u.session != r.snapshot.session) {
-                // Only a failed ACTIVE series starts the 30-day wait (the phone is already free).
-                val ent = StandardRules.afterSeries(r.snapshot.entitlements, u.series, r.trustedNow)
-                r = r.copy(
-                    snapshot = r.snapshot.copy(series = u.series, session = u.session, entitlements = ent),
-                    state = engine.stateOf(u.session, r.trustedNow),
-                )
-                if (u.series.status == SeriesStatus.COMPLETED || u.series.status == SeriesStatus.BROKEN) History.record(app, u.series)
-            }
-        }
+        r = foldSeries(app, r)
         // FLEX: consume a started period, count success, burn an early exit, earn the reward.
         val flex = r.snapshot.entitlements.flex
         if (flex != null && !flex.over) {
@@ -90,17 +77,47 @@ object Mama {
                 if (u.pkg.over) History.recordFlex(app, u.pkg)
             }
         }
-        // "Цена слова": fix it when the series became ACTIVE, settle a finished
-        // series once, credit due partial returns once.
-        var wallet = r.snapshot.wallet
-        r.snapshot.series?.let { wallet = WalletEngine.settle(wallet, it, r.trustedNow) }
-        val before = wallet
-        wallet = WalletEngine.processDue(wallet, r.trustedNow)
+        // "Цена слова": credit due partial returns once.
+        val before = r.snapshot.wallet
+        val wallet = WalletEngine.processDue(before, r.trustedNow)
         if (wallet != r.snapshot.wallet) r = r.copy(snapshot = r.snapshot.copy(wallet = wallet))
         store.save(r.snapshot)
         cached = r
         if (wallet != before) Notifications.balanceReturn(app, wallet.availableKop - before.availableKop)
         return r
+    }
+
+    /**
+     * Standard series: a started first lock makes it ACTIVATING; ACTIVATING
+     * gives up (NEEDS_ATTENTION) when a mandatory permission is off or the
+     * activation timeout passed; once ACTIVE, a finished night counts, the
+     * next one is planned, or the series fails. Everything that follows
+     * (wallet, 30-day wait, a pending Restart) is settled in the same state.
+     */
+    private fun foldSeries(app: Context, r: Reconciliation): Reconciliation {
+        val before = r.snapshot
+        val now = r.trustedNow
+        var snap = before
+        val unlocked = Protection.userUnlocked(app)
+        if (snap.series?.status == SeriesStatus.ACTIVATING && !unlocked) snap = flow.awaitUnlock(snap, now)
+        snap = flow.fold(snap, UUID.randomUUID().toString(), now)
+        if (snap.series?.status == SeriesStatus.ACTIVATING && unlocked) {
+            val off = Protection.missingConfiguration(app)
+            if (off.isNotEmpty()) {
+                Log.w(TAG, "Strict protection cannot start, switched off: $off")
+                snap = flow.protectionFailed(snap, now) ?: snap
+            }
+        }
+        if (snap == before) return r
+        val series = snap.series
+        if (series != null && series != before.series) {
+            if (series.status == SeriesStatus.COMPLETED || series.status == SeriesStatus.BROKEN) History.record(app, series)
+            if (series.status == SeriesStatus.NEEDS_ATTENTION && before.series?.status != SeriesStatus.NEEDS_ATTENTION) {
+                Log.w(TAG, "Series ${series.id} did not start: protection could not be switched on")
+                Notifications.seriesNotStarted(app)
+            }
+        }
+        return r.copy(snapshot = snap, state = engine.stateOf(snap.session, now))
     }
 
     /** Reconciles and makes the device match: alarm for the next change, lock service on/off. */
@@ -123,8 +140,12 @@ object Mama {
         return r
     }
 
-    /** Next lock change or pending "Цена слова" return, whichever comes first. */
-    private fun nextWake(r: Reconciliation) = listOfNotNull(r.state.nextChangeAt, r.snapshot.wallet.nextReturnDue).minOrNull()
+    /** Next lock change, activation deadline or pending "Цена слова" return, whichever comes first. */
+    private fun nextWake(r: Reconciliation) = listOfNotNull(
+        r.state.nextChangeAt,
+        r.snapshot.series?.activationDeadline(policy),
+        r.snapshot.wallet.nextReturnDue,
+    ).minOrNull()
 
     fun wallet(context: Context): Wallet = (cached ?: reconcile(context)).snapshot.wallet
 
@@ -183,79 +204,56 @@ object Mama {
         if (!StandardRules.canStartFree(ent, r.trustedNow)) {
             return SeriesStart.Waiting(StandardRules.daysUntilFreeStart(ent, r.trustedNow))
         }
-        return save(context, r, kind, window, contact, mode, ent, r.snapshot.wallet, commitmentKop)
+        val result = flow.schedule(
+            r.snapshot, UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, window, contact, mode, commitmentKop, r.trustedNow,
+        )
+        return saveStart(context, result)
     }
 
     /**
-     * Immediate Restart of a failed series with the same settings. Call only
-     * after the Restart was granted (paid, a test grant, or [GrantSource.INTERNAL_BALANCE],
-     * in which case the standard Restart price is taken from the balance here).
+     * Restart of a failed series with the same settings. Call only after the
+     * Restart was granted (paid, a test grant, or [GrantSource.INTERNAL_BALANCE],
+     * in which case the Restart price is held from the balance here until the
+     * new series becomes ACTIVE). The new series is SCHEDULED; cancelling it
+     * before ACTIVE gives the held Restart back and restores the failure.
      * "Цена слова" is asked again and is never added to the Restart price.
      */
     @Synchronized
     fun restartSeries(context: Context, source: GrantSource, commitmentKop: Long? = null): SeriesStart {
         val r = reconcile(context)
-        val series = r.snapshot.series ?: return SeriesStart.Rejected
-        if (series.status != SeriesStatus.BROKEN || r.state != LockState.Free) return SeriesStart.Rejected
-        var wallet = r.snapshot.wallet
-        if (source == GrantSource.INTERNAL_BALANCE) {
-            val price = series.kind.restartPriceRub * 100L
-            wallet = when (val paid = WalletEngine.spend(wallet, price, LedgerType.RESTART_PURCHASE_TEST, "restart-" + UUID.randomUUID(), r.trustedNow, seriesId = series.id)) {
-                is WalletEngine.Result.Ok -> paid.wallet
-                is WalletEngine.Result.Insufficient -> return SeriesStart.NotEnoughBalance(paid.availableKop)
-                is WalletEngine.Result.Invalid -> return SeriesStart.Rejected
-            }
-        }
-        Log.i(TAG, "Restart of ${series.kind} granted: $source")
-        // The Restart replaces the free-start wait caused by this failure.
-        val ent = r.snapshot.entitlements.copy(standardFailedAt = null)
-        return save(context, r, series.kind, series.window, series.contact, series.mode, ent, wallet, commitmentKop)
+        if (r.snapshot.series?.status != SeriesStatus.BROKEN || r.state != LockState.Free) return SeriesStart.Rejected
+        Log.i(TAG, "Restart of ${r.snapshot.series?.kind} granted: $source")
+        val result = flow.restart(r.snapshot, source, UUID.randomUUID().toString(), UUID.randomUUID().toString(), commitmentKop, r.trustedNow)
+        return saveStart(context, result)
     }
 
-    private fun save(
-        context: Context,
-        r: Reconciliation,
-        kind: SeriesKind,
-        window: DailyWindow,
-        contact: TrustedContact,
-        mode: SessionMode,
-        ent: Entitlements,
-        wallet: Wallet,
-        commitmentKop: Long?,
-    ): SeriesStart {
-        val u = seriesEngine.start(
-            UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, window, contact, mode, r.trustedNow,
-        )
-        var w = wallet
-        if (commitmentKop != null && commitmentKop > 0) {
-            w = when (val res = WalletEngine.reserve(w, u.series.id, commitmentKop, r.trustedNow)) {
-                is WalletEngine.Result.Ok -> res.wallet
-                is WalletEngine.Result.Insufficient -> return SeriesStart.NotEnoughBalance(res.availableKop)
-                is WalletEngine.Result.Invalid -> return SeriesStart.Rejected
-            }
+    private fun saveStart(context: Context, result: SeriesFlow.Result): SeriesStart = when (result) {
+        is SeriesFlow.Result.Done -> {
+            SessionStore(context.applicationContext).save(result.snapshot)
+            sync(context)
+            SeriesStart.Started
         }
-        SessionStore(context.applicationContext)
-            .save(r.snapshot.copy(series = u.series, session = u.session, entitlements = ent, wallet = w))
-        sync(context)
-        return SeriesStart.Started
+        is SeriesFlow.Result.NotEnoughBalance -> SeriesStart.NotEnoughBalance(result.availableKop)
+        SeriesFlow.Result.NotAllowed, SeriesFlow.Result.Rejected -> SeriesStart.Rejected
     }
 
     /**
-     * The commitment point, called by the lock service while the lock screen
-     * is up and the guard is running: an ACTIVATING series becomes ACTIVE
-     * (actualStartedAt, fixed conditions, fixed "Цена слова") in one save.
-     * Cheap when there is nothing to confirm.
+     * The commitment point, called by the lock service on every tick while a
+     * lock runs. Only when strictProtectionReady holds does an ACTIVATING
+     * series become ACTIVE, and in the same save its conditions, "Цена слова"
+     * and a held Restart are fixed. Runs under the same lock as every other
+     * transition, on freshly loaded state: racing with "Отменить запуск" it
+     * ends in exactly one of ACTIVE or CANCELLED_BEFORE_START.
      */
     @Synchronized
-    fun confirmProtection(context: Context): Boolean {
+    fun confirmProtection(context: Context, lockScreenShown: Boolean, lockServiceInForeground: Boolean): Boolean {
         if ((cached ?: reconcile(context)).snapshot.series?.status != SeriesStatus.ACTIVATING) return false
+        if (!Protection.strictProtectionReady(context, lockScreenShown, lockServiceInForeground)) return false
         val r = reconcile(context)
-        val series = r.snapshot.series ?: return false
-        val active = seriesEngine.confirmActive(series, r.snapshot.session, r.trustedNow) ?: return false
-        val wallet = WalletEngine.settle(r.snapshot.wallet, active, r.trustedNow)
-        SessionStore(context.applicationContext).save(r.snapshot.copy(series = active, wallet = wallet))
+        val next = flow.confirm(r.snapshot, r.trustedNow) ?: return false
+        SessionStore(context.applicationContext).save(next)
         reconcile(context)
-        Log.i(TAG, "Series ${series.id} is ACTIVE: protection confirmed")
+        Log.i(TAG, "Series ${next.series?.id} is ACTIVE: strict protection ready")
         return true
     }
 
@@ -265,14 +263,18 @@ object Mama {
         /** The series has begun (or is over): its conditions are fixed. */
         data object NotAllowed : SeriesEdit
         data class NotEnoughBalance(val availableKop: Long) : SeriesEdit
+
+        /** A new launch after NEEDS_ATTENTION needs the strict protection fixed first. */
+        data class ProtectionMissing(val missing: List<Requirement>) : SeriesEdit
         data object Rejected : SeriesEdit
     }
 
     /**
-     * "Изменить условия" of a SCHEDULED series, free: series, time, trusted
-     * contact and "Цена слова" ([commitmentKop] null = without). The planned
-     * first lock and the scheduled reserve are replaced in one save; nothing
-     * is lost and no failure rule applies.
+     * "Изменить условия" before ACTIVE, free: series (not for a Restart),
+     * time, trusted contact and "Цена слова" ([commitmentKop] null =
+     * without). The planned first lock and the scheduled reserve are replaced
+     * in one save; nothing is lost and no failure rule applies. Saving after
+     * NEEDS_ATTENTION is the user's explicit new launch.
      */
     @Synchronized
     fun editScheduledSeries(
@@ -284,36 +286,54 @@ object Mama {
         commitmentKop: Long?,
     ): SeriesEdit {
         val r = reconcile(context)
-        val series = r.snapshot.series ?: return SeriesEdit.NotAllowed
-        val u = when (val e = seriesEngine.edit(series, r.snapshot.session, kind, window, contact, mode, UUID.randomUUID().toString(), r.trustedNow)) {
-            is SeriesEngine.EditResult.Edited -> e.update
-            SeriesEngine.EditResult.NotAllowed -> return SeriesEdit.NotAllowed
-            is SeriesEngine.EditResult.Rejected -> return SeriesEdit.Rejected
+        if (r.snapshot.series?.status == SeriesStatus.NEEDS_ATTENTION) {
+            Protection.missing(context).takeIf { it.isNotEmpty() }?.let { return SeriesEdit.ProtectionMissing(it) }
         }
-        val wallet = when (val res = WalletEngine.changeScheduled(r.snapshot.wallet, series.id, commitmentKop?.takeIf { it > 0 }, r.trustedNow)) {
-            is WalletEngine.Result.Ok -> res.wallet
-            is WalletEngine.Result.Insufficient -> return SeriesEdit.NotEnoughBalance(res.availableKop)
-            is WalletEngine.Result.Invalid -> return SeriesEdit.Rejected
+        val result = flow.edit(r.snapshot, kind, window, contact, mode, commitmentKop, UUID.randomUUID().toString(), r.trustedNow)
+        return when (result) {
+            is SeriesFlow.Result.Done -> {
+                SessionStore(context.applicationContext).save(result.snapshot)
+                sync(context)
+                SeriesEdit.Saved
+            }
+            is SeriesFlow.Result.NotEnoughBalance -> SeriesEdit.NotEnoughBalance(result.availableKop)
+            SeriesFlow.Result.NotAllowed -> SeriesEdit.NotAllowed
+            SeriesFlow.Result.Rejected -> SeriesEdit.Rejected
         }
-        SessionStore(context.applicationContext).save(r.snapshot.copy(series = u.series, session = u.session, wallet = wallet))
-        sync(context)
-        return SeriesEdit.Saved
+    }
+
+    /**
+     * After NEEDS_ATTENTION, once the protection is fixed: the user's explicit
+     * new launch with the same conditions (the next window is planned).
+     */
+    @Synchronized
+    fun relaunchSeries(context: Context): SeriesEdit {
+        val r = reconcile(context)
+        Protection.missing(context).takeIf { it.isNotEmpty() }?.let { return SeriesEdit.ProtectionMissing(it) }
+        return when (val result = flow.reschedule(r.snapshot, UUID.randomUUID().toString(), r.trustedNow)) {
+            is SeriesFlow.Result.Done -> {
+                SessionStore(context.applicationContext).save(result.snapshot)
+                sync(context)
+                SeriesEdit.Saved
+            }
+            SeriesFlow.Result.NotAllowed -> SeriesEdit.NotAllowed
+            else -> SeriesEdit.Rejected
+        }
     }
 
     /**
      * "Отменить запуск": cancels a series that has not become ACTIVE. No
-     * failure, no Restart, no 30-day wait; the scheduled "Цена слова" is
-     * released in full. The series is forgotten in the same save.
+     * failure, no Restart, no new waiting period; the scheduled "Цена слова"
+     * and a held Restart go back to the balance in full. A cancelled Restart
+     * brings back the failed series it replaced. One save.
      */
     @Synchronized
     fun cancelScheduledSeries(context: Context): Boolean {
         val r = reconcile(context)
-        val series = r.snapshot.series ?: return false
-        val u = seriesEngine.cancelScheduled(series, r.snapshot.session, r.trustedNow) ?: return false
-        val wallet = WalletEngine.settle(r.snapshot.wallet, u.series, r.trustedNow)
-        SessionStore(context.applicationContext).save(r.snapshot.copy(series = null, session = u.session, wallet = wallet))
+        val cancelled = flow.cancel(r.snapshot, r.trustedNow) ?: return false
+        SessionStore(context.applicationContext).save(cancelled.snapshot)
         sync(context)
-        Log.i(TAG, "Series ${series.id} cancelled before start")
+        Log.i(TAG, "Series ${cancelled.cancelled.id} cancelled before start")
         return true
     }
 

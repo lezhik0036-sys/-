@@ -7,6 +7,7 @@ import app.mama.core.DailyWindow
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
 import app.mama.core.LockState
+import app.mama.core.RestartHold
 import app.mama.core.Series
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
@@ -34,6 +35,7 @@ object Previews {
         "welcome", "permissions", "series", "time", "contact", "promise", "review",
         "dashboard", "lock", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
         "commitment", "restart_commitment", "dashboard_active", "edit", "cancel_launch",
+        "needs_attention", "restart_scheduled",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -67,16 +69,24 @@ object Previews {
             "contact" -> a.contactScreen()
             "promise" -> a.promiseScreen()
             "review" -> { a.agreed = true; a.step = Step.REVIEW; a.reviewScreen() }
-            "dashboard" -> a.seriesDashboard(series(0, SeriesStatus.SCHEDULED), scheduledCommitment(now)) { waiting }
+            "dashboard" -> a.seriesDashboard(series(0, SeriesStatus.SCHEDULED), scheduledCommitment(now), protectionMissing = emptyList()) { waiting }
             "dashboard_active" -> a.seriesDashboard(
                 series(2),
                 Commitment("preview", 5_000_00, now.minus(3, ChronoUnit.DAYS), CommitmentState.RESERVED, fixedAt = now.minus(2, ChronoUnit.DAYS)),
+                protectionMissing = emptyList(),
+            ) { waiting }
+            "needs_attention" -> a.seriesDashboard(
+                series(0, SeriesStatus.NEEDS_ATTENTION), scheduledCommitment(now), protectionMissing = listOf(Requirement.GUARD),
+            ) { LockState.Free }
+            "restart_scheduled" -> a.seriesDashboard(
+                series(0, SeriesStatus.SCHEDULED).copy(restartOf = "failed"), null,
+                RestartHold("preview", 299_00, now), protectionMissing = emptyList(),
             ) { waiting }
             "edit" -> { a.editing = true; a.commitmentKop = 5_000_00; a.step = Step.REVIEW; a.editScreen() }
             "cancel_launch" -> {
                 val s = series(0, SeriesStatus.SCHEDULED)
                 a.window.decorView.post { a.confirmCancelLaunch(s) }
-                a.seriesDashboard(s, scheduledCommitment(now)) { waiting }
+                a.seriesDashboard(s, scheduledCommitment(now), protectionMissing = emptyList()) { waiting }
             }
             "failure" -> a.failureScreen(
                 series(4, SeriesStatus.BROKEN), freeInDays = 30,

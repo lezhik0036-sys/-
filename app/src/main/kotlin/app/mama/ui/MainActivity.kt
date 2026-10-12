@@ -202,7 +202,7 @@ class MainActivity : Activity() {
         val state = Mama.sync(this)
         // A series cancelled before it began leaves nothing behind.
         val series = Mama.series(this)?.takeIf { it.status != SeriesStatus.CANCELLED_BEFORE_START }
-        if (editing && series?.status != SeriesStatus.SCHEDULED) {
+        if (editing && series?.status != SeriesStatus.SCHEDULED && series?.status != SeriesStatus.NEEDS_ATTENTION) {
             // The first lock has begun meanwhile (or the series is gone): nothing to edit any more.
             editing = false
             if (series != null && !series.beforeCommitment) alert("Серия уже началась", "Блокировка началась, поэтому условия зафиксированы.")
@@ -351,6 +351,7 @@ class MainActivity : Activity() {
     // ---------------- "grant everything" wizard ----------------
 
     private var setupAllActive = false
+    private var setupAllScope: List<Requirement> = Requirement.entries
     private var pausedSinceRequest = false
     private val setupAllOffered = mutableSetOf<Requirement>()
 
@@ -359,7 +360,9 @@ class MainActivity : Activity() {
         pausedSinceRequest = true
     }
 
-    internal fun startSetupAll() {
+    /** Opens each missing item of [scope] in turn ("Исправить защиту" passes only the strict ones). */
+    internal fun startSetupAll(scope: List<Requirement> = Requirement.entries) {
+        setupAllScope = scope
         setupAllActive = true
         setupAllOffered.clear()
         continueSetupAll()
@@ -373,7 +376,7 @@ class MainActivity : Activity() {
      */
     private fun continueSetupAll() {
         if (!setupAllActive) return
-        val missing = Requirement.entries.filter { !it.isGranted(this) && it !in setupAllOffered }
+        val missing = setupAllScope.filter { !it.isGranted(this) && it !in setupAllOffered }
         val runtime = missing.filter { it.runtimePermissions.isNotEmpty() }
         if (runtime.isNotEmpty()) {
             setupAllOffered += runtime
@@ -384,7 +387,7 @@ class MainActivity : Activity() {
         val next = missing.firstOrNull()
         if (next == null) {
             setupAllActive = false
-            val left = Requirement.missingRequired(this)
+            val left = setupAllScope.filter { it.required && !it.isGranted(this) }
             if (left.isEmpty()) {
                 if (onWizard && step == Step.PERMISSIONS) step = nextStep(Step.PERMISSIONS)
             } else {

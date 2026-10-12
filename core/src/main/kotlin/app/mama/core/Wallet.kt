@@ -19,6 +19,10 @@ import java.time.Instant
  * RETURN_DELAY, exactly once. A series cancelled before it became ACTIVE
  * gets its whole scheduled reserve back.
  *
+ * A Restart paid from the balance is held the same way (restartReservedKop)
+ * until its series becomes ACTIVE, when it is finally used; a Restart whose
+ * series is cancelled before ACTIVE goes back to the available balance.
+ *
  * All amounts are in kopecks. Every balance change is also a ledger entry.
  *
  * RETURN_DELAY is real calendar time from the failure moment (returnDueAt =
@@ -44,7 +48,14 @@ enum class LedgerType {
     COMMITMENT_RELEASED_SUCCESS,
     COMMITMENT_FORFEITED_FAILURE,
     COMMITMENT_PARTIAL_RETURN,
+    /** A Restart is used: its series became ACTIVE (or an immediate pre-v0.7.1 purchase). */
     RESTART_PURCHASE_TEST,
+
+    /** Restart paid from the balance, held until its series becomes ACTIVE. */
+    RESTART_RESERVED_TEST,
+
+    /** A held Restart given back in full: its series was cancelled before ACTIVE. */
+    RESTART_RELEASED_BEFORE_START,
     FLEX_PURCHASE_TEST,
 }
 
@@ -94,12 +105,29 @@ data class Commitment(
     val fixedAt: Instant? = null,
 )
 
+enum class RestartHoldState { HELD, CONSUMED, RETURNED }
+
+/** A Restart paid from the balance for the series [seriesId] (the new, restarted one). */
+data class RestartHold(
+    val seriesId: String,
+    val amountKop: Long,
+    val heldAt: Instant,
+    val state: RestartHoldState = RestartHoldState.HELD,
+    val settledAt: Instant? = null,
+)
+
 data class Wallet(
     val availableKop: Long = 0,
+    /** "Цена слова" set aside (scheduled or fixed). */
     val reservedKop: Long = 0,
     val entries: List<LedgerEntry> = emptyList(),
     val commitments: List<Commitment> = emptyList(),
+    /** Restarts paid from the balance whose series has not become ACTIVE yet. */
+    val restartReservedKop: Long = 0,
+    val restartHolds: List<RestartHold> = emptyList(),
 ) {
+    fun restartHoldFor(seriesId: String?): RestartHold? = restartHolds.firstOrNull { it.seriesId == seriesId }
+
     fun commitmentFor(seriesId: String?): Commitment? = commitments.firstOrNull { it.seriesId == seriesId }
 
     /** Part of [reservedKop] set aside for series that have not begun (can still be released in full). */
@@ -201,8 +229,27 @@ object WalletEngine {
     }
 
     /**
+     * A Restart paid from the AVAILABLE balance for the restarted series
+     * [seriesId]: held (available -> restartReserved) until that series
+     * becomes ACTIVE, see [settle].
+     */
+    fun holdRestart(w: Wallet, seriesId: String, amountKop: Long, now: Instant): Result {
+        if (amountKop <= 0) return Result.Invalid("amount")
+        if (w.restartHoldFor(seriesId) != null) return Result.Invalid("already held")
+        if (w.availableKop < amountKop) return Result.Insufficient(w.availableKop)
+        return Result.Ok(
+            w.copy(
+                availableKop = w.availableKop - amountKop,
+                restartReservedKop = w.restartReservedKop + amountKop,
+                entries = w.entries + LedgerEntry("restart-hold-$seriesId", now, amountKop, LedgerType.RESTART_RESERVED_TEST, seriesId = seriesId),
+                restartHolds = w.restartHolds + RestartHold(seriesId, amountKop, now),
+            ),
+        )
+    }
+
+    /**
      * Spends the AVAILABLE balance on an approved MAMA product. The reserved
-     * balance belongs to an active "Цена слова" and is never spent.
+     * balance belongs to "Цена слова" or a held Restart and is never spent.
      */
     fun spend(w: Wallet, amountKop: Long, type: LedgerType, id: String, now: Instant, seriesId: String? = null, flexId: String? = null): Result {
         require(type == LedgerType.RESTART_PURCHASE_TEST || type == LedgerType.FLEX_PURCHASE_TEST) { "not a purchase: $type" }
@@ -217,8 +264,10 @@ object WalletEngine {
     }
 
     /**
-     * Brings the commitment in line with its series, once per step:
-     * - scheduled / activating: nothing happens, the reserve stays changeable;
+     * Brings the held Restart and the commitment in line with their series,
+     * once per step. For "Цена слова":
+     * - not begun (scheduled / activating / needs attention): nothing
+     *   happens, the reserve stays changeable;
      * - cancelled before start: the scheduled reserve is released in full;
      * - ACTIVE: the amount is fixed (the commitment point);
      * - completed: released in full;
@@ -226,21 +275,52 @@ object WalletEngine {
      *   return scheduled for failure time + [RETURN_DELAY].
      * Already settled commitments are left as they are.
      */
-    fun settle(w: Wallet, series: Series, now: Instant): Wallet {
+    fun settle(w: Wallet, series: Series, now: Instant): Wallet = settleCommitment(settleRestart(w, series, now), series, now)
+
+    /**
+     * A held Restart follows its series: used for good once the series is
+     * ACTIVE (or later), returned in full if it is cancelled before ACTIVE,
+     * left held while it has not begun.
+     */
+    private fun settleRestart(w: Wallet, series: Series, now: Instant): Wallet {
+        val h = w.restartHoldFor(series.id)?.takeIf { it.state == RestartHoldState.HELD } ?: return w
+        return when (series.status) {
+            SeriesStatus.SCHEDULED, SeriesStatus.ACTIVATING, SeriesStatus.NEEDS_ATTENTION -> w
+            SeriesStatus.ACTIVE, SeriesStatus.COMPLETED, SeriesStatus.BROKEN -> {
+                val at = series.actualStartedAt ?: now
+                w.copy(
+                    restartReservedKop = w.restartReservedKop - h.amountKop,
+                    entries = w.entries + LedgerEntry("restart-used-${h.seriesId}", at, h.amountKop, LedgerType.RESTART_PURCHASE_TEST, seriesId = h.seriesId),
+                    restartHolds = w.restartHolds.map { if (it.seriesId == h.seriesId) it.copy(state = RestartHoldState.CONSUMED, settledAt = at) else it },
+                )
+            }
+            SeriesStatus.CANCELLED_BEFORE_START -> {
+                val at = series.endedAt ?: now
+                w.copy(
+                    availableKop = w.availableKop + h.amountKop,
+                    restartReservedKop = w.restartReservedKop - h.amountKop,
+                    entries = w.entries + LedgerEntry("restart-back-${h.seriesId}", at, h.amountKop, LedgerType.RESTART_RELEASED_BEFORE_START, seriesId = h.seriesId),
+                    restartHolds = w.restartHolds.map { if (it.seriesId == h.seriesId) it.copy(state = RestartHoldState.RETURNED, settledAt = at) else it },
+                )
+            }
+        }
+    }
+
+    private fun settleCommitment(w: Wallet, series: Series, now: Instant): Wallet {
         val c = w.commitmentFor(series.id) ?: return w
         return when (c.state) {
             CommitmentState.SCHEDULED -> when (series.status) {
-                SeriesStatus.SCHEDULED, SeriesStatus.ACTIVATING -> w
+                SeriesStatus.SCHEDULED, SeriesStatus.ACTIVATING, SeriesStatus.NEEDS_ATTENTION -> w
                 SeriesStatus.CANCELLED_BEFORE_START -> releaseScheduled(w, c, series.endedAt ?: now)
                 SeriesStatus.ACTIVE, SeriesStatus.COMPLETED, SeriesStatus.BROKEN ->
-                    settle(fix(w, c, series.actualStartedAt ?: now), series, now)
+                    settleCommitment(fix(w, c, series.actualStartedAt ?: now), series, now)
             }
             CommitmentState.RESERVED -> when (series.status) {
                 SeriesStatus.COMPLETED -> release(w, c, series.endedAt ?: now)
                 SeriesStatus.BROKEN -> forfeit(w, c, series.endedAt ?: now)
                 // Never forfeit without a failure: a series that did not begin gets everything back.
                 SeriesStatus.CANCELLED_BEFORE_START -> releaseScheduled(w, c, series.endedAt ?: now)
-                SeriesStatus.SCHEDULED, SeriesStatus.ACTIVATING, SeriesStatus.ACTIVE -> w
+                SeriesStatus.SCHEDULED, SeriesStatus.ACTIVATING, SeriesStatus.NEEDS_ATTENTION, SeriesStatus.ACTIVE -> w
             }
             CommitmentState.RELEASED, CommitmentState.FORFEITED -> w
         }

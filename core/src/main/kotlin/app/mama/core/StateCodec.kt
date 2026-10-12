@@ -12,6 +12,8 @@ data class Snapshot(
     val series: Series? = null,
     val entitlements: Entitlements = Entitlements(),
     val wallet: Wallet = Wallet(),
+    /** The failed series a pending Restart replaced; put back if that Restart is cancelled before ACTIVE. */
+    val restartedFrom: Series? = null,
 )
 
 /**
@@ -31,24 +33,11 @@ object StateCodec {
             put("clock.anchor.boot", it.bootId)
         }
         snapshot.series?.let {
-            put("sr.id", it.id)
-            put("sr.kind", it.kind.name)
-            put("sr.start", it.window.start.toString())
-            put("sr.end", it.window.end.toString())
-            put("sr.zone", it.window.zone.id)
-            put("sr.contact.name", it.contact.name)
-            put("sr.contact.phone", it.contact.phone)
-            put("sr.mode", it.mode.name)
-            put("sr.startedAt", it.startedAt.toString())
-            put("sr.done", it.completedPeriods.toString())
-            put("sr.status", it.status.name)
-            it.endedAt?.let { e -> put("sr.endedAt", e.toString()) }
-            it.lastSessionId?.let { l -> put("sr.lastSession", l) }
-            it.actualStartedAt?.let { a -> put("sr.actualStartedAt", a.toString()) }
-            it.protectionMissedAt?.let { m -> put("sr.missedAt", m.toString()) }
+            putSeries("sr.", it)
             // Marks state written with the SCHEDULED/ACTIVATING/ACTIVE model (see upgradeLegacy).
             put("sr.model", "2")
         }
+        snapshot.restartedFrom?.let { putSeries("rf.", it) }
         val e = snapshot.entitlements
         e.standardFailedAt?.let { put("en.stdFailedAt", it.toString()) }
         put("en.freeFlex", e.freeFlexCredits.toString())
@@ -84,6 +73,13 @@ object StateCodec {
                     c.returnKop.toString(), c.returnDueAt?.toString().orEmpty(), c.returnProcessed.toString(), c.returnSeen.toString(),
                     c.fixedAt?.toString().orEmpty(),
                 ).joinToString(SEP),
+            )
+        }
+        put("wl.restartReserved", w.restartReservedKop.toString())
+        w.restartHolds.forEachIndexed { i, h ->
+            put(
+                "wl.r.$i",
+                listOf(h.seriesId, h.amountKop.toString(), h.heldAt.toString(), h.state.name, h.settledAt?.toString().orEmpty()).joinToString(SEP),
             )
         }
         val s = snapshot.session ?: return@buildMap
@@ -152,26 +148,7 @@ object StateCodec {
                 },
             )
         }
-        val series = map["sr.id"]?.let { id ->
-            Series(
-                id = id,
-                kind = SeriesKind.valueOf(map.req("sr.kind")),
-                window = DailyWindow(
-                    LocalTime.parse(map.req("sr.start")),
-                    LocalTime.parse(map.req("sr.end")),
-                    ZoneId.of(map.req("sr.zone")),
-                ),
-                contact = TrustedContact(map.req("sr.contact.name"), map.req("sr.contact.phone")),
-                mode = SessionMode.valueOf(map.req("sr.mode")),
-                startedAt = Instant.parse(map.req("sr.startedAt")),
-                completedPeriods = map.req("sr.done").toInt(),
-                status = SeriesStatus.valueOf(map.req("sr.status")),
-                endedAt = map["sr.endedAt"]?.let(Instant::parse),
-                lastSessionId = map["sr.lastSession"],
-                actualStartedAt = map["sr.actualStartedAt"]?.let(Instant::parse),
-                protectionMissedAt = map["sr.missedAt"]?.let(Instant::parse),
-            )
-        }
+        val series = map.series("sr.")
         val flex = map["fx.id"]?.let { id ->
             FlexPackage(
                 id = id,
@@ -192,7 +169,51 @@ object StateCodec {
             freeFlexCredits = map["en.freeFlex"]?.toInt() ?: 0,
         )
         val legacy = series != null && map["sr.model"] == null
-        return upgradeLegacy(Snapshot(session, anchor, lastTrusted, series, entitlements, decodeWallet(map)), legacy)
+        val snapshot = Snapshot(session, anchor, lastTrusted, series, entitlements, decodeWallet(map), restartedFrom = map.series("rf."))
+        return upgradeLegacy(snapshot, legacy)
+    }
+
+    private fun MutableMap<String, String>.putSeries(p: String, it: Series) {
+        put("${p}id", it.id)
+        put("${p}kind", it.kind.name)
+        put("${p}start", it.window.start.toString())
+        put("${p}end", it.window.end.toString())
+        put("${p}zone", it.window.zone.id)
+        put("${p}contact.name", it.contact.name)
+        put("${p}contact.phone", it.contact.phone)
+        put("${p}mode", it.mode.name)
+        put("${p}startedAt", it.startedAt.toString())
+        put("${p}done", it.completedPeriods.toString())
+        put("${p}status", it.status.name)
+        it.endedAt?.let { e -> put("${p}endedAt", e.toString()) }
+        it.lastSessionId?.let { l -> put("${p}lastSession", l) }
+        it.actualStartedAt?.let { a -> put("${p}actualStartedAt", a.toString()) }
+        it.protectionMissedAt?.let { m -> put("${p}missedAt", m.toString()) }
+        it.activatingSince?.let { a -> put("${p}activatingSince", a.toString()) }
+        it.restartOf?.let { r -> put("${p}restartOf", r) }
+    }
+
+    private fun Map<String, String>.series(p: String): Series? = this["${p}id"]?.let { id ->
+        Series(
+            id = id,
+            kind = SeriesKind.valueOf(req("${p}kind")),
+            window = DailyWindow(
+                LocalTime.parse(req("${p}start")),
+                LocalTime.parse(req("${p}end")),
+                ZoneId.of(req("${p}zone")),
+            ),
+            contact = TrustedContact(req("${p}contact.name"), req("${p}contact.phone")),
+            mode = SessionMode.valueOf(req("${p}mode")),
+            startedAt = Instant.parse(req("${p}startedAt")),
+            completedPeriods = req("${p}done").toInt(),
+            status = SeriesStatus.valueOf(req("${p}status")),
+            endedAt = this["${p}endedAt"]?.let(Instant::parse),
+            lastSessionId = this["${p}lastSession"],
+            actualStartedAt = this["${p}actualStartedAt"]?.let(Instant::parse),
+            protectionMissedAt = this["${p}missedAt"]?.let(Instant::parse),
+            activatingSince = this["${p}activatingSince"]?.let(Instant::parse),
+            restartOf = this["${p}restartOf"],
+        )
     }
 
     /**
@@ -242,11 +263,20 @@ object StateCodec {
                 fixedAt = p.getOrNull(9)?.let(::opt)?.let(Instant::parse),
             )
         }.toList()
+        val holds = generateSequence(0) { it + 1 }.map { map["wl.r.$it"] }.takeWhile { it != null }.map { line ->
+            val p = line!!.split(SEP)
+            RestartHold(
+                seriesId = p[0], amountKop = p[1].toLong(), heldAt = Instant.parse(p[2]), state = RestartHoldState.valueOf(p[3]),
+                settledAt = opt(p[4])?.let(Instant::parse),
+            )
+        }.toList()
         return Wallet(
             availableKop = map["wl.available"]?.toLong() ?: 0,
             reservedKop = map["wl.reserved"]?.toLong() ?: 0,
             entries = entries,
             commitments = commitments,
+            restartReservedKop = map["wl.restartReserved"]?.toLong() ?: 0,
+            restartHolds = holds,
         )
     }
 

@@ -160,9 +160,9 @@ class LockService : Service() {
     internal fun render() {
         renderInner()
         overlayShowing = overlay.isShowing
-        // The commitment point of a series: the lock screen is up and the
-        // guard runs, so strict protection is really on.
-        if (state is LockState.Locked && overlayShowing && GuardService.running) Mama.confirmProtection(this)
+        // The commitment point of a series: Mama checks strictProtectionReady
+        // (lock screen up in this foreground service, guard running, …).
+        if (state is LockState.Locked) Mama.confirmProtection(this, overlayShowing, inForeground)
     }
 
     private fun renderInner() {
@@ -226,6 +226,7 @@ class LockService : Service() {
     }
 
     private var lastNotificationText: String? = null
+    private var inForeground = false
 
     private fun updateNotification(text: String) {
         if (text == lastNotificationText) return
@@ -240,5 +241,6 @@ class LockService : Service() {
         } else {
             startForeground(Notifications.LOCK_ID, notification)
         }
+        inForeground = true
     }
 }

@@ -83,7 +83,11 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
         Icon.SHIELD, Tone.NEUTRAL, "Как это работает",
     ), kit.gap(14))
     if (restart) {
-        b.addView(kit.hintRow(Icon.LOCK, "После Restart серия будет запланирована. До первой блокировки условия можно изменить."), kit.gap(14))
+        b.addView(kit.hintRow(
+            Icon.LOCK,
+            "После Restart серия будет запланирована. До первой блокировки условия можно изменить. " +
+                "Restart с баланса MAMA засчитывается, только когда серия начнётся: если отменить запуск, он вернётся на баланс.",
+        ), kit.gap(14))
     }
     b.addView(kit.hintRow(
         Icon.REFRESH,
@@ -158,7 +162,8 @@ private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
         return
     }
     val commitment = commitmentKop
-    val note = "До первой блокировки условия можно изменить." +
+    val note = "До первой блокировки условия можно изменить. Restart с баланса MAMA засчитывается, только когда серия начнётся; " +
+        "если отменить запуск до первой блокировки, он вернётся на баланс." +
         (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
     Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0, note = note) { source ->
         when (Mama.restartSeries(this, source, commitment)) {
@@ -205,9 +210,15 @@ internal fun MainActivity.balanceCard(wallet: Wallet, compact: Boolean = false):
     }, kit.weight())
     nums.addView(kit.column().apply {
         addView(kit.text("В резерве", MamaType.SMALL, MamaColors.TextSecondary))
-        addView(kit.text(Texts.money(wallet.reservedKop), MamaType.H2), kit.gap(2))
+        addView(kit.text(Texts.money(wallet.reservedKop + wallet.restartReservedKop), MamaType.H2), kit.gap(2))
     }, kit.weight())
     addView(nums, kit.gap(14))
+    if (wallet.restartReservedKop > 0) {
+        addView(kit.text(
+            "Из них Restart ${Texts.money(wallet.restartReservedKop)} — до начала серии. Если отменить запуск, вернётся.",
+            MamaType.SMALL, MamaColors.TextSecondary,
+        ), kit.gap(6))
+    }
     if (FeatureFlags.WALLET_TEST_TOPUP_ENABLED) {
         val row = kit.row()
         listOf(1_000_00L, 5_000_00L).forEachIndexed { i, amount ->
@@ -233,7 +244,7 @@ internal fun MainActivity.ledgerList(wallet: Wallet, zone: ZoneId): View = kit.c
     entries.forEachIndexed { i, e ->
         if (i > 0) addView(kit.divider())
         val row = kit.row().apply { setPadding(kit.dp(16), kit.dp(12), kit.dp(16), kit.dp(12)) }
-        val (title, sign) = ledgerLabel(e)
+        val (title, sign) = ledgerLabel(e, wallet)
         val t = kit.column()
         t.addView(kit.text(title, MamaType.CAPTION, MamaColors.Graphite).apply { typeface = MamaFonts.ui(context, 600) })
         val whenText = if (e.status == LedgerStatus.SCHEDULED && e.dueAt != null) "вернётся ${Texts.dayTime(e.dueAt!!, zone)}" else Texts.dayTime(e.at, zone)
@@ -249,7 +260,7 @@ internal fun MainActivity.ledgerList(wallet: Wallet, zone: ZoneId): View = kit.c
     }
 }
 
-private fun ledgerLabel(e: LedgerEntry): Pair<String, String> = when (e.type) {
+private fun ledgerLabel(e: LedgerEntry, wallet: Wallet): Pair<String, String> = when (e.type) {
     LedgerType.BALANCE_TOPUP_TEST -> "Тестовое пополнение" to "+"
     LedgerType.COMMITMENT_RESERVED -> "Цена слова: в резерве" to ""
     LedgerType.COMMITMENT_RELEASED_BEFORE_START -> "Цена слова: резерв снят до начала серии" to "+"
@@ -258,7 +269,12 @@ private fun ledgerLabel(e: LedgerEntry): Pair<String, String> = when (e.type) {
     LedgerType.COMMITMENT_PARTIAL_RETURN ->
         (if (e.status == LedgerStatus.SCHEDULED) "Возврат ${CommitmentConfig.RETURN_PERCENT}% (ожидается)" else "Возврат ${CommitmentConfig.RETURN_PERCENT}% на баланс") to
             (if (e.status == LedgerStatus.SCHEDULED) "" else "+")
-    LedgerType.RESTART_PURCHASE_TEST -> "Restart серии (тест)" to "−"
+    // A held Restart left the available balance when it was held; using it moves nothing.
+    LedgerType.RESTART_PURCHASE_TEST ->
+        if (wallet.entries.any { it.type == LedgerType.RESTART_RESERVED_TEST && it.seriesId == e.seriesId }) "Restart использован: серия началась" to ""
+        else "Restart серии (тест)" to "−"
+    LedgerType.RESTART_RESERVED_TEST -> "Restart (тест): в резерве до начала серии" to "−"
+    LedgerType.RESTART_RELEASED_BEFORE_START -> "Restart вернулся: серия не началась" to "+"
     LedgerType.FLEX_PURCHASE_TEST -> "MAMA FLEX (тест)" to "−"
 }
 

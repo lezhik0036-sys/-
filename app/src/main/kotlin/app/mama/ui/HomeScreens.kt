@@ -11,12 +11,16 @@ import app.mama.core.FlexEngine
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
 import app.mama.core.LockState
+import app.mama.core.Commitment
 import app.mama.core.CommitmentState
+import app.mama.core.RestartHold
+import app.mama.core.RestartHoldState
 import app.mama.core.Series
 import app.mama.core.SeriesStatus
 import app.mama.core.Session
 import app.mama.core.StandardRules
 import app.mama.platform.Mama
+import app.mama.platform.Protection
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -43,7 +47,10 @@ private fun MainActivity.nav() = kit.bottomNav(tab) { tab = it; editSaved = fals
  * labels. Re-reads [state] every second; when the state kind changes
  * (waiting → locked …) the whole screen is redrawn.
  */
-private fun MainActivity.countdownCard(b: LinearLayout, state: () -> LockState, waiting: String) {
+private fun MainActivity.countdownCard(b: LinearLayout, state: () -> LockState, waiting: String) =
+    countdownCard(b, state) { waiting }
+
+private fun MainActivity.countdownCard(b: LinearLayout, state: () -> LockState, waiting: (LockState.Waiting) -> String) {
     val k = nightKit
     val caption = k.text("", MamaType.CAPTION, MamaColors.OnNightMuted, center = true)
     val digits = listOf(
@@ -73,7 +80,7 @@ private fun MainActivity.countdownCard(b: LinearLayout, state: () -> LockState, 
         }
         shown = st.javaClass
         val (target, text) = when (st) {
-            is LockState.Waiting -> st.startsAt to waiting
+            is LockState.Waiting -> st.startsAt to waiting(st)
             is LockState.Locked -> st.endsAt to "Блокировка идёт. До окончания"
             is LockState.EmergencyPass -> st.until to "Экстренный доступ. Блокировка вернётся через"
             LockState.Free -> null to "Следующий период планируется…"
@@ -98,9 +105,12 @@ private fun MainActivity.infoTiles(b: LinearLayout, vararg tiles: Triple<Icon, S
 
 internal fun MainActivity.seriesDashboard(
     series: Series,
-    sampleCommitment: app.mama.core.Commitment? = null,
+    sampleCommitment: Commitment? = null,
+    sampleRestart: RestartHold? = null,
+    protectionMissing: List<Requirement> = Protection.missing(this),
     state: () -> LockState,
 ): Pair<View, Boolean> {
+    if (series.status == SeriesStatus.NEEDS_ATTENTION) return needsAttentionScreen(series, sampleCommitment, sampleRestart, protectionMissing)
     val k = nightKit
     val b = body(8)
     b.addView(nightTop(), LinearLayout.LayoutParams(-1, k.dp(52)))
@@ -111,19 +121,51 @@ internal fun MainActivity.seriesDashboard(
         else -> "Твоя серия активна"
     }
     b.addView(k.text(title, MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
-    val subtitle = if (series.committed) Texts.dayOf(minOf(series.completedPeriods + 1, n), n) else "Серия начнётся с первой блокировкой"
+    val subtitle = when {
+        series.committed -> Texts.dayOf(minOf(series.completedPeriods + 1, n), n)
+        series.isRestart -> "Restart: серия начнётся с первой блокировкой"
+        else -> "Серия начнётся с первой блокировкой"
+    }
     b.addView(k.text(subtitle, MamaType.BODY, MamaColors.OnNightMuted, center = true), k.gap(6))
     b.addView(k.dots(n, series.completedPeriods), k.gap(14))
     if (editSaved && series.status == SeriesStatus.SCHEDULED) {
         b.addView(k.infoCard("Таймер пересчитан по новым условиям.", Icon.CHECK, Tone.SUCCESS, "Изменения сохранены"), k.gap(14))
     }
-    if (series.status == SeriesStatus.SCHEDULED && series.protectionMissedAt != null) {
+    if (series.status == SeriesStatus.SCHEDULED && protectionMissing.isNotEmpty()) {
         b.addView(k.infoCard(
-            "Прошлая блокировка не включилась, поэтому серия ещё не началась и ничего не потеряно. Проверь разрешения в настройках.",
-            Icon.ALERT, Tone.WARNING, "MAMA не смогла включить защиту",
+            missingList(protectionMissing) + "\nБез этого серия не начнётся. Включи до начала блокировки.",
+            Icon.ALERT, Tone.WARNING, "Защита не готова",
         ), k.gap(14))
+        b.addView(k.secondaryButton("Исправить защиту") { startSetupAll(Protection.strict) }, k.gap(10))
     }
-    countdownCard(b, state, "Сегодня MAMA включится через")
+    val zone = series.window.zone
+    countdownCard(b, state) { w ->
+        val now = Mama.trustedNow(this)
+        when (w.startsAt.atZone(zone).toLocalDate()) {
+            now.atZone(zone).toLocalDate() -> "Сегодня MAMA включится через"
+            now.atZone(zone).toLocalDate().plusDays(1) -> "MAMA включится завтра в ${Texts.time(w.startsAt, zone)}. Осталось"
+            else -> "MAMA включится через"
+        }
+    }
+    seriesParameters(b, series, sampleCommitment, sampleRestart)
+    when (series.status) {
+        SeriesStatus.SCHEDULED -> {
+            b.addView(k.primaryButton("Изменить условия") { beginEditing(series) }, k.gap(18))
+            b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
+        }
+        SeriesStatus.ACTIVATING -> {
+            b.addView(k.caption("Проверяем строгую защиту. Это займёт несколько секунд.", center = true), k.gap(14))
+            b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
+        }
+        else -> b.addView(k.caption("Условия серии зафиксированы. Досрочный выход — только через доверенный контакт.", center = true), k.gap(14))
+    }
+    b.addView(k.caption("Окно ${Texts.hhmm(series.window.start)} → ${Texts.hhmm(series.window.end)} каждый день · ${series.window.zone.id}", center = true), k.gap(8))
+    return nightFrame(Scene.NIGHT, b, null, nav())
+}
+
+/** Time, length, contact, "Цена слова" and a held Restart of a series. */
+private fun MainActivity.seriesParameters(b: LinearLayout, series: Series, sampleCommitment: Commitment?, sampleRestart: RestartHold?) {
+    val k = nightKit
     infoTiles(
         b,
         Triple(Icon.CALENDAR, "Начало", Texts.hhmm(series.window.start)),
@@ -131,10 +173,11 @@ internal fun MainActivity.seriesDashboard(
         Triple(Icon.REFRESH, "Серия", Texts.seriesName(series.kind)),
     )
     b.addView(k.contactCard(series.contact.name, Texts.phone(series.contact.phone), "Доверенный контакт", null), k.gap(12))
-    val commitment = sampleCommitment ?: Mama.wallet(this).commitmentFor(series.id)
+    val wallet = Mama.wallet(this)
+    val commitment = sampleCommitment ?: wallet.commitmentFor(series.id)
     when {
         commitment != null && commitment.state == CommitmentState.SCHEDULED -> b.addView(k.infoCard(
-            "В резерве с баланса MAMA. До первой блокировки сумму можно изменить или убрать без потерь.",
+            "Зарезервировано до начала.\nМожно изменить до первой блокировки.",
             Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(commitment.amountKop)}",
         ), k.gap(12))
         commitment != null && commitment.state == CommitmentState.RESERVED -> b.addView(k.infoCard(
@@ -145,23 +188,59 @@ internal fun MainActivity.seriesDashboard(
             b.addView(k.infoCard("Без цены слова", Icon.SHIELD, Tone.NEUTRAL, "Цена слова"), k.gap(12))
         }
     }
-    when (series.status) {
-        SeriesStatus.SCHEDULED -> {
-            b.addView(k.primaryButton("Изменить условия") { beginEditing(series) }, k.gap(18))
-            b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
-        }
-        SeriesStatus.ACTIVATING -> {
-            b.addView(k.infoCard(
-                "Если экран блокировки не появился, проверь разрешения. Серия начнётся, когда защита включится; до этого никаких последствий нет.",
-                Icon.ALERT, Tone.WARNING, "Защита ещё не подтверждена",
-            ), k.gap(12))
-            b.addView(k.secondaryButton("Проверить разрешения") { tab = 2; render() }, k.gap(14))
-            b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
-        }
-        else -> b.addView(k.caption("Условия серии зафиксированы. Досрочный выход — только через доверенный контакт.", center = true), k.gap(14))
+    val hold = sampleRestart ?: wallet.restartHoldFor(series.id)
+    if (hold != null && hold.state == RestartHoldState.HELD) {
+        b.addView(k.infoCard(
+            "Зарезервирован до начала серии. Если отменить запуск до первой блокировки, вернётся на баланс MAMA.",
+            Icon.REFRESH, Tone.NEUTRAL, "Restart: ${Texts.money(hold.amountKop)}",
+        ), k.gap(12))
     }
-    b.addView(k.caption("Окно ${Texts.hhmm(series.window.start)} → ${Texts.hhmm(series.window.end)} каждый день · ${series.window.zone.id}", center = true), k.gap(8))
+}
+
+private fun missingList(missing: List<Requirement>) = missing.joinToString("\n") { "• ${it.title}" }
+
+// ---------------- NEEDS_ATTENTION: the start time came, protection could not be switched on ----------------
+
+private fun MainActivity.needsAttentionScreen(
+    series: Series,
+    sampleCommitment: Commitment?,
+    sampleRestart: RestartHold?,
+    missing: List<Requirement>,
+): Pair<View, Boolean> {
+    val k = nightKit
+    val b = body(8)
+    b.addView(nightTop(), LinearLayout.LayoutParams(-1, k.dp(52)))
+    b.addView(k.text("Серия не началась", MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
+    b.addView(k.text("MAMA не смогла включить защиту.", MamaType.BODY, MamaColors.OnNight, center = true), k.gap(8))
+    b.addView(k.caption(
+        "Поэтому день не засчитан, ничего не списано и ничего не потеряно. Блокировка не включится сама — только после того, как ты подтвердишь новый запуск.",
+        center = true,
+    ), k.gap(8))
+    if (missing.isNotEmpty()) {
+        b.addView(k.infoCard(missingList(missing), Icon.ALERT, Tone.WARNING, "Не работает защита"), k.gap(18))
+        b.addView(k.primaryButton("Исправить защиту") { startSetupAll(Protection.strict) }, k.gap(14))
+    } else {
+        val now = Mama.trustedNow(this)
+        val first = series.window.nextFullPlan(now, series.mode)
+        b.addView(k.infoCard(
+            "Подтверди новый запуск. Первая блокировка: ${Texts.firstLock(first.start, series.window.zone, now)}.",
+            Icon.CHECK, Tone.SUCCESS, "Защита готова",
+        ), k.gap(18))
+        b.addView(k.primaryButton("Подтвердить запуск") { relaunch() }, k.gap(14))
+    }
+    b.addView(k.secondaryButton("Изменить условия") { beginEditing(series) }, k.gap(10))
+    b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
+    seriesParameters(b, series, sampleCommitment, sampleRestart)
     return nightFrame(Scene.NIGHT, b, null, nav())
+}
+
+private fun MainActivity.relaunch() {
+    when (val r = Mama.relaunchSeries(this)) {
+        Mama.SeriesEdit.Saved -> android.widget.Toast.makeText(this, "Серия запланирована", android.widget.Toast.LENGTH_SHORT).show()
+        is Mama.SeriesEdit.ProtectionMissing -> alert("Сначала исправь защиту", missingList(r.missing))
+        else -> alert("Не получилось", "Запланировать серию сейчас нельзя.")
+    }
+    render()
 }
 
 // ---------------- test mode / single session ----------------

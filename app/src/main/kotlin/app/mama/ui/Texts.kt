@@ -68,6 +68,14 @@ object Texts {
     /** "01 окт 2026". */
     fun date(d: java.time.LocalDate): String = "%02d %s %d".format(d.dayOfMonth, months[d.monthValue - 1], d.year)
 
+    /** First lock of a series: "Сегодня в 23:00", "Завтра в 23:00" or "Четверг, 15 окт 2026 в 23:00". */
+    fun firstLock(start: Instant, zone: ZoneId, now: Instant): String {
+        val d = start.atZone(zone).toLocalDate()
+        val today = now.atZone(zone).toLocalDate()
+        val at = time(start, zone)
+        return if (d == today || d == today.plusDays(1)) "${dayName(d, today)} в $at" else "${dayName(d, today)}, ${date(d)} в $at"
+    }
+
     /** "Сегодня", "Завтра", or the weekday. */
     fun dayName(d: java.time.LocalDate, today: java.time.LocalDate): String = when (d) {
         today -> "Сегодня"

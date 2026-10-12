@@ -195,22 +195,81 @@ class SeriesStartPointTest {
         assertEquals(SeriesStatus.ACTIVATING, activating.series.status)
         val wallet = ok(WalletEngine.reserve(funded(10_000), "s1", 5_000 * rub, at13))
         assertEquals(wallet, WalletEngine.settle(wallet, activating.series, at23), "nothing is fixed while activating")
-        // The lock screen never came up: the planned end passes without confirmation.
-        val end = activating.session!!.plan.end
-        val night = engine.advance(activating.session!!, end)
-        val after = series.afterSession(activating.series, night, "n3", end)
-        assertEquals(SeriesStatus.SCHEDULED, after.series.status, "not ACTIVE, not FAILED")
+        // Strict protection does not come up within the activation timeout.
+        val timeout = CorePolicy().activationTimeout
+        val stillTrying = series.afterSession(activating.series, activating.session, "n3", at23 + timeout.minusSeconds(1))
+        assertEquals(SeriesStatus.ACTIVATING, stillTrying.series.status, "a short technical state")
+        val late = at23 + timeout
+        val after = series.afterSession(activating.series, engine.advance(activating.session!!, late), "n3", late)
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, after.series.status, "not ACTIVE, not FAILED")
         assertNull(after.series.actualStartedAt)
-        assertEquals(0, after.series.completedPeriods)
-        assertEquals(end, after.series.protectionMissedAt)
-        assertNotNull(after.session)
-        assertEquals(SessionStatus.SCHEDULED, after.session!!.status, "the next night is planned")
+        assertEquals(0, after.series.completedPeriods, "the day is not counted")
+        assertEquals(late, after.series.protectionMissedAt)
+        assertEquals(LockState.Free, engine.stateOf(after.session, late), "the unconfirmed lock ends")
         // No 30-day wait, the reserve is untouched and still changeable.
-        assertNull(StandardRules.afterSeries(Entitlements(), after.series, end).standardFailedAt)
-        val settled = WalletEngine.settle(wallet, after.series, end)
+        assertNull(StandardRules.afterSeries(Entitlements(), after.series, late).standardFailedAt)
+        val settled = WalletEngine.settle(wallet, after.series, late)
         assertEquals(wallet, settled)
         assertEquals(CommitmentState.SCHEDULED, settled.commitmentFor("s1")!!.state)
         assertNull(settled.nextReturnDue)
+        // Nothing is planned for the next night until the user confirms.
+        val nextEvening = t("2026-10-13T19:00:00Z")
+        val later = series.afterSession(after.series, after.session, "n4", nextEvening)
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, later.series.status)
+        assertEquals(LockState.Free, engine.stateOf(later.session, t("2026-10-13T21:00:00Z")), "no automatic lock the next night")
+    }
+
+    @Test
+    fun `a missing permission fails the activation at once, without waiting for the timeout`() {
+        val activating = begin(scheduled())
+        val failed = series.protectionFailed(activating.series, activating.session, at23.plusSeconds(2))!!
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, failed.series.status)
+        assertEquals(FinishReason.CANCELLED_BEFORE_START, failed.session!!.finishReason)
+        assertNull(series.protectionFailed(failed.series, failed.session, at23.plusSeconds(3)), "only from ACTIVATING")
+        assertNull(series.confirmActive(failed.series, failed.session, at23.plusSeconds(3)), "never ACTIVE after giving up")
+    }
+
+    @Test
+    fun `a night that passed without the lock ever being confirmed needs attention, it is not moved on silently`() {
+        val u = scheduled()
+        // Phone off all night: the next reconcile sees the planned lock already over.
+        val morning = t("2026-10-13T05:00:00Z")
+        val after = series.afterSession(u.series, engine.advance(u.session!!, morning), "n2", morning)
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, after.series.status)
+        assertEquals(LockState.Free, engine.stateOf(after.session, t("2026-10-13T21:00:00Z")))
+    }
+
+    @Test
+    fun `before the first unlock after a reboot the activation timeout waits`() {
+        val activating = begin(scheduled())
+        val timeout = CorePolicy().activationTimeout
+        // Locked since a reboot for an hour: the clock is restarted on every check.
+        val stillLocked = series.awaitUnlock(activating.series, at23 + Duration.ofHours(1))
+        val justUnlocked = at23 + Duration.ofHours(1) + Duration.ofSeconds(5)
+        assertEquals(SeriesStatus.ACTIVATING, series.afterSession(stillLocked, engine.advance(activating.session!!, justUnlocked), "x", justUnlocked).series.status)
+        assertEquals(at23 + Duration.ofHours(1) + timeout, stillLocked.activationDeadline(CorePolicy()))
+    }
+
+    @Test
+    fun `after needs attention only an explicit confirmation plans a new launch`() {
+        val activating = begin(scheduled())
+        val failed = series.protectionFailed(activating.series, activating.session, at23.plusSeconds(2))!!
+        val fixedAt = t("2026-10-13T08:00:00Z") // fixed the next morning
+        // "Подтвердить запуск": the next window, 23:00 that day.
+        val again = series.reschedule(failed.series, "n5", fixedAt)!!
+        assertEquals(SeriesStatus.SCHEDULED, again.series.status)
+        assertEquals(t("2026-10-13T20:00:00Z"), again.session!!.plan.start)
+        assertNull(again.series.protectionMissedAt)
+        // Or "Изменить условия": saving is the confirmation too.
+        val edited = assertIs<SeriesEngine.EditResult.Edited>(
+            series.edit(failed.series, failed.session, SeriesKind.FIVE, window, sister, SessionMode.SLEEP, "n6", fixedAt),
+        ).update
+        assertEquals(SeriesStatus.SCHEDULED, edited.series.status)
+        assertEquals(sister, edited.series.contact)
+        // Or "Отменить запуск".
+        assertEquals(SeriesStatus.CANCELLED_BEFORE_START, series.cancelScheduled(failed.series, failed.session, fixedAt)!!.series.status)
+        // Nothing to reschedule for a series that is not waiting for attention.
+        assertNull(series.reschedule(again.series, "n7", fixedAt))
     }
 
     @Test
@@ -235,11 +294,61 @@ class SeriesStartPointTest {
     }
 
     @Test
-    fun `a series confirmed inside its window starts activating at once`() {
-        val lateEvening = t("2026-10-12T20:30:00Z") // 23:30 Moscow, window already running
-        val u = series.start("s2", "m1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, lateEvening)
-        assertEquals(SeriesStatus.ACTIVATING, u.series.status)
-        assertEquals(SeriesStatus.ACTIVE, series.confirmActive(u.series, u.session, lateEvening)!!.status)
+    fun `confirmed at 23_10 for 23_00-07_00 - scheduled until 23_00 tomorrow, no shortened first period`() {
+        val at2310 = t("2026-10-12T20:10:00Z") // 23:10 Moscow, tonight's window already running
+        val u = series.start("s2", "m1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, at2310)
+        assertEquals(SeriesStatus.SCHEDULED, u.series.status)
+        assertEquals(t("2026-10-13T20:00:00Z"), u.session!!.plan.start, "tomorrow 23:00")
+        assertEquals(t("2026-10-14T04:00:00Z"), u.session!!.plan.end, "a full window, to 07:00")
+        assertEquals(LockState.Waiting(u.session!!.plan.start, u.session!!.plan.end), engine.stateOf(u.session, at2310), "the phone stays free tonight")
+        assertNull(series.confirmActive(u.series, u.session, at2310))
+    }
+
+    @Test
+    fun `confirmed at 06_50 for 23_00-07_00 - scheduled until 23_00 today, not 06_50 to 07_00`() {
+        val at0650 = t("2026-10-12T03:50:00Z") // 06:50 Moscow, last minutes of last night's window
+        val u = series.start("s2", "m1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, at0650)
+        assertEquals(SeriesStatus.SCHEDULED, u.series.status)
+        assertEquals(at23, u.session!!.plan.start, "the nearest future 23:00")
+        assertEquals(t("2026-10-13T04:00:00Z"), u.session!!.plan.end)
+        assertTrue(engine.stateOf(u.session, at0650) is LockState.Waiting)
+    }
+
+    @Test
+    fun `confirmed at 22_50 for 23_00-07_00 - scheduled until 23_00 today`() {
+        val at2250 = t("2026-10-12T19:50:00Z") // 22:50 Moscow
+        val u = series.start("s2", "m1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, at2250)
+        assertEquals(SeriesStatus.SCHEDULED, u.series.status)
+        assertEquals(at23, u.session!!.plan.start)
+        // Stays SCHEDULED right up to that moment.
+        assertEquals(SeriesStatus.SCHEDULED, series.afterSession(u.series, engine.advance(u.session!!, at23.minusSeconds(1)), "x", at23.minusSeconds(1)).series.status)
+        assertEquals(SeriesStatus.ACTIVATING, series.afterSession(u.series, engine.advance(u.session!!, at23), "x", at23).series.status)
+    }
+
+    @Test
+    fun `editing or relaunching inside the window also waits for the next full window`() {
+        val at2310 = t("2026-10-12T20:10:00Z")
+        // Confirmed at 23:10 (first lock tomorrow), changed at 23:20, still inside tonight's window.
+        val u = series.start("s2", "m1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, at2310)
+        val edited = assertIs<SeriesEngine.EditResult.Edited>(
+            series.edit(u.series, u.session, u.series.kind, u.series.window, sister, u.series.mode, "n2", at2310.plusSeconds(600)),
+        ).update
+        assertEquals(SeriesStatus.SCHEDULED, edited.series.status)
+        assertEquals(t("2026-10-13T20:00:00Z"), edited.session!!.plan.start)
+        val activating = begin(scheduled())
+        val failed = series.protectionFailed(activating.series, activating.session, at2310)!!
+        val again = series.reschedule(failed.series, "n3", at2310)!!
+        assertEquals(SeriesStatus.SCHEDULED, again.series.status)
+        assertEquals(t("2026-10-13T20:00:00Z"), again.session!!.plan.start)
+    }
+
+    @Test
+    fun `the first full window follows DST in its own zone`() {
+        // Berlin, 23:00-07:00: clocks go back early on 25 Oct 2026 (CEST to CET).
+        val berlin = DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), BERLIN)
+        val plan = berlin.nextFullPlan(t("2026-10-24T21:30:00Z")) // 23:30 CEST: tonight's window has started
+        assertEquals(t("2026-10-25T22:00:00Z"), plan.start, "23:00 CET on the next day")
+        assertEquals(t("2026-10-26T06:00:00Z"), plan.end)
     }
 
     @Test

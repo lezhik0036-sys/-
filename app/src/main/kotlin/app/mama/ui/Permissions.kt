@@ -26,16 +26,16 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
     NOTIFICATIONS("Уведомления", "Напомним, когда блокировка начнётся и закончится.", false, Icon.BELL),
     ;
 
+    /**
+     * Part of the strict-mode contour that strictProtectionReady requires
+     * before a series can become ACTIVE (see app.mama.platform.Protection).
+     */
+    val strict: Boolean get() = this == OVERLAY || this == GUARD || this == ADMIN || this == SMS
+
     fun isGranted(context: Context): Boolean = when (this) {
         OVERLAY -> Settings.canDrawOverlays(context)
-        GUARD -> {
-            val enabled = Settings.Secure.getString(
-                context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-            ).orEmpty()
-            val me = ComponentName(context, GuardService::class.java)
-            // Switched on in Settings is not enough: it must actually be running.
-            enabled.split(':').any { ComponentName.unflattenFromString(it) == me } && GuardService.running
-        }
+        // Switched on in Settings is not enough: it must actually be running.
+        GUARD -> guardEnabled(context) && GuardService.running
         ADMIN -> context.getSystemService(DevicePolicyManager::class.java)!!
             .isAdminActive(ComponentName(context, MamaDeviceAdmin::class.java))
         SMS -> smsPermissions.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
@@ -45,6 +45,13 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
         NOTIFICATIONS -> Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
+
+    /**
+     * Switched on in settings. The same as [isGranted] except for the guard,
+     * which cannot run before the first unlock after a reboot even when it is
+     * switched on.
+     */
+    fun isConfigured(context: Context): Boolean = if (this == GUARD) guardEnabled(context) else isGranted(context)
 
     fun request(activity: Activity) {
         val pkg = Uri.parse("package:${activity.packageName}")
@@ -100,5 +107,13 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
         )
 
         fun missingRequired(context: Context) = entries.filter { it.required && !it.isGranted(context) }
+
+        private fun guardEnabled(context: Context): Boolean {
+            val enabled = Settings.Secure.getString(
+                context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ).orEmpty()
+            val me = ComponentName(context, GuardService::class.java)
+            return enabled.split(':').any { ComponentName.unflattenFromString(it) == me }
+        }
     }
 }

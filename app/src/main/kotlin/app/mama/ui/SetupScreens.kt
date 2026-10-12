@@ -194,7 +194,8 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         b.addView(kit.hintRow(Icon.FLASK, "Только для тестирования: бесплатно, не входит в серии, не тратит FLEX-дни."), kit.gap(18))
     } else {
         b.addView(kit.sectionHeader("Выбери время", "Одно окно, которое повторяется каждый день серии."))
-        val plan = DailyWindow(start, end, zone).nextPlan(now, mode, Mama.policy.minDuration)
+        // A standard series always starts with a full window (never one already in progress).
+        val plan = DailyWindow(start, end, zone).nextFullPlan(now, mode)
         val firstStart = LocalDateTime.ofInstant(plan.start, zone).toLocalDate()
         val firstEnd = LocalDateTime.ofInstant(plan.end, zone).toLocalDate()
         b.addView(kit.timeField(
@@ -363,6 +364,8 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
             b.addView(kit.sectionHeader("Проверь свои условия", "Если всё верно — запускаем серию."))
             line(Icon.CALENDAR, "Серия", Texts.seriesName(kind))
             line(Icon.CLOCK, "Время", "${Texts.hhmm(start)} → ${Texts.hhmm(end)}", "каждый день · ${zone.id}")
+            val now = Mama.trustedNow(this)
+            line(Icon.MOON, "Первая блокировка", Texts.firstLock(DailyWindow(start, end, zone).nextFullPlan(now, mode).start, zone, now), "полное окно, до этого серия запланирована")
             line(Icon.PERSON, "Доверенный контакт", contactLine, phoneLine)
             line(Icon.HEART, "Моя причина", "«$reason»")
             line(Icon.REFRESH, "Restart при срыве", Texts.price(kind.restartPriceRub), "Старт серии бесплатный")

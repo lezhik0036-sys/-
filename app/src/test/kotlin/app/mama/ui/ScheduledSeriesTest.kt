@@ -5,9 +5,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
-import app.mama.core.CommitmentState
 import app.mama.core.DailyWindow
+import app.mama.core.Entitlements
+import app.mama.core.GrantSource
+import app.mama.core.LockEngine
 import app.mama.core.LockState
+import app.mama.core.Series
+import app.mama.core.SeriesFlow
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
@@ -18,7 +22,6 @@ import app.mama.core.Wallet
 import app.mama.platform.Mama
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -27,13 +30,16 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 
 /**
  * "Начать серию" schedules a series; it becomes binding only when its first
- * lock runs with protection confirmed. Exercised through the real platform
- * entry point (storage, alarms, reconcile), not only the pure core.
+ * lock runs with strict protection ready. Exercised through the real platform
+ * entry point (storage, alarms, reconcile, permission checks). Robolectric
+ * grants no permissions, so a lock that starts here cannot be protected.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -43,18 +49,22 @@ class ScheduledSeriesTest {
     private val mom = TrustedContact("Мама", "+79001234567")
     private val sister = TrustedContact("Сестра", "+79007654321")
 
-    /** A daily 8-hour window starting about [hoursAhead] hours from now (negative: already running). */
+    /** A daily 8-hour window starting about [hoursAhead] hours from now. */
     private fun windowIn(hoursAhead: Long): DailyWindow {
         val start = LocalTime.now(zone).plusHours(hoursAhead).withSecond(0).withNano(0)
         return DailyWindow(start, start.plusHours(8), zone)
     }
 
+    private fun seed(snapshot: Snapshot) {
+        val store = context.createDeviceProtectedStorageContext().getSharedPreferences("mama_state", Context.MODE_PRIVATE).edit().clear()
+        StateCodec.encode(snapshot).forEach { (k, v) -> store.putString(k, v) }
+        store.commit()
+    }
+
     @Before
     fun cleanState() {
         // Test credits: 10 000 on the internal balance.
-        val store = context.createDeviceProtectedStorageContext().getSharedPreferences("mama_state", Context.MODE_PRIVATE).edit().clear()
-        StateCodec.encode(Snapshot(wallet = Wallet(availableKop = 10_000_00))).forEach { (k, v) -> store.putString(k, v) }
-        store.commit()
+        seed(Snapshot(wallet = Wallet(availableKop = 10_000_00)))
         Mama.reconcile(context)
     }
 
@@ -86,31 +96,80 @@ class ScheduledSeriesTest {
     }
 
     @Test
-    fun `confirmed protection makes the series active and fixes everything`() {
-        assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.SEVEN, windowIn(-1), mom, SessionMode.SLEEP, 5_000_00))
-        assertEquals(SeriesStatus.ACTIVATING, Mama.series(context)!!.status)
-        assertTrue(Mama.confirmProtection(context))
-        val series = Mama.series(context)!!
-        assertEquals(SeriesStatus.ACTIVE, series.status)
-        assertNotNull(series.actualStartedAt)
-        assertEquals(CommitmentState.RESERVED, Mama.wallet(context).commitmentFor(series.id)!!.state)
-
-        assertEquals(Mama.SeriesEdit.NotAllowed, Mama.editScheduledSeries(context, SeriesKind.SEVEN, series.window, sister, SessionMode.SLEEP, null))
-        assertFalse(Mama.cancelScheduledSeries(context))
-        assertFalse(Mama.cancelBeforeStart(context))
-        assertEquals(mom, Mama.series(context)!!.contact)
-        assertEquals(5_000_00L, Mama.wallet(context).reservedKop)
+    fun `a series confirmed inside its window waits for the next full window`() {
+        // The window started an hour ago: no shortened first period, the phone stays free.
+        assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.SEVEN, windowIn(-1), mom, SessionMode.SLEEP))
+        assertEquals(SeriesStatus.SCHEDULED, Mama.series(context)!!.status)
+        val waiting = Mama.state(context) as LockState.Waiting
+        val untilStart = Duration.between(Instant.now(), waiting.startsAt)
+        assertTrue("first lock about 23 hours ahead: $untilStart", untilStart > Duration.ofHours(22) && untilStart < Duration.ofHours(24))
     }
 
     @Test
-    fun `lock started but protection never confirmed - cancelling has no consequences`() {
-        Mama.startSeries(context, SeriesKind.FIVE, windowIn(-1), mom, SessionMode.SLEEP, 2_000_00)
-        assertEquals(SeriesStatus.ACTIVATING, Mama.series(context)!!.status)
+    fun `start time reached without strict protection - needs attention, nothing charged, nothing failed`() {
+        // A series confirmed two hours ago whose first lock started a minute ago.
+        val now = Instant.now()
+        val start = now.minusSeconds(60).atZone(zone).toLocalTime().withSecond(0).withNano(0)
+        val scheduled = SeriesFlow(LockEngine()).schedule(
+            Snapshot(wallet = Wallet(availableKop = 10_000_00)), "s1", "n1", SeriesKind.SEVEN,
+            DailyWindow(start, start.plusHours(8), zone), mom, SessionMode.SLEEP, 5_000_00, now.minus(Duration.ofHours(2)),
+        ) as SeriesFlow.Result.Done
+        seed(scheduled.snapshot)
+
+        val r = Mama.reconcile(context)
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, r.snapshot.series!!.status)
+        assertEquals("the unconfirmed lock ended", LockState.Free, r.state)
+        assertNull(r.snapshot.series!!.actualStartedAt)
+        assertNull("no 30-day wait", r.snapshot.entitlements.standardFailedAt)
+        assertEquals(5_000_00L, r.snapshot.wallet.reservedKop)
+        assertEquals(5_000_00L, r.snapshot.wallet.availableKop)
+        // No new launch until the protection is fixed and the user confirms.
+        assertTrue(Mama.relaunchSeries(context) is Mama.SeriesEdit.ProtectionMissing)
+        assertTrue(Mama.editScheduledSeries(context, SeriesKind.SEVEN, windowIn(9), mom, SessionMode.SLEEP, 5_000_00) is Mama.SeriesEdit.ProtectionMissing)
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, Mama.series(context)!!.status)
+        assertEquals(LockState.Free, Mama.sync(context))
+
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val texts = texts(activity.findViewById<ViewGroup>(android.R.id.content)!!)
+        for (label in listOf("Серия не началась", "MAMA не смогла включить защиту.", "Исправить защиту", "Изменить условия", "Отменить запуск")) {
+            assertTrue("$label in $texts", label in texts)
+        }
+
+        // "Отменить запуск": everything back.
         assertTrue(Mama.cancelScheduledSeries(context))
         assertNull(Mama.series(context))
-        assertEquals(LockState.Free, Mama.state(context))
-        assertNull(Mama.entitlements(context).standardFailedAt)
         assertEquals(10_000_00L, Mama.wallet(context).availableKop)
+        assertNull(Mama.entitlements(context).standardFailedAt)
+    }
+
+    @Test
+    fun `restart from the balance is held, and a cancel before the first lock gives it back and restores the failure`() {
+        val failedAt = Instant.now().minus(Duration.ofDays(2))
+        val failed = Series(
+            "old", SeriesKind.SEVEN, windowIn(10), mom, SessionMode.SLEEP, startedAt = failedAt.minus(Duration.ofDays(3)),
+            completedPeriods = 2, status = SeriesStatus.BROKEN, endedAt = failedAt,
+        )
+        seed(Snapshot(series = failed, entitlements = Entitlements(standardFailedAt = failedAt), wallet = Wallet(availableKop = 10_000_00)))
+
+        assertEquals(Mama.SeriesStart.Started, Mama.restartSeries(context, GrantSource.INTERNAL_BALANCE, 1_000_00))
+        val restarted = Mama.series(context)!!
+        assertEquals(SeriesStatus.SCHEDULED, restarted.status)
+        assertEquals("old", restarted.restartOf)
+        assertEquals(10_000_00L - 299_00L - 1_000_00L, Mama.wallet(context).availableKop)
+        assertEquals(299_00L, Mama.wallet(context).restartReservedKop)
+        assertEquals(failedAt, Mama.entitlements(context).standardFailedAt)
+        // A Restart keeps the length of the failed series.
+        assertEquals(Mama.SeriesEdit.NotAllowed, Mama.editScheduledSeries(context, SeriesKind.THREE, restarted.window, mom, SessionMode.SLEEP, 1_000_00))
+
+        assertTrue(Mama.cancelScheduledSeries(context))
+        assertEquals(10_000_00L, Mama.wallet(context).availableKop)
+        assertEquals(0L, Mama.wallet(context).restartReservedKop)
+        assertEquals(0L, Mama.wallet(context).reservedKop)
+        assertEquals("the original failure date, no new wait", failedAt, Mama.entitlements(context).standardFailedAt)
+        assertEquals("old", Mama.series(context)!!.id)
+        assertEquals(SeriesStatus.BROKEN, Mama.series(context)!!.status)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        assertTrue("Серия завершена досрочно" in texts(activity.findViewById<ViewGroup>(android.R.id.content)!!))
     }
 
     @Test

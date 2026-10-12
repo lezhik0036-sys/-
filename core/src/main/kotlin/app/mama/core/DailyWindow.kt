@@ -54,4 +54,23 @@ data class DailyWindow(
         }
         error("unreachable: a daily window always recurs within two days")
     }
+
+    /**
+     * The first lock of a standard series: always a full window, never one
+     * already in progress. If today's start time is still ahead, today's
+     * window; otherwise the next day's. At 23:10 for 23:00–07:00 that is
+     * tomorrow 23:00; at 06:50, today 23:00; at 22:50, today 23:00.
+     */
+    fun nextFullPlan(now: Instant, mode: SessionMode = SessionMode.SLEEP): LockPlan {
+        val today = now.atZone(zone).toLocalDate()
+        for (offset in 0L..2L) {
+            val day = today.plusDays(offset)
+            val s = ZonedDateTime.of(day, start, zone).toInstant()
+            if (now.isBefore(s)) {
+                val endDay = if (overnight) day.plusDays(1) else day
+                return LockPlan(start = s, end = ZonedDateTime.of(endDay, end, zone).toInstant(), zone = zone, mode = mode)
+            }
+        }
+        error("unreachable: a daily window always recurs within two days")
+    }
 }
