@@ -67,8 +67,14 @@ object EmergencyCalls {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         if (context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) return null
         return try {
-            tm.emergencyNumberList.values.flatten().map {
-                SystemEmergencyNumber(it.number, it.emergencyServiceCategoryBitmask, it.emergencyNumberSourceBitmask, it.countryIso)
+            tm.emergencyNumberList.values.flatten().map { n ->
+                // Public API: lists of single bits (the bitmask getters are hidden).
+                SystemEmergencyNumber(
+                    n.number,
+                    categories = n.emergencyServiceCategories.fold(0) { acc, c -> acc or c },
+                    sources = n.emergencyNumberSources.fold(0) { acc, src -> acc or src },
+                    countryIso = n.countryIso,
+                )
             }
         } catch (e: RuntimeException) {
             // SecurityException, IllegalStateException (no telephony service), UnsupportedOperationException.
