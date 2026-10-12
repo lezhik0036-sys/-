@@ -64,6 +64,12 @@ class MainActivity : Activity() {
 
     /** Failure screen: the user chose "Начать заново" and is choosing "Цена слова" for the Restart. */
     internal var restartFlow = false
+
+    /** "Изменить условия" of a SCHEDULED series: the wizard edits a draft of its conditions. */
+    internal var editing = false
+
+    /** Show "Изменения сохранены" on the dashboard after an edit. */
+    internal var editSaved = false
     internal var returnNoticeOpen = false
 
     internal var step = Step.WELCOME
@@ -146,6 +152,7 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         stopTicker()
+        editSaved = false
         super.onStop()
     }
 
@@ -155,6 +162,7 @@ class MainActivity : Activity() {
             preview != null -> super.onBackPressed()
             flexPlanning -> { flexPlanning = false; render() }
             restartFlow -> { restartFlow = false; render() }
+            editing -> back()
             tab != 0 && onDashboard -> { tab = 0; render() }
             onWizard && step != Step.WELCOME -> back()
             else -> @Suppress("DEPRECATION") super.onBackPressed()
@@ -192,7 +200,13 @@ class MainActivity : Activity() {
             return
         }
         val state = Mama.sync(this)
-        val series = Mama.series(this)
+        // A series cancelled before it began leaves nothing behind.
+        val series = Mama.series(this)?.takeIf { it.status != SeriesStatus.CANCELLED_BEFORE_START }
+        if (editing && series?.status != SeriesStatus.SCHEDULED) {
+            // The first lock has begun meanwhile (or the series is gone): nothing to edit any more.
+            editing = false
+            if (series != null && !series.beforeCommitment) alert("Серия уже началась", "Блокировка началась, поэтому условия зафиксированы.")
+        }
         val flex = Mama.entitlements(this).flex
         val session = Mama.session(this)
         onWizard = false
@@ -204,6 +218,10 @@ class MainActivity : Activity() {
             series != null && series.status == SeriesStatus.COMPLETED -> successScreen(series) to "success"
             flex != null && flex.over -> flexResultScreen(flex) to "flexResult"
             flex != null && flexPlanning && flex.currentSessionId == null -> flexPlannerScreen(flex) to "flexPlan"
+            editing && series != null -> {
+                onWizard = true
+                wizardScreen() to "edit-$step"
+            }
             series != null || flex != null || (session != null && state != LockState.Free) -> {
                 onDashboard = true
                 when (tab) {

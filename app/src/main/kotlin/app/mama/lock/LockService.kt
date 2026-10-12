@@ -160,6 +160,9 @@ class LockService : Service() {
     internal fun render() {
         renderInner()
         overlayShowing = overlay.isShowing
+        // The commitment point of a series: the lock screen is up and the
+        // guard runs, so strict protection is really on.
+        if (state is LockState.Locked && overlayShowing && GuardService.running) Mama.confirmProtection(this)
     }
 
     private fun renderInner() {

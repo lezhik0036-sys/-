@@ -44,6 +44,10 @@ object StateCodec {
             put("sr.status", it.status.name)
             it.endedAt?.let { e -> put("sr.endedAt", e.toString()) }
             it.lastSessionId?.let { l -> put("sr.lastSession", l) }
+            it.actualStartedAt?.let { a -> put("sr.actualStartedAt", a.toString()) }
+            it.protectionMissedAt?.let { m -> put("sr.missedAt", m.toString()) }
+            // Marks state written with the SCHEDULED/ACTIVATING/ACTIVE model (see upgradeLegacy).
+            put("sr.model", "2")
         }
         val e = snapshot.entitlements
         e.standardFailedAt?.let { put("en.stdFailedAt", it.toString()) }
@@ -78,6 +82,7 @@ object StateCodec {
                 listOf(
                     c.seriesId, c.amountKop.toString(), c.reservedAt.toString(), c.state.name, c.settledAt?.toString().orEmpty(),
                     c.returnKop.toString(), c.returnDueAt?.toString().orEmpty(), c.returnProcessed.toString(), c.returnSeen.toString(),
+                    c.fixedAt?.toString().orEmpty(),
                 ).joinToString(SEP),
             )
         }
@@ -163,6 +168,8 @@ object StateCodec {
                 status = SeriesStatus.valueOf(map.req("sr.status")),
                 endedAt = map["sr.endedAt"]?.let(Instant::parse),
                 lastSessionId = map["sr.lastSession"],
+                actualStartedAt = map["sr.actualStartedAt"]?.let(Instant::parse),
+                protectionMissedAt = map["sr.missedAt"]?.let(Instant::parse),
             )
         }
         val flex = map["fx.id"]?.let { id ->
@@ -184,7 +191,35 @@ object StateCodec {
             flex = flex,
             freeFlexCredits = map["en.freeFlex"]?.toInt() ?: 0,
         )
-        return Snapshot(session, anchor, lastTrusted, series, entitlements, decodeWallet(map))
+        val legacy = series != null && map["sr.model"] == null
+        return upgradeLegacy(Snapshot(session, anchor, lastTrusted, series, entitlements, decodeWallet(map)), legacy)
+    }
+
+    /**
+     * State saved before v0.7 knew only ACTIVE for a running series, which
+     * was binding from the moment "Начать серию" was pressed. Now a series is
+     * binding only once its first lock has begun. An old series whose first
+     * lock has not started yet becomes SCHEDULED (and its "Цена слова"
+     * changeable again); one that has already begun stays ACTIVE.
+     */
+    private fun upgradeLegacy(snapshot: Snapshot, legacy: Boolean): Snapshot {
+        val series = snapshot.series
+        if (!legacy || series == null || series.status != SeriesStatus.ACTIVE) return snapshot
+        val session = snapshot.session
+        val notBegun = series.completedPeriods == 0 && session?.status == SessionStatus.SCHEDULED
+        if (!notBegun) {
+            val began = if (series.completedPeriods == 0 && session != null) maxOf(session.plan.start, series.startedAt) else series.startedAt
+            return snapshot.copy(series = series.copy(actualStartedAt = began))
+        }
+        val wallet = snapshot.wallet
+        return snapshot.copy(
+            series = series.copy(status = SeriesStatus.SCHEDULED),
+            wallet = wallet.copy(
+                commitments = wallet.commitments.map {
+                    if (it.seriesId == series.id && it.state == CommitmentState.RESERVED) it.copy(state = CommitmentState.SCHEDULED) else it
+                },
+            ),
+        )
     }
 
     private const val SEP = "|"
@@ -204,6 +239,7 @@ object StateCodec {
                 seriesId = p[0], amountKop = p[1].toLong(), reservedAt = Instant.parse(p[2]), state = CommitmentState.valueOf(p[3]),
                 settledAt = opt(p[4])?.let(Instant::parse), returnKop = p[5].toLong(), returnDueAt = opt(p[6])?.let(Instant::parse),
                 returnProcessed = p[7].toBoolean(), returnSeen = p[8].toBoolean(),
+                fixedAt = p.getOrNull(9)?.let(::opt)?.let(Instant::parse),
             )
         }.toList()
         return Wallet(

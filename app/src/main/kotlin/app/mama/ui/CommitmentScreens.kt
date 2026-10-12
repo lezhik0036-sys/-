@@ -32,6 +32,9 @@ private val QUICK get() = CommitmentConfig.QUICK_AMOUNTS_RUB.map { it * 100L }
  */
 internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): Pair<View, Boolean> {
     val wallet = Mama.wallet(this)
+    // While editing a scheduled series its own reserve can be reused: it comes back in full first.
+    val ownReserve = if (editing) scheduledReserveOfCurrentSeries(wallet) else 0L
+    val usable = wallet.availableKop + ownReserve
     val b = body()
     b.addView(kit.sectionHeader("Цена слова", "Хочешь усилить своё обещание?"))
     b.addView(kit.text(
@@ -55,10 +58,16 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
 
     // Internal balance.
     b.addView(balanceCard(wallet, compact = true), kit.gap(18))
+    if (ownReserve > 0) {
+        b.addView(kit.hintRow(
+            Icon.SHIELD,
+            "Сейчас в резерве для этой серии: ${Texts.money(ownReserve)}. Новая сумма заменит её без потерь.",
+        ), kit.gap(12))
+    }
     val chosen = commitmentKop
-    if (chosen != null && chosen > wallet.availableKop) {
+    if (chosen != null && chosen > usable) {
         b.addView(kit.infoCard(
-            "Выбрано ${Texts.money(chosen)}, доступно ${Texts.money(wallet.availableKop)}.",
+            "Выбрано ${Texts.money(chosen)}, доступно ${Texts.money(usable)}.",
             Icon.INFO, Tone.NEUTRAL, NOT_ENOUGH,
         ), kit.gap(10))
         val choices = kit.row()
@@ -74,7 +83,7 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
         Icon.SHIELD, Tone.NEUTRAL, "Как это работает",
     ), kit.gap(14))
     if (restart) {
-        b.addView(kit.hintRow(Icon.LOCK, "После запуска условия серии изменить нельзя. Серия начнётся сразу после Restart."), kit.gap(14))
+        b.addView(kit.hintRow(Icon.LOCK, "После Restart серия будет запланирована. До первой блокировки условия можно изменить."), kit.gap(14))
     }
     b.addView(kit.hintRow(
         Icon.REFRESH,
@@ -84,11 +93,15 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
 
     val footer = kit.column()
     val go = kit.primaryButton(if (chosen != null) "Поставить ${Texts.money(chosen)}" else "Выбери сумму") { proceedCommitment(restart, kind) }
-    go.isEnabled = chosen != null && chosen <= wallet.availableKop
+    go.isEnabled = chosen != null && chosen <= usable
     footer.addView(go, kit.fill())
-    footer.addView(kit.textButton("Пропустить") { commitmentKop = null; proceedCommitment(restart, kind) }, kit.gap(4))
+    footer.addView(kit.textButton(if (editing) "Без Цены слова" else "Пропустить") { commitmentKop = null; proceedCommitment(restart, kind) }, kit.gap(4))
 
-    val header = if (restart) kit.stepHeader(null, 0) { restartFlow = false; render() } else kit.stepHeader(steps().indexOf(Step.COMMITMENT) + 1, steps().size) { back() }
+    val header = when {
+        restart -> kit.stepHeader(null, 0) { restartFlow = false; render() }
+        editing -> kit.stepHeader(null, 0) { back() }
+        else -> kit.stepHeader(steps().indexOf(Step.COMMITMENT) + 1, steps().size) { back() }
+    }
     return lightFrame(header, b, footer)
 }
 
@@ -133,13 +146,19 @@ private fun MainActivity.customAmount() {
     }
 }
 
+/** "Цена слова" already set aside for the series being edited (released in full if changed). */
+private fun MainActivity.scheduledReserveOfCurrentSeries(wallet: Wallet): Long {
+    val series = Mama.series(this) ?: return 0
+    return wallet.commitmentFor(series.id)?.takeIf { it.state == CommitmentState.SCHEDULED }?.amountKop ?: 0
+}
+
 private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
     if (!restart) {
         go(Step.REVIEW)
         return
     }
     val commitment = commitmentKop
-    val note = "После запуска условия серии изменить нельзя." +
+    val note = "До первой блокировки условия можно изменить." +
         (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
     Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0, note = note) { source ->
         when (Mama.restartSeries(this, source, commitment)) {
@@ -233,6 +252,7 @@ internal fun MainActivity.ledgerList(wallet: Wallet, zone: ZoneId): View = kit.c
 private fun ledgerLabel(e: LedgerEntry): Pair<String, String> = when (e.type) {
     LedgerType.BALANCE_TOPUP_TEST -> "Тестовое пополнение" to "+"
     LedgerType.COMMITMENT_RESERVED -> "Цена слова: в резерве" to ""
+    LedgerType.COMMITMENT_RELEASED_BEFORE_START -> "Цена слова: резерв снят до начала серии" to "+"
     LedgerType.COMMITMENT_RELEASED_SUCCESS -> "Слово сдержано: сумма снова доступна" to "+"
     LedgerType.COMMITMENT_FORFEITED_FAILURE -> "Цена слова: серия завершена досрочно" to "−"
     LedgerType.COMMITMENT_PARTIAL_RETURN ->
@@ -279,6 +299,6 @@ internal fun MainActivity.commitmentOutcome(seriesId: String, night: Boolean, zo
             },
             Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(c.amountKop)}",
         )
-        CommitmentState.RESERVED -> null
+        CommitmentState.SCHEDULED, CommitmentState.RESERVED -> null
     }
 }

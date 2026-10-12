@@ -137,7 +137,7 @@ class LockOverlay(private val service: LockService) : LockActions {
     /** "День 3 из 7", "FLEX-период", "Тестовый режим · 15 минут". */
     private fun dayLabel(s: Session): String {
         val series = Mama.series(service)
-        if (series != null && series.active) {
+        if (series != null && series.inProgress) {
             return Texts.dayOf(minOf(series.completedPeriods + 1, series.kind.periods), series.kind.periods)
         }
         val flex = Mama.entitlements(service).flex

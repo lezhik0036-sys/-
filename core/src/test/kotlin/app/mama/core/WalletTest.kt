@@ -31,7 +31,8 @@ class WalletTest {
         val r = ok(WalletEngine.reserve(funded(6_000), "s1", 5_000 * rub, t0))
         assertEquals(1_000 * rub, r.availableKop)
         assertEquals(5_000 * rub, r.reservedKop)
-        assertEquals(CommitmentState.RESERVED, r.commitmentFor("s1")!!.state)
+        assertEquals(CommitmentState.SCHEDULED, r.commitmentFor("s1")!!.state, "changeable until the series is ACTIVE")
+        assertEquals(5_000 * rub, r.scheduledKop)
         assertEquals(LedgerType.COMMITMENT_RESERVED, r.entries.last().type)
     }
 
@@ -155,20 +156,21 @@ class WalletTest {
     }
 
     @Test
-    fun `cancelling a started series before its first lock is a failure for the commitment`() {
+    fun `cancelling a scheduled series before its first lock gives the whole commitment back`() {
         val engine = engine()
         val seriesEngine = SeriesEngine(engine)
         val start = seriesEngine.start("s1", "n1", SeriesKind.THREE, DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), MSK), MOM, SessionMode.SLEEP, t0)
         val wallet = ok(WalletEngine.reserve(funded(10_000), "s1", 5_000 * rub, t0))
         // The first night has not started yet; the user cancels.
-        val cancelled = assertIs<LockEngine.CancelResult.Cancelled>(engine.cancelBeforeStart(start.session!!, t0 + Duration.ofMinutes(5))).session
-        val after = seriesEngine.afterSession(start.series, cancelled, "n2", t0 + Duration.ofMinutes(5))
-        assertEquals(SeriesStatus.BROKEN, after.series.status)
-        val settled = WalletEngine.settle(wallet, after.series, t0 + Duration.ofMinutes(5))
-        assertEquals(CommitmentState.FORFEITED, settled.commitmentFor("s1")!!.state)
-        assertEquals(5_000 * rub, settled.availableKop)
+        val cancelled = seriesEngine.cancelScheduled(start.series, start.session, t0 + Duration.ofMinutes(5))!!
+        assertEquals(SeriesStatus.CANCELLED_BEFORE_START, cancelled.series.status)
+        val settled = WalletEngine.settle(wallet, cancelled.series, t0 + Duration.ofMinutes(5))
+        assertEquals(10_000 * rub, settled.availableKop)
         assertEquals(0, settled.reservedKop)
-        assertEquals(2_500 * rub, WalletEngine.processDue(settled, t0 + Duration.ofMinutes(5) + Duration.ofHours(24)).availableKop - 5_000 * rub)
+        assertNull(settled.commitmentFor("s1"))
+        assertNull(settled.nextReturnDue, "no partial return: nothing was forfeited")
+        assertEquals(0, sum(settled, LedgerType.COMMITMENT_FORFEITED_FAILURE))
+        assertEquals(settled, WalletEngine.settle(settled, cancelled.series, t0 + Duration.ofHours(30)), "released once")
     }
 
     @Test
@@ -186,11 +188,18 @@ class WalletTest {
         val window = DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), MSK)
         val start = seriesEngine.start("s1", "n1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, t0)
         val wallet = ok(WalletEngine.reserve(funded(5_000), "s1", 5_000 * rub, t0))
-        val exitAt = t0 + Duration.ofMinutes(10)
-        val cancelled = assertIs<LockEngine.CancelResult.Cancelled>(engine.cancelBeforeStart(start.session!!, exitAt)).session
+        // The first night begins and protection is confirmed: the series is ACTIVE.
+        val nightStart = start.session!!.plan.start
+        val begun = engine.advance(start.session!!, nightStart)
+        val activating = seriesEngine.afterSession(start.series, begun, "n2", nightStart).series
+        val active = seriesEngine.confirmActive(activating, begun, nightStart)!!
+        // Trusted Exit 10 minutes later.
+        val exitAt = nightStart + Duration.ofMinutes(10)
+        val issued = assertIs<LockEngine.CodeRequestResult.Issued>(engine.requestCode(begun, ExitKind.END_SESSION, exitAt))
+        val exited = assertIs<LockEngine.CodeResult.Accepted>(engine.submitCode(issued.session, issued.plainCode, exitAt)).session
         // The app only reconciles three hours later (e.g. it was not running).
         val later = exitAt + Duration.ofHours(3)
-        val broken = seriesEngine.afterSession(start.series, cancelled, "n2", later).series
+        val broken = seriesEngine.afterSession(active, exited, "n3", later).series
         assertEquals(exitAt, broken.endedAt)
         val settled = WalletEngine.settle(wallet, broken, later)
         assertEquals(exitAt + Duration.ofHours(24), settled.commitmentFor("s1")!!.returnDueAt)

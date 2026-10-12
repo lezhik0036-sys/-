@@ -11,7 +11,9 @@ import java.time.Instant
  * Lifecycle: SCHEDULED → ACTIVE → FINISHED.
  * - Before start the user may cancel freely.
  * - Once ACTIVE, the only ways out are the end time or a code from the
- *   trusted contact (end the session, or a short emergency pass).
+ *   trusted contact (end the session, or a short emergency pass). The one
+ *   exception is [cancelUnconfirmed], for a series lock whose strict
+ *   protection never came on (see [SeriesEngine.cancelScheduled]).
  */
 class LockEngine(
     private val policy: CorePolicy = CorePolicy(),
@@ -83,6 +85,18 @@ class LockEngine(
         val s = advance(session, now)
         if (s.status != SessionStatus.SCHEDULED) return CancelResult.NotAllowed
         return CancelResult.Cancelled(finish(s, FinishReason.CANCELLED_BEFORE_START, now))
+    }
+
+    /**
+     * Ends a lock that started on time but never became binding: its series
+     * is still ACTIVATING because strict protection was not confirmed. Only
+     * [SeriesEngine.cancelScheduled] calls this, and only in that state.
+     * Recorded like a cancellation before start.
+     */
+    fun cancelUnconfirmed(session: Session, now: Instant): Session {
+        val s = advance(session, now)
+        if (s.status == SessionStatus.FINISHED) return s
+        return finish(s, FinishReason.CANCELLED_BEFORE_START, now)
     }
 
     sealed interface CodeRequestResult {

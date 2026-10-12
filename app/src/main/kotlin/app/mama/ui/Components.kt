@@ -410,15 +410,24 @@ class Kit(val context: Context, val night: Boolean = false) {
 
     // ---------- summary rows (review) ----------
 
-    fun summaryRow(icon: Icon, label: String, value: String, note: String? = null): View = row().apply {
+    /** Label / value row; with [onEdit] the whole row opens that setting ("Изменить"). */
+    fun summaryRow(icon: Icon, label: String, value: String, note: String? = null, onEdit: (() -> Unit)? = null): View = row().apply {
         gravity = Gravity.TOP
         setPadding(0, dp(12), 0, dp(12))
         addView(icon(icon, MamaColors.Emerald, 20), size(20).apply { topMargin = dp(1) })
-        addView(text(label, MamaType.CAPTION, MamaColors.TextSecondary), LinearLayout.LayoutParams(dp(118), ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(14) })
+        addView(text(label, MamaType.CAPTION, MamaColors.TextSecondary), LinearLayout.LayoutParams(dp(if (onEdit != null) 100 else 118), ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(14) })
         val v = column()
         v.addView(text(value, MamaType.TITLE))
         note?.let { v.addView(text(it, MamaType.SMALL, MamaColors.TextSecondary), gap(3)) }
         addView(v, weight())
+        onEdit?.let {
+            addView(text("Изменить", MamaType.CAPTION, MamaColors.Emerald).apply {
+                typeface = MamaFonts.ui(context, 700)
+                setPadding(dp(10), 0, 0, 0)
+            }, wrap())
+            background = pressable(shape(Color.TRANSPARENT, 12), 12)
+            clickable(this, it)
+        }
     }
 
     fun divider(): View = View(context).apply {

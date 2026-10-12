@@ -11,7 +11,9 @@ import app.mama.core.FlexEngine
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
 import app.mama.core.LockState
+import app.mama.core.CommitmentState
 import app.mama.core.Series
+import app.mama.core.SeriesStatus
 import app.mama.core.Session
 import app.mama.core.StandardRules
 import app.mama.platform.Mama
@@ -34,7 +36,7 @@ private fun MainActivity.nightTop(): View = FrameLayout(this).apply {
     }, FrameLayout.LayoutParams(k.dp(44), k.dp(44), Gravity.END or Gravity.CENTER_VERTICAL))
 }
 
-private fun MainActivity.nav() = kit.bottomNav(tab) { tab = it; render() }
+private fun MainActivity.nav() = kit.bottomNav(tab) { tab = it; editSaved = false; render() }
 
 /**
  * Countdown card: caption, then HH : MM : SS with ЧАСОВ / МИНУТ / СЕКУНД
@@ -92,19 +94,36 @@ private fun MainActivity.infoTiles(b: LinearLayout, vararg tiles: Triple<Icon, S
     b.addView(row, k.gap(12))
 }
 
-// ---------------- 8. Waiting dashboard (standard series) ----------------
+// ---------------- 8. Series dashboard: scheduled / activating / active ----------------
 
-internal fun MainActivity.seriesDashboard(series: Series, state: () -> LockState): Pair<View, Boolean> {
+internal fun MainActivity.seriesDashboard(
+    series: Series,
+    sampleCommitment: app.mama.core.Commitment? = null,
+    state: () -> LockState,
+): Pair<View, Boolean> {
     val k = nightKit
     val b = body(8)
     b.addView(nightTop(), LinearLayout.LayoutParams(-1, k.dp(52)))
     val n = series.kind.periods
-    val st = state()
-    b.addView(k.text(if (st is LockState.Waiting) "Серия запланирована" else "Твоя серия активна", MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
-    b.addView(k.text(Texts.dayOf(minOf(series.completedPeriods + 1, n), n), MamaType.BODY, MamaColors.OnNightMuted, center = true), k.gap(6))
+    val title = when (series.status) {
+        SeriesStatus.SCHEDULED -> "Серия запланирована"
+        SeriesStatus.ACTIVATING -> "MAMA включает защиту"
+        else -> "Твоя серия активна"
+    }
+    b.addView(k.text(title, MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
+    val subtitle = if (series.committed) Texts.dayOf(minOf(series.completedPeriods + 1, n), n) else "Серия начнётся с первой блокировкой"
+    b.addView(k.text(subtitle, MamaType.BODY, MamaColors.OnNightMuted, center = true), k.gap(6))
     b.addView(k.dots(n, series.completedPeriods), k.gap(14))
+    if (editSaved && series.status == SeriesStatus.SCHEDULED) {
+        b.addView(k.infoCard("Таймер пересчитан по новым условиям.", Icon.CHECK, Tone.SUCCESS, "Изменения сохранены"), k.gap(14))
+    }
+    if (series.status == SeriesStatus.SCHEDULED && series.protectionMissedAt != null) {
+        b.addView(k.infoCard(
+            "Прошлая блокировка не включилась, поэтому серия ещё не началась и ничего не потеряно. Проверь разрешения в настройках.",
+            Icon.ALERT, Tone.WARNING, "MAMA не смогла включить защиту",
+        ), k.gap(14))
+    }
     countdownCard(b, state, "Сегодня MAMA включится через")
-    val z = series.window.zone
     infoTiles(
         b,
         Triple(Icon.CALENDAR, "Начало", Texts.hhmm(series.window.start)),
@@ -112,33 +131,37 @@ internal fun MainActivity.seriesDashboard(series: Series, state: () -> LockState
         Triple(Icon.REFRESH, "Серия", Texts.seriesName(series.kind)),
     )
     b.addView(k.contactCard(series.contact.name, Texts.phone(series.contact.phone), "Доверенный контакт", null), k.gap(12))
-    Mama.wallet(this).commitmentFor(series.id)?.takeIf { it.state == app.mama.core.CommitmentState.RESERVED }?.let {
-        b.addView(k.infoCard("В резерве до конца серии. Пройдёшь серию — сумма снова будет доступна на балансе MAMA.", Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(it.amountKop)}"), k.gap(12))
+    val commitment = sampleCommitment ?: Mama.wallet(this).commitmentFor(series.id)
+    when {
+        commitment != null && commitment.state == CommitmentState.SCHEDULED -> b.addView(k.infoCard(
+            "В резерве с баланса MAMA. До первой блокировки сумму можно изменить или убрать без потерь.",
+            Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(commitment.amountKop)}",
+        ), k.gap(12))
+        commitment != null && commitment.state == CommitmentState.RESERVED -> b.addView(k.infoCard(
+            "В резерве до конца серии. Пройдёшь серию — сумма снова будет доступна на балансе MAMA.",
+            Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(commitment.amountKop)}",
+        ), k.gap(12))
+        else -> if (FeatureFlags.WALLET_ENABLED && !series.committed) {
+            b.addView(k.infoCard("Без цены слова", Icon.SHIELD, Tone.NEUTRAL, "Цена слова"), k.gap(12))
+        }
     }
-    if (st is LockState.Waiting) {
-        b.addView(k.textButton("Прервать серию до начала") { confirmBreak(series) }, k.gap(10))
+    when (series.status) {
+        SeriesStatus.SCHEDULED -> {
+            b.addView(k.primaryButton("Изменить условия") { beginEditing(series) }, k.gap(18))
+            b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
+        }
+        SeriesStatus.ACTIVATING -> {
+            b.addView(k.infoCard(
+                "Если экран блокировки не появился, проверь разрешения. Серия начнётся, когда защита включится; до этого никаких последствий нет.",
+                Icon.ALERT, Tone.WARNING, "Защита ещё не подтверждена",
+            ), k.gap(12))
+            b.addView(k.secondaryButton("Проверить разрешения") { tab = 2; render() }, k.gap(14))
+            b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
+        }
+        else -> b.addView(k.caption("Условия серии зафиксированы. Досрочный выход — только через доверенный контакт.", center = true), k.gap(14))
     }
-    b.addView(k.caption("Окно ${Texts.hhmm(series.window.start)} → ${Texts.hhmm(series.window.end)} каждый день · ${z.id}", center = true), k.gap(8))
+    b.addView(k.caption("Окно ${Texts.hhmm(series.window.start)} → ${Texts.hhmm(series.window.end)} каждый день · ${series.window.zone.id}", center = true), k.gap(8))
     return nightFrame(Scene.NIGHT, b, null, nav())
-}
-
-private fun MainActivity.confirmBreak(series: Series) {
-    val commitment = Mama.wallet(this).commitmentFor(series.id)?.takeIf { it.state == app.mama.core.CommitmentState.RESERVED }
-    BrandDialog.show(
-        this, "Прервать серию?",
-        message = "Серия уже запущена, поэтому отмена считается срывом. Пройдено ${series.completedPeriods} из ${series.kind.periods}, прогресс обнулится.\n" +
-            "Сразу начать заново — Restart за ${Texts.price(series.kind.restartPriceRub)}, бесплатная новая серия — через " +
-            "${StandardRules.FREE_START_AFTER.toDays()} дней." +
-            (commitment?.let {
-                "\nЦена слова: ${Texts.money(it.amountKop)}. Через 24 часа " +
-                    "${Texts.money(it.amountKop * app.mama.core.CommitmentConfig.RETURN_PERCENT / 100)} вернутся на баланс MAMA."
-            } ?: ""),
-        confirm = "Прервать", cancel = "Продолжить",
-    ) {
-        Mama.cancelBeforeStart(this)
-        render()
-        true
-    }
 }
 
 // ---------------- test mode / single session ----------------

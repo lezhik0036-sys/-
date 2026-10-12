@@ -33,6 +33,13 @@ object StandardRules {
 
     fun canStartFree(e: Entitlements, now: Instant): Boolean = freeStartAt(e)?.let { !now.isBefore(it) } ?: true
 
+    /**
+     * The wait starts only when an ACTIVE series fails. A series cancelled
+     * before it began, or one that never became ACTIVE, changes nothing.
+     */
+    fun afterSeries(e: Entitlements, series: Series, now: Instant): Entitlements =
+        if (series.status == SeriesStatus.BROKEN) e.copy(standardFailedAt = series.endedAt ?: now) else e
+
     /** Whole calendar days until a free start (rounded up), 0 if available now. */
     fun daysUntilFreeStart(e: Entitlements, now: Instant): Long {
         val at = freeStartAt(e) ?: return 0

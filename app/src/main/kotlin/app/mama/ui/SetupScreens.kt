@@ -27,7 +27,10 @@ import java.time.LocalDateTime
 
 /** Steps for the current choice (FLEX periods get their time later, per period). */
 internal fun MainActivity.steps(): List<Step> =
-    if (choice == Choice.FLEX) {
+    if (editing) {
+        // "Изменить условия": every setting opens from the summary and returns to it.
+        listOfNotNull(Step.SERIES, Step.TIME, Step.CONTACT, Step.PROMISE, Step.COMMITMENT.takeIf { FeatureFlags.WALLET_ENABLED })
+    } else if (choice == Choice.FLEX) {
         listOf(Step.PERMISSIONS, Step.SERIES, Step.CONTACT, Step.PROMISE)
     } else {
         listOfNotNull(
@@ -37,13 +40,23 @@ internal fun MainActivity.steps(): List<Step> =
         )
     }
 
-internal fun MainActivity.nextStep(from: Step): Step = when (from) {
+internal fun MainActivity.nextStep(from: Step): Step = when {
+    editing -> Step.REVIEW
+    else -> wizardNext(from)
+}
+
+private fun MainActivity.wizardNext(from: Step): Step = when (from) {
     Step.WELCOME -> Step.PERMISSIONS
     Step.REVIEW -> Step.REVIEW
     else -> steps().getOrNull(steps().indexOf(from) + 1) ?: Step.REVIEW
 }
 
 internal fun MainActivity.back() {
+    if (editing) {
+        if (step == Step.REVIEW) stopEditing() else step = Step.REVIEW
+        render()
+        return
+    }
     step = when (step) {
         Step.WELCOME, Step.PERMISSIONS -> Step.WELCOME
         Step.REVIEW -> steps().last()
@@ -69,7 +82,11 @@ internal fun MainActivity.wizardScreen(): Pair<View, Boolean> = when (step) {
     Step.REVIEW -> reviewScreen()
 }
 
+/** "Далее" in the wizard; "Готово" when a setting was opened from "Изменить условия". */
+internal fun MainActivity.nextLabel() = if (editing) "Готово" else "Далее"
+
 private fun MainActivity.header(s: Step): View {
+    if (editing) return kit.stepHeader(null, 0) { back() }
     val list = steps()
     val index = list.indexOf(s)
     return kit.stepHeader(if (index >= 0) index + 1 else null, list.size) { back() }
@@ -126,32 +143,34 @@ internal fun MainActivity.permissionsScreen(): Pair<View, Boolean> {
 
 internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
     val b = body()
-    b.addView(kit.sectionHeader("Выбери свою серию", "Сколько дней ты готов не менять своё решение?"))
+    b.addView(kit.sectionHeader("Выбери свою серию", if (editing) "Серия ещё не началась — длину можно изменить." else "Сколько дней ты готов не менять своё решение?"))
     var first = true
     fun option(c: Choice, icon: Icon, title: String, subtitle: String, trailing: String? = null) {
         b.addView(kit.selectableCard(icon, title, subtitle, choice == c, trailing) { choice = c; saveForm(); render() }, kit.gap(if (first) 22 else 10))
         first = false
     }
-    if (FeatureFlags.TEST_MODE_ENABLED) {
+    if (FeatureFlags.TEST_MODE_ENABLED && !editing) {
         option(Choice.TEST, Icon.FLASK, "Тестовый режим — 15 минут", "Только для тестирования. Ровно 15 минут. Бесплатно.")
     }
     option(Choice.THREE, Icon.LEAF, "3 дня", "Restart при срыве — ${Texts.price(SeriesPrices.THREE)}")
     option(Choice.FIVE, Icon.LEAF, "5 дней", "Restart при срыве — ${Texts.price(SeriesPrices.FIVE)}")
     option(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Restart при срыве — ${Texts.price(SeriesPrices.SEVEN)}")
-    val free = Mama.entitlements(this).freeFlexCredits > 0
-    option(
-        Choice.FLEX, Icon.INFINITY, "FLEX",
-        "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.toDays()} дней. Пройди 7 из 7 — следующий FLEX бесплатно.",
-        if (free) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB),
-    )
+    if (!editing) {
+        val free = Mama.entitlements(this).freeFlexCredits > 0
+        option(
+            Choice.FLEX, Icon.INFINITY, "FLEX",
+            "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.toDays()} дней. Пройди 7 из 7 — следующий FLEX бесплатно.",
+            if (free) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB),
+        )
+    }
     val wait = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this))
-    if (wait > 0 && choice.series != null) {
+    if (wait > 0 && choice.series != null && !editing) {
         b.addView(kit.infoCard(
             "Телефон при этом не заблокирован. Сразу — только Restart сорванной серии.",
             Icon.CALENDAR, Tone.WARNING, "Следующая бесплатная серия через ${Texts.days(wait.toInt())}",
         ), kit.gap(14))
     }
-    val cta = kit.primaryButton("Далее", Icon.ARROW_RIGHT) { go(nextStep(Step.SERIES)) }
+    val cta = kit.primaryButton(nextLabel(), Icon.ARROW_RIGHT) { go(nextStep(Step.SERIES)) }
     return lightFrame(header(Step.SERIES), b, cta)
 }
 
@@ -201,7 +220,7 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         }, kit.gap(10))
         if (start == end) b.addView(kit.infoCard("Начало и окончание совпадают.", Icon.ALERT, Tone.WARNING), kit.gap(12))
     }
-    val cta = kit.primaryButton("Далее", Icon.ARROW_RIGHT) {
+    val cta = kit.primaryButton(nextLabel(), Icon.ARROW_RIGHT) {
         if (choice != Choice.TEST && start == end) alert("Проверьте время", "Начало и окончание совпадают.") else go(nextStep(Step.TIME))
     }
     return lightFrame(header(Step.TIME), b, cta)
@@ -251,7 +270,7 @@ internal fun MainActivity.contactScreen(): Pair<View, Boolean> {
         manualContact = !manualContact
         render()
     }, kit.gap(4))
-    val cta = kit.primaryButton("Далее", Icon.ARROW_RIGHT) {
+    val cta = kit.primaryButton(nextLabel(), Icon.ARROW_RIGHT) {
         if (readyContact() != null) go(nextStep(Step.CONTACT))
     }
     return lightFrame(header(Step.CONTACT), b, cta)
@@ -289,12 +308,13 @@ internal fun MainActivity.promiseScreen(): Pair<View, Boolean> {
     promiseField.tag = watcher
     b.addView(counter, kit.gap(6))
     b.addView(kit.infoCard("Эту фразу увидишь только ты: на экране досрочного выхода.", Icon.HEART, Tone.BRAND), kit.gap(14))
-    val cta = kit.primaryButton("Продолжить") {
+    val cta = kit.primaryButton(if (editing) "Готово" else "Продолжить") {
         val text = promiseField.text.toString().trim()
         if (text.length < 3) {
             alert("Одна фраза", "Напиши, зачем тебе эта пауза — хотя бы несколько слов.")
         } else {
-            Promise.set(this, text)
+            // While editing, the reason is saved together with the other changes.
+            if (!editing) Promise.set(this, text)
             go(nextStep(Step.PROMISE))
         }
     }
@@ -304,6 +324,7 @@ internal fun MainActivity.promiseScreen(): Pair<View, Boolean> {
 // ---------------- 7. Review ----------------
 
 internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
+    if (editing) return editScreen()
     val b = body()
     val contactLine = contactName.text.toString().trim()
     val phoneLine = Texts.phone(contactPhone.text.toString().trim())
@@ -371,8 +392,7 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
     val cta = kit.primaryButton(ctaLabel) { startChosen() }
     if (choice.series != null) {
         b.addView(kit.infoCard(
-            "После запуска условия серии изменить нельзя." +
-                (commitmentKop?.let { " Цена слова: ${Texts.money(it)} — резерв с баланса MAMA до конца серии." } ?: ""),
+            SCHEDULED_NOTE + (commitmentKop?.let { " Цена слова: ${Texts.money(it)} — резерв с баланса MAMA." } ?: ""),
             Icon.LOCK, Tone.NEUTRAL,
         ), kit.gap(12))
     }

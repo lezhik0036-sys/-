@@ -33,7 +33,7 @@ object Previews {
     val names = listOf(
         "welcome", "permissions", "series", "time", "contact", "promise", "review",
         "dashboard", "lock", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
-        "commitment", "restart_commitment",
+        "commitment", "restart_commitment", "dashboard_active", "edit", "cancel_launch",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -45,6 +45,8 @@ object Previews {
         contact = contact, mode = SessionMode.SLEEP, startedAt = Instant.now().minus(3, ChronoUnit.DAYS),
         completedPeriods = done, status = status,
     )
+
+    private fun scheduledCommitment(now: Instant) = Commitment("preview", 5_000_00, now, CommitmentState.SCHEDULED)
 
     fun render(a: MainActivity, name: String): Pair<View, Boolean> {
         a.contactName.setText(contact.name)
@@ -65,7 +67,17 @@ object Previews {
             "contact" -> a.contactScreen()
             "promise" -> a.promiseScreen()
             "review" -> { a.agreed = true; a.step = Step.REVIEW; a.reviewScreen() }
-            "dashboard" -> a.seriesDashboard(series(0)) { waiting }
+            "dashboard" -> a.seriesDashboard(series(0, SeriesStatus.SCHEDULED), scheduledCommitment(now)) { waiting }
+            "dashboard_active" -> a.seriesDashboard(
+                series(2),
+                Commitment("preview", 5_000_00, now.minus(3, ChronoUnit.DAYS), CommitmentState.RESERVED, fixedAt = now.minus(2, ChronoUnit.DAYS)),
+            ) { waiting }
+            "edit" -> { a.editing = true; a.commitmentKop = 5_000_00; a.step = Step.REVIEW; a.editScreen() }
+            "cancel_launch" -> {
+                val s = series(0, SeriesStatus.SCHEDULED)
+                a.window.decorView.post { a.confirmCancelLaunch(s) }
+                a.seriesDashboard(s, scheduledCommitment(now)) { waiting }
+            }
             "failure" -> a.failureScreen(
                 series(4, SeriesStatus.BROKEN), freeInDays = 30,
                 sampleCommitment = Commitment(

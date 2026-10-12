@@ -18,11 +18,22 @@ class SeriesTest {
 
     private fun startSeven() = series.start("series", id(), SeriesKind.SEVEN, window, MOM, SessionMode.SLEEP, evening)
 
+    /** The night's lock starts and the device confirms strict protection: the series is ACTIVE. */
+    private fun confirmNight(u: SeriesEngine.Update): SeriesEngine.Update {
+        if (u.series.committed) return u
+        val night = u.session!!
+        val begun = engine.advance(night, night.plan.start)
+        val activating = series.afterSession(u.series, begun, id(), night.plan.start)
+        assertEquals(SeriesStatus.ACTIVATING, activating.series.status)
+        return SeriesEngine.Update(series.confirmActive(activating.series, begun, night.plan.start)!!, begun)
+    }
+
     /** Runs the current night to its end and folds it into the series. */
     private fun completeNight(u: SeriesEngine.Update): SeriesEngine.Update {
-        val night = u.session!!
+        val running = confirmNight(u)
+        val night = running.session!!
         val done = engine.advance(night, night.plan.end)
-        return series.afterSession(u.series, done, id(), night.plan.end)
+        return series.afterSession(running.series, done, id(), night.plan.end)
     }
 
     @Test
@@ -36,6 +47,7 @@ class SeriesTest {
         val u = startSeven()
         assertEquals(t("2026-09-23T20:00:00Z"), u.session!!.plan.start)
         assertEquals(0, u.series.completedPeriods)
+        assertEquals(SeriesStatus.SCHEDULED, u.series.status)
     }
 
     @Test
@@ -75,7 +87,7 @@ class SeriesTest {
 
     @Test
     fun `emergency pass does not break the series`() {
-        val u = startSeven()
+        val u = confirmNight(startSeven())
         val during = u.session!!.plan.start + Duration.ofHours(1)
         val issued = engine.requestCode(u.session!!, ExitKind.EMERGENCY, during) as LockEngine.CodeRequestResult.Issued
         val passed = (engine.submitCode(issued.session, issued.plainCode, during) as LockEngine.CodeResult.Accepted).session
@@ -84,10 +96,18 @@ class SeriesTest {
     }
 
     @Test
-    fun `cancelling an upcoming night breaks the series`() {
+    fun `cancelling an upcoming night of an active series breaks it`() {
+        val u = completeNight(startSeven())
+        val between = u.session!!.plan.start - Duration.ofHours(2)
+        val cancelled = (engine.cancelBeforeStart(u.session!!, between) as LockEngine.CancelResult.Cancelled).session
+        assertEquals(SeriesStatus.BROKEN, series.afterSession(u.series, cancelled, id(), between).series.status)
+    }
+
+    @Test
+    fun `cancelling the first night before the series began does not break it`() {
         val u = startSeven()
         val cancelled = (engine.cancelBeforeStart(u.session!!, evening) as LockEngine.CancelResult.Cancelled).session
-        assertEquals(SeriesStatus.BROKEN, series.afterSession(u.series, cancelled, id(), evening).series.status)
+        assertEquals(SeriesStatus.CANCELLED_BEFORE_START, series.afterSession(u.series, cancelled, id(), evening).series.status)
     }
 
     @Test

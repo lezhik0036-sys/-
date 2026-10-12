@@ -64,21 +64,19 @@ object Mama {
             Snapshot()
         }
         var r = recovery.reconcile(snapshot, DeviceClock.wallNow(), DeviceClock.elapsedMs(), DeviceClock.bootId(app))
-        // Standard series: count a finished night, plan the next one, or mark it failed.
+        // Standard series: a started first lock makes it ACTIVATING; once ACTIVE,
+        // count a finished night, plan the next one, or mark it failed.
         val series = r.snapshot.series
-        if (series != null && series.active) {
+        if (series != null && series.inProgress) {
             val u = seriesEngine.afterSession(series, r.snapshot.session, UUID.randomUUID().toString(), r.trustedNow)
             if (u.series != series || u.session != r.snapshot.session) {
-                var ent = r.snapshot.entitlements
-                if (u.series.status == SeriesStatus.BROKEN) {
-                    // The phone is already free; this only starts the 30-day wait for a free series.
-                    ent = ent.copy(standardFailedAt = u.series.endedAt ?: r.trustedNow)
-                }
+                // Only a failed ACTIVE series starts the 30-day wait (the phone is already free).
+                val ent = StandardRules.afterSeries(r.snapshot.entitlements, u.series, r.trustedNow)
                 r = r.copy(
                     snapshot = r.snapshot.copy(series = u.series, session = u.session, entitlements = ent),
                     state = engine.stateOf(u.session, r.trustedNow),
                 )
-                if (!u.series.active) History.record(app, u.series)
+                if (u.series.status == SeriesStatus.COMPLETED || u.series.status == SeriesStatus.BROKEN) History.record(app, u.series)
             }
         }
         // FLEX: consume a started period, count success, burn an early exit, earn the reward.
@@ -92,7 +90,8 @@ object Mama {
                 if (u.pkg.over) History.recordFlex(app, u.pkg)
             }
         }
-        // "Цена слова": settle a finished series once, credit due partial returns once.
+        // "Цена слова": fix it when the series became ACTIVE, settle a finished
+        // series once, credit due partial returns once.
         var wallet = r.snapshot.wallet
         r.snapshot.series?.let { wallet = WalletEngine.settle(wallet, it, r.trustedNow) }
         val before = wallet
@@ -145,9 +144,9 @@ object Mama {
 
     fun entitlements(context: Context): Entitlements = (cached ?: reconcile(context)).snapshot.entitlements
 
-    /** Nothing running: no active series, no FLEX period planned, no session. */
+    /** Nothing running: no scheduled or active series, no FLEX period planned, no session. */
     private fun idle(r: Reconciliation) =
-        r.state == LockState.Free && r.snapshot.series?.active != true &&
+        r.state == LockState.Free && r.snapshot.series?.inProgress != true &&
             r.snapshot.entitlements.flex?.currentSessionId == null
 
     sealed interface SeriesStart {
@@ -163,8 +162,10 @@ object Mama {
     }
 
     /**
-     * Starts a free standard series. Tonight's window is locked automatically.
-     * [commitmentKop] ("Цена слова", optional) is reserved from the internal
+     * Schedules a free standard series ("Начать серию"). Tonight's window is
+     * locked automatically; the series becomes binding only when that lock
+     * has started and protection is confirmed ([confirmProtection]).
+     * [commitmentKop] ("Цена слова", optional) is set aside from the internal
      * balance in the same save as the series, so they cannot get out of step.
      */
     @Synchronized
@@ -239,6 +240,83 @@ object Mama {
         return SeriesStart.Started
     }
 
+    /**
+     * The commitment point, called by the lock service while the lock screen
+     * is up and the guard is running: an ACTIVATING series becomes ACTIVE
+     * (actualStartedAt, fixed conditions, fixed "Цена слова") in one save.
+     * Cheap when there is nothing to confirm.
+     */
+    @Synchronized
+    fun confirmProtection(context: Context): Boolean {
+        if ((cached ?: reconcile(context)).snapshot.series?.status != SeriesStatus.ACTIVATING) return false
+        val r = reconcile(context)
+        val series = r.snapshot.series ?: return false
+        val active = seriesEngine.confirmActive(series, r.snapshot.session, r.trustedNow) ?: return false
+        val wallet = WalletEngine.settle(r.snapshot.wallet, active, r.trustedNow)
+        SessionStore(context.applicationContext).save(r.snapshot.copy(series = active, wallet = wallet))
+        reconcile(context)
+        Log.i(TAG, "Series ${series.id} is ACTIVE: protection confirmed")
+        return true
+    }
+
+    sealed interface SeriesEdit {
+        data object Saved : SeriesEdit
+
+        /** The series has begun (or is over): its conditions are fixed. */
+        data object NotAllowed : SeriesEdit
+        data class NotEnoughBalance(val availableKop: Long) : SeriesEdit
+        data object Rejected : SeriesEdit
+    }
+
+    /**
+     * "Изменить условия" of a SCHEDULED series, free: series, time, trusted
+     * contact and "Цена слова" ([commitmentKop] null = without). The planned
+     * first lock and the scheduled reserve are replaced in one save; nothing
+     * is lost and no failure rule applies.
+     */
+    @Synchronized
+    fun editScheduledSeries(
+        context: Context,
+        kind: SeriesKind,
+        window: DailyWindow,
+        contact: TrustedContact,
+        mode: SessionMode,
+        commitmentKop: Long?,
+    ): SeriesEdit {
+        val r = reconcile(context)
+        val series = r.snapshot.series ?: return SeriesEdit.NotAllowed
+        val u = when (val e = seriesEngine.edit(series, r.snapshot.session, kind, window, contact, mode, UUID.randomUUID().toString(), r.trustedNow)) {
+            is SeriesEngine.EditResult.Edited -> e.update
+            SeriesEngine.EditResult.NotAllowed -> return SeriesEdit.NotAllowed
+            is SeriesEngine.EditResult.Rejected -> return SeriesEdit.Rejected
+        }
+        val wallet = when (val res = WalletEngine.changeScheduled(r.snapshot.wallet, series.id, commitmentKop?.takeIf { it > 0 }, r.trustedNow)) {
+            is WalletEngine.Result.Ok -> res.wallet
+            is WalletEngine.Result.Insufficient -> return SeriesEdit.NotEnoughBalance(res.availableKop)
+            is WalletEngine.Result.Invalid -> return SeriesEdit.Rejected
+        }
+        SessionStore(context.applicationContext).save(r.snapshot.copy(series = u.series, session = u.session, wallet = wallet))
+        sync(context)
+        return SeriesEdit.Saved
+    }
+
+    /**
+     * "Отменить запуск": cancels a series that has not become ACTIVE. No
+     * failure, no Restart, no 30-day wait; the scheduled "Цена слова" is
+     * released in full. The series is forgotten in the same save.
+     */
+    @Synchronized
+    fun cancelScheduledSeries(context: Context): Boolean {
+        val r = reconcile(context)
+        val series = r.snapshot.series ?: return false
+        val u = seriesEngine.cancelScheduled(series, r.snapshot.session, r.trustedNow) ?: return false
+        val wallet = WalletEngine.settle(r.snapshot.wallet, u.series, r.trustedNow)
+        SessionStore(context.applicationContext).save(r.snapshot.copy(series = null, session = u.session, wallet = wallet))
+        sync(context)
+        Log.i(TAG, "Series ${series.id} cancelled before start")
+        return true
+    }
+
     /** Pilot: adds test credits to the internal balance (not money). */
     @Synchronized
     fun topUpTest(context: Context, amountKop: Long): Boolean {
@@ -265,7 +343,7 @@ object Mama {
     @Synchronized
     fun dismissSeries(context: Context) {
         val r = reconcile(context)
-        if (r.snapshot.series?.active == true) return
+        if (r.snapshot.series?.inProgress == true) return
         SessionStore(context.applicationContext).save(r.snapshot.copy(series = null))
         reconcile(context)
     }
@@ -377,9 +455,11 @@ object Mama {
         }
     }
 
+    /** Test lock or FLEX period before it starts. A series uses [cancelScheduledSeries]. */
     @Synchronized
     fun cancelBeforeStart(context: Context): Boolean {
         val r = reconcile(context)
+        if (r.snapshot.series?.inProgress == true) return false
         val session = r.snapshot.session ?: return false
         val result = engine.cancelBeforeStart(session, r.trustedNow)
         if (result !is LockEngine.CancelResult.Cancelled) return false
