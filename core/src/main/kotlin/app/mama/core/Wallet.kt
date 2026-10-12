@@ -17,6 +17,19 @@ import java.time.Instant
  * balance after RETURN_DELAY, exactly once.
  *
  * All amounts are in kopecks. Every balance change is also a ledger entry.
+ *
+ * RETURN_DELAY is real calendar time from the failure moment (returnDueAt =
+ * failure + 24 h, an absolute timestamp), not phone uptime: time while the
+ * phone is off counts. Once now >= returnDueAt the return is credited at the
+ * first chance (alarm, app start, reboot, service tick), exactly once.
+ *
+ * Pilot: the timestamps and the ledger are local. Known limitation: moving
+ * the clock forward while the phone is off cannot be detected offline.
+ * TODO(production, real money): make it server-authoritative — the MAMA
+ * backend sets failureTimestamp and returnDueAt and owns the ledger; the
+ * client cannot speed up a return by changing its clock and syncs with the
+ * backend when it is back online. Do not use phone uptime as a substitute
+ * for server time.
  */
 
 enum class LedgerType {

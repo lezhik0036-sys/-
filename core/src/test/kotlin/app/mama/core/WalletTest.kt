@@ -199,4 +199,24 @@ class WalletTest {
         assertEquals(2_500 * rub, credited.availableKop)
         assertEquals(credited, WalletEngine.processDue(credited, exitAt + Duration.ofHours(31)), "exactly once")
     }
+
+    @Test
+    fun `24 hours are calendar time - time while the phone was off counts`() {
+        // Failure on 12 Oct 18:00 Moscow; the return is due 13 Oct 18:00.
+        val failedAt = t("2026-10-12T15:00:00Z")
+        val reserved = ok(WalletEngine.reserve(funded(5_000), "s1", 5_000 * rub, failedAt))
+        val pending = WalletEngine.settle(reserved, series("s1").copy(status = SeriesStatus.BROKEN, endedAt = failedAt), failedAt)
+        assertEquals(t("2026-10-13T15:00:00Z"), pending.commitmentFor("s1")!!.returnDueAt)
+
+        // Last seen by MAMA at 20:00 on 12 Oct, then the phone is off until 13 Oct 18:30.
+        val lastSeen = t("2026-10-12T17:00:00Z")
+        val anchorBeforeShutdown = ClockAnchor(lastSeen, elapsedMs = 9_000_000, bootId = "boot-1")
+        val afterBoot = ClockGuard.trustedNow(
+            anchorBeforeShutdown, lastSeen, wallNow = t("2026-10-13T15:30:00Z"), elapsedNowMs = 40_000, bootId = "boot-2",
+        )
+        // No pause and no extra hours: the return is credited right after power-on, once.
+        val credited = WalletEngine.processDue(pending, afterBoot)
+        assertEquals(2_500 * rub, credited.availableKop)
+        assertEquals(credited, WalletEngine.processDue(credited, afterBoot + Duration.ofMinutes(1)))
+    }
 }
