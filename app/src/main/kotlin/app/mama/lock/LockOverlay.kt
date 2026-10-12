@@ -14,6 +14,7 @@ import app.mama.core.LockEngine
 import app.mama.core.Session
 import app.mama.core.TestMode
 import app.mama.platform.Calls
+import app.mama.platform.EmergencyCalls
 import app.mama.platform.Mama
 import app.mama.platform.Promise
 import app.mama.ui.Texts
@@ -37,6 +38,9 @@ class LockOverlay(private val service: LockService) : LockActions {
     private val input = StringBuilder()
     private var message: String? = null
     private var exitOpen = false
+    private var emergencyOpen = false
+    private var emergency: EmergencyCalls.Availability? = null
+    private var emergencyMessage: String? = null
 
     private var session: Session? = null
 
@@ -68,6 +72,8 @@ class LockOverlay(private val service: LockService) : LockActions {
         input.clear()
         message = null
         exitOpen = false
+        emergencyOpen = false
+        emergencyMessage = null
     }
 
     private fun params() = WindowManager.LayoutParams(
@@ -130,6 +136,10 @@ class LockOverlay(private val service: LockService) : LockActions {
                 input = input.toString(),
                 message = message,
                 diagnostics = if (FeatureFlags.TEST_MODE_ENABLED) diagnostics() else null,
+                emergencyOpen = emergencyOpen,
+                emergencyServices = (emergency as? EmergencyCalls.Availability.Numbers)?.services.orEmpty(),
+                emergencyNote = emergencyMessage ?: if (emergency is EmergencyCalls.Availability.NoTelephony) NO_TELEPHONY else null,
+                emergencyCallActive = EmergencyCalls.session(service)?.callStarted == true,
             ),
         )
     }
@@ -163,7 +173,42 @@ class LockOverlay(private val service: LockService) : LockActions {
 
     // ---------------- LockActions ----------------
 
-    override fun emergencyCall() = Calls.callEmergency(service)
+    override fun openEmergency() {
+        emergency = EmergencyCalls.services(service)
+        emergencyMessage = null
+        emergencyOpen = true
+        rebind()
+    }
+
+    override fun closeEmergency() {
+        emergencyOpen = false
+        emergencyMessage = null
+        rebind()
+    }
+
+    override fun dialEmergency(number: String) {
+        when (EmergencyCalls.start(service, number)) {
+            EmergencyCalls.Start.Opened -> {
+                emergencyOpen = false
+                // Step aside right away for the dialer.
+                service.render()
+            }
+            EmergencyCalls.Start.NoTelephony -> {
+                emergencyMessage = NO_TELEPHONY
+                rebind()
+            }
+            EmergencyCalls.Start.NoDialer -> {
+                emergencyMessage = "Не удалось открыть набор номера. Заблокируйте телефон кнопкой питания и нажмите " +
+                    "«Экстренный вызов» на экране блокировки телефона."
+                rebind()
+            }
+        }
+    }
+
+    override fun returnToCall() {
+        EmergencyCalls.returnToCall(service)
+        service.render()
+    }
 
     override fun openExit() {
         exitOpen = true
@@ -227,4 +272,8 @@ class LockOverlay(private val service: LockService) : LockActions {
     override fun answer() = Calls.answer(service)
 
     override fun hangUp() = Calls.hangUp(service)
+
+    private companion object {
+        const val NO_TELEPHONY = "На этом устройстве нет телефонной связи — позвонить отсюда нельзя."
+    }
 }

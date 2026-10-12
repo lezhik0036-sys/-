@@ -25,6 +25,14 @@
 
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
+    <!-- Android 11+: see which app opens tel: numbers (emergency calls go through the phone's own dialer). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+    </queries>
+
     <application
         android:name=".MamaApp"
         android:allowBackup="false"

@@ -9,6 +9,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import app.mama.core.EmergencyService
 import app.mama.platform.Calls
 import app.mama.ui.BrandButtonView
 import app.mama.ui.Icon
@@ -50,10 +51,26 @@ data class LockModel(
     val input: String,
     val message: String?,
     val diagnostics: String?,
+    /** "Экстренные службы" page open. */
+    val emergencyOpen: Boolean = false,
+    /** Services listed there (from the phone's own emergency list). */
+    val emergencyServices: List<EmergencyService> = emptyList(),
+    /** Shown instead of / under the list: no telephony, the dialer could not open… */
+    val emergencyNote: String? = null,
+    /** An emergency call is going on: the call card offers the call screen back. */
+    val emergencyCallActive: Boolean = false,
 )
 
 interface LockActions {
-    fun emergencyCall()
+    /** "Экстренный звонок": opens MAMA's "Экстренные службы" page (not the dialer). */
+    fun openEmergency()
+    fun closeEmergency()
+
+    /** A service was chosen: the phone's own dialer opens with [number] entered. */
+    fun dialEmergency(number: String)
+
+    /** Back to the system in-call screen of an emergency call. */
+    fun returnToCall()
     fun openExit()
     fun closeExit()
     fun requestCode()
@@ -69,7 +86,9 @@ interface LockActions {
  * landscape, phrase, glowing countdown ring, and only two actions —
  * "Экстренный звонок" and "Доверенный выход". The Trusted Exit page is a
  * light panel shown over it: first the user's reason and a pause, then the
- * 5-digit code entry. Pure view code: all behaviour goes through [LockActions].
+ * 5-digit code entry. "Экстренный звонок" opens the "Экстренные службы"
+ * page; Trusted Exit is a separate thing. Pure view code: all behaviour
+ * goes through [LockActions].
  */
 class LockScreenView(private val context: Context, private val actions: LockActions) {
     private val night = Kit(context, night = true)
@@ -86,7 +105,14 @@ class LockScreenView(private val context: Context, private val actions: LockActi
     private lateinit var callCard: LinearLayout
     private lateinit var callInfo: TextView
     private lateinit var answer: BrandButtonView
+    private lateinit var backToCall: BrandButtonView
     private lateinit var diagnostics: TextView
+
+    // Emergency services page.
+    private lateinit var emergencyPage: View
+    private lateinit var serviceList: LinearLayout
+    private lateinit var emergencyNote: TextView
+    private var shownServices: List<EmergencyService>? = null
 
     // Exit page.
     private lateinit var exitPage: View
@@ -109,6 +135,8 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         root.addView(buildMain(), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         exitPage = buildExit()
         root.addView(exitPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        emergencyPage = buildEmergency()
+        root.addView(emergencyPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
     private fun dp(v: Int) = night.dp(v)
@@ -127,6 +155,8 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         callInfo = k.text("", MamaType.H2, MamaColors.OnNight, center = true).also { callCard.addView(it, k.fill()) }
         answer = k.primaryButton("Ответить") { actions.answer() }
         callCard.addView(answer, k.gap(12))
+        backToCall = k.primaryButton("Вернуться к звонку") { actions.returnToCall() }
+        callCard.addView(backToCall, k.gap(12))
         callCard.addView(k.secondaryButton("Завершить звонок") { actions.hangUp() }, k.gap(10))
         col.addView(callCard, k.gap(16))
 
@@ -149,7 +179,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
 
         val actionsRow = k.row()
-        actionsRow.addView(actionButton(Icon.PHONE, "Экстренный\nзвонок") { actions.emergencyCall() }, k.weight().apply { rightMargin = dp(6) })
+        actionsRow.addView(actionButton(Icon.PHONE, "Экстренный\nзвонок") { actions.openEmergency() }, k.weight().apply { rightMargin = dp(6) })
         actionsRow.addView(actionButton(Icon.LOCK, "Доверенный\nвыход") { actions.openExit() }, k.weight().apply { leftMargin = dp(6) })
         col.addView(actionsRow, k.gap(26))
         diagnostics = k.text("", MamaType.SMALL, Color.argb(0x80, 0xB4, 0xBF, 0xB5), center = true).also {
@@ -171,6 +201,43 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         addView(night.text(label, MamaType.CAPTION, MamaColors.OnNight).apply { typeface = MamaFonts.ui(context, 700) }, night.weight().apply { leftMargin = dp(12) })
         isClickable = true
         setOnClickListener { onClick() }
+    }
+
+    // ---------------- Emergency services page ----------------
+
+    private fun buildEmergency(): View {
+        val k = night
+        val col = k.column().apply { setPadding(dp(22), dp(52), dp(22), dp(28)) }
+        col.addView(k.text("Экстренные службы", MamaType.H1, MamaColors.OnNight, center = true), k.fill())
+        col.addView(k.text(
+            "Номер откроется в приложении «Телефон» — останется нажать вызов. Звонок не прерывает серию и ничего не стоит.",
+            MamaType.CAPTION, MamaColors.OnNightMuted, center = true,
+        ), k.gap(10))
+        serviceList = k.column()
+        col.addView(serviceList, k.gap(22))
+        emergencyNote = k.text("", MamaType.BODY, MamaColors.OnNight, center = true)
+        col.addView(emergencyNote, k.gap(16))
+        col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
+        col.addView(k.secondaryButton("Назад в MAMA") { actions.closeEmergency() }, k.gap(22))
+        return ScrollView(context).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            background = PhotoBackground(context, Scene.NIGHT)
+            addView(col)
+        }
+    }
+
+    private fun serviceRow(s: EmergencyService): View = night.row().apply {
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(18), dp(14), dp(16), dp(14))
+        minimumHeight = dp(72)
+        background = night.pressable(night.shape(MamaColors.NightGlass, 18, MamaColors.NightLine), 18)
+        addView(night.text(s.number, MamaType.DIGITS, MamaColors.OnNight), LinearLayout.LayoutParams(dp(92), ViewGroup.LayoutParams.WRAP_CONTENT))
+        addView(night.text(s.name, MamaType.BODY, MamaColors.OnNight).apply { typeface = MamaFonts.ui(context, 600) }, night.weight())
+        addView(night.icon(Icon.PHONE, MamaColors.OnNight, 22))
+        isClickable = true
+        contentDescription = "${s.name}, ${s.number}"
+        setOnClickListener { actions.dialEmergency(s.number) }
     }
 
     // ---------------- Trusted Exit page ----------------
@@ -269,6 +336,16 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         callCard.visibility = if (m.call != Calls.CallState.NONE) View.VISIBLE else View.GONE
         callInfo.text = if (m.call == Calls.CallState.RINGING) "Входящий звонок" else "Идёт звонок"
         answer.visibility = if (m.call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
+        backToCall.visibility = if (m.emergencyCallActive && m.call != Calls.CallState.NONE) View.VISIBLE else View.GONE
+
+        emergencyPage.visibility = if (m.emergencyOpen) View.VISIBLE else View.GONE
+        if (m.emergencyServices != shownServices) {
+            shownServices = m.emergencyServices
+            serviceList.removeAllViews()
+            m.emergencyServices.forEachIndexed { i, s -> serviceList.addView(serviceRow(s), night.gap(if (i == 0) 0 else 10)) }
+        }
+        emergencyNote.text = m.emergencyNote.orEmpty()
+        emergencyNote.visibility = if (m.emergencyNote.isNullOrEmpty()) View.GONE else View.VISIBLE
         diagnostics.text = m.diagnostics.orEmpty()
         diagnostics.visibility = if (m.diagnostics.isNullOrEmpty()) View.GONE else View.VISIBLE
 

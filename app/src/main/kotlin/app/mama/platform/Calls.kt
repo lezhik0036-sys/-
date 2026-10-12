@@ -10,17 +10,15 @@ import android.os.Build
 import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import android.util.Log
-import app.mama.lock.LockService
 
 /**
  * Calls stay possible during a lock, but only these: the trusted contact
- * (dialled directly, no editable keypad), emergency numbers, and incoming calls.
- * The lock screen stays on top during every call and carries the call
- * controls itself (answer / hang up), so there is no call screen to escape through.
+ * (dialled directly, no editable keypad), emergency services, and incoming
+ * calls. For the contact and incoming calls the lock screen stays on top and
+ * carries the call controls itself (answer / hang up). Emergency calls go
+ * through the phone's own dialer and call screen instead, see [EmergencyCalls].
  */
 object Calls {
-    const val EMERGENCY_NUMBER = "112"
-
     /** What kind of screen is in front, as seen by the accessibility guard. */
     enum class Screen {
         /** The ongoing/incoming call screen. */
@@ -50,6 +48,13 @@ object Calls {
     }
 
     enum class CallState { NONE, RINGING, ACTIVE }
+
+    /** Whether a call is going on, or UNKNOWN when MAMA may not read the call state. */
+    fun observe(context: Context): app.mama.core.CallObservation = when {
+        !granted(context, Manifest.permission.READ_PHONE_STATE) -> app.mama.core.CallObservation.UNKNOWN
+        isInCall(context) -> app.mama.core.CallObservation.ACTIVE
+        else -> app.mama.core.CallObservation.NONE
+    }
 
     fun callState(context: Context): CallState {
         if (!isInCall(context)) return CallState.NONE
@@ -105,21 +110,6 @@ object Calls {
             return false
         }
         return start(context, Intent(Intent.ACTION_CALL, Uri.parse("tel:$number")))
-    }
-
-    /**
-     * Emergency call (112). Android never lets a regular app place an
-     * emergency call by itself: for ACTION_CALL to an emergency number the
-     * system (Telecom) opens the phone's own dialer with 112 already entered,
-     * and one tap on the call button dials it. That system path is used first
-     * because it works on every vendor; ACTION_DIAL is the fallback.
-     * Emergency calls must never be blocked.
-     */
-    fun callEmergency(context: Context) {
-        LockService.beginDialPass(emergency = true)
-        val tel = Uri.parse("tel:$EMERGENCY_NUMBER")
-        if (granted(context, Manifest.permission.CALL_PHONE) && start(context, Intent(Intent.ACTION_CALL, tel))) return
-        start(context, Intent(Intent.ACTION_DIAL, tel))
     }
 
     private fun start(context: Context, intent: Intent): Boolean = try {

@@ -9,12 +9,12 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import app.mama.core.LockState
 import app.mama.platform.Alarms
 import app.mama.platform.Calls
+import app.mama.platform.EmergencyCalls
 import app.mama.platform.Mama
 import app.mama.platform.Notifications
 import app.mama.ui.Texts
@@ -36,23 +36,19 @@ class LockService : Service() {
         @Volatile var foreground: Calls.Screen = Calls.Screen.OTHER
             private set
 
-        @Volatile private var dialPassUntil = 0L
-        @Volatile private var dialPassEmergency = false
-
-        /** Short window after tapping 112 on the lock screen, until the call starts. */
-        val dialPassActive: Boolean get() = SystemClock.elapsedRealtime() < dialPassUntil
-
         /**
-         * Whether the overlay may step aside for what is in front right now.
-         * Only for dialling an emergency number. Calls themselves never lift
-         * the overlay: it shows answer / hang-up buttons instead.
+         * Whether the overlay may step aside for what is in front right now:
+         * - during an emergency call session, for the phone's own call flow
+         *   (dialer, SIM choice, in-call screen) — before and during the call;
+         * - the system emergency dialer (it can only call emergency numbers).
+         * Other calls (the trusted contact, incoming) never lift the overlay:
+         * it shows answer / hang-up buttons instead.
          */
         val overlayMayStepAside: Boolean
-            get() = callState == Calls.CallState.NONE && when (foreground) {
-                Calls.Screen.EMERGENCY -> true
-                // Only when the emergency dialer is unavailable and 112 was opened in the regular one.
-                Calls.Screen.DIALER -> dialPassActive && dialPassEmergency
-                Calls.Screen.IN_CALL, Calls.Screen.OTHER -> false
+            get() {
+                val service = instance
+                if (service != null && EmergencyCalls.overlayMayStepAside(service)) return true
+                return callState == Calls.CallState.NONE && foreground == Calls.Screen.EMERGENCY
             }
 
         /** Whether the lock surface is currently attached (read by the guard). */
@@ -61,18 +57,7 @@ class LockService : Service() {
 
         @Volatile private var instance: LockService? = null
 
-        private const val DIAL_PASS_MS = 60_000L
         private const val SYNC_EVERY_TICKS = 15
-
-        fun beginDialPass(emergency: Boolean) {
-            dialPassEmergency = emergency
-            dialPassUntil = SystemClock.elapsedRealtime() + DIAL_PASS_MS
-        }
-
-        fun endDialPass() {
-            dialPassUntil = 0
-            dialPassEmergency = false
-        }
 
         /** Called by the guard on every foreground change. */
         fun onForeground(screen: Calls.Screen) {
@@ -107,8 +92,11 @@ class LockService : Service() {
                 ticks++
                 val previous = callState
                 callState = Calls.callState(this@LockService)
-                if (callState != Calls.CallState.NONE) endDialPass()
                 if (callState != previous) updateProximityLock()
+                // Emergency call: started, still going, or over (then the lock screen comes back).
+                if (EmergencyCalls.session(this@LockService) != null) {
+                    EmergencyCalls.tick(this@LockService, Calls.observe(this@LockService), GuardService.callFlowOnScreen())
+                }
                 // Keep closing the shade / quick settings / power menu while locked.
                 if (state is LockState.Locked && !overlayMayStepAside) GuardService.enforceNow()
                 if (ticks % SYNC_EVERY_TICKS == 0) refresh() else render()
@@ -149,6 +137,8 @@ class LockService : Service() {
     private fun refresh() {
         state = Mama.syncFromService(this).state
         if (state !is LockState.Locked && state !is LockState.EmergencyPass) {
+            // The period is over (also during an emergency call): no lock to restore.
+            EmergencyCalls.clear(this)
             overlay.hide()
             overlayShowing = false
             stopSelf()

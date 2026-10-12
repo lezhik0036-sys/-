@@ -9,16 +9,21 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
+import app.mama.core.FrontWindow
 import app.mama.platform.Calls
+import app.mama.platform.EmergencyCalls
 import app.mama.platform.Mama
 
 /**
  * Second line of defence behind the overlay. While locked it:
  * - tells [LockService] what is in front, so the overlay steps aside only for
- *   the in-call screen and the emergency dialer (never for "a call is going on");
+ *   the system emergency dialer and, during an emergency call session, the
+ *   phone's own call flow (dialer, SIM choice, in-call screen);
  * - sends any other app home (the overlay covers home), including apps opened
  *   from the shade or over the lock screen;
  * - closes the notification shade, quick settings and power menu.
+ * It never presses Back/Home, closes or covers anything of an emergency
+ * call's own flow: when unsure, the call wins.
  * Outside a lock it does nothing. It looks at window types and sizes only.
  */
 class GuardService : AccessibilityService() {
@@ -37,6 +42,21 @@ class GuardService : AccessibilityService() {
 
         /** Whether the guard is connected right now (shown on the lock screen). */
         val running: Boolean get() = instance != null
+
+        /**
+         * Whether any window of the phone's call flow is on screen (dialer,
+         * in-call screen…), or null when the guard cannot tell.
+         */
+        fun callFlowOnScreen(): Boolean? = try {
+            instance?.let { g ->
+                g.windows.any { w ->
+                    val pkg = w.root?.packageName?.toString() ?: return@any false
+                    EmergencyCalls.classify(g, pkg, null) == FrontWindow.CALL_FLOW
+                }
+            }
+        } catch (e: RuntimeException) {
+            null
+        }
 
         /** Diagnostics shown on the lock screen: System UI events seen / panels closed. */
         @Volatile var systemUiEvents = 0
@@ -121,9 +141,11 @@ class GuardService : AccessibilityService() {
     }
 
     private fun onWindowState(pkg: String, className: String?) {
+        // Emergency call session: where the user is now (call flow, elsewhere, or nothing that counts).
+        val front = EmergencyCalls.onFront(this, pkg, className)
         if (pkg == SYSTEM_UI) {
             systemUiEvents++
-            closeSystemPanels(fromSystemUi = true)
+            if (LockService.overlayMayStepAside) dismissShadeOnly() else closeSystemPanels(fromSystemUi = true)
             return
         }
         if (pkg == packageName) {
@@ -138,6 +160,8 @@ class GuardService : AccessibilityService() {
 
         if (!Mama.state(this).isLocked) return
         if (LockService.overlayMayStepAside) return
+        // During an emergency call nothing is done about keyboards or system dialogs.
+        if (front == FrontWindow.NEUTRAL && EmergencyCalls.session(this) != null) return
         if (screen == Calls.Screen.OTHER && overKeyguard() && pkg != homePackage && !isSystemSurface(pkg)) {
             // An app opened on top of the system lock screen (e.g. settings from
             // Samsung's lock screen widgets). Home does nothing there, so the
@@ -161,6 +185,15 @@ class GuardService : AccessibilityService() {
     }
 
     private fun overKeyguard() = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+
+    /**
+     * During an emergency call only the notification shade is closed (it leads
+     * to Settings and other apps). No Back, no Home, no screen off: those
+     * could close the dialer or the call screen.
+     */
+    private fun dismissShadeOnly() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+    }
 
     /** Lock screen parts that are not apps: always-on display, face/fingerprint prompts. */
     private fun isSystemSurface(pkg: String) =

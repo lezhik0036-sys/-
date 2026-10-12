@@ -35,7 +35,7 @@ object Previews {
         "welcome", "permissions", "series", "time", "contact", "promise", "review",
         "dashboard", "lock", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
         "commitment", "restart_commitment", "dashboard_active", "edit", "cancel_launch",
-        "needs_attention", "restart_scheduled",
+        "needs_attention", "restart_scheduled", "emergency",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -105,14 +105,17 @@ object Previews {
             "flex_plan" -> { a.flexStartNow = false; a.flexPlannerScreen(FlexPackage("p", now, GrantSource.TEST_NO_PAYMENT)) }
             "stats" -> { a.tab = 1; a.statisticsScreen() }
             "settings" -> { a.tab = 2; a.settingsScreen() }
-            "lock", "exit", "code" -> lock(a, name)
+            "lock", "exit", "code", "emergency" -> lock(a, name)
             else -> a.welcomeScreen()
         }
     }
 
     private fun lock(a: MainActivity, name: String): Pair<View, Boolean> {
         val view = LockScreenView(a, object : LockActions {
-            override fun emergencyCall() = Unit
+            override fun openEmergency() = Unit
+            override fun closeEmergency() = Unit
+            override fun dialEmergency(number: String) = Unit
+            override fun returnToCall() = Unit
             override fun openExit() = Unit
             override fun closeExit() = Unit
             override fun requestCode() = Unit
@@ -128,11 +131,13 @@ object Previews {
                 now = now, start = now.minus(Duration.ofMinutes(77)), end = now + Duration.ofSeconds(6 * 3600 + 42 * 60 + 17), zone = zone,
                 contactName = contact.name, contactPhone = Texts.phone(contact.phone), dayLabel = Texts.dayOf(3, 7),
                 phrase = Texts.lockPhrases[0], promise = "Хочу нормально высыпаться и чувствовать себя лучше утром.",
-                call = Calls.CallState.NONE, exitOpen = name != "lock", codeActive = name == "code",
+                call = Calls.CallState.NONE, exitOpen = name == "exit" || name == "code", codeActive = name == "code",
                 attemptsLeft = 3, resendAt = if (name == "code") now + Duration.ofSeconds(57) else null, codeLength = 5,
                 input = if (name == "code") "47" else "", message = null, diagnostics = null,
+                emergencyOpen = name == "emergency",
+                emergencyServices = app.mama.core.EmergencyNumberCatalog.RUSSIA_FALLBACK,
             ),
         )
-        return view.root to (name != "lock")
+        return view.root to (name == "exit" || name == "code")
     }
 }
