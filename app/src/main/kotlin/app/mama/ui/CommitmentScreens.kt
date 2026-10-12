@@ -168,12 +168,16 @@ private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
 /** Restart payment for the chosen time and "Цена слова" (if any); the series is then SCHEDULED. */
 internal fun MainActivity.payRestart(kind: SeriesKind) {
     val commitment = commitmentKop
-    val window = app.mama.core.DailyWindow(start, end, zone)
-    val note = "${Texts.seriesName(kind)}, ${Texts.hhmm(start)} → ${Texts.hhmm(end)} каждый день. " +
+    val time = launchTime()
+    val schedule = when (time) {
+        is app.mama.core.LaunchTime.AutoNow -> "старт сразу после подтверждения, ${Texts.flexDuration(time.length)} каждый день"
+        is app.mama.core.LaunchTime.Fixed -> "${Texts.hhmm(start)} → ${Texts.hhmm(end)} каждый день"
+    }
+    val note = "${Texts.seriesName(kind)}, $schedule. " +
         "Если отменить запуск до первой блокировки, Restart вернётся на баланс." +
         (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
     Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0, note = note) { source ->
-        when (Mama.restartSeries(this, source, window, commitment)) {
+        when (Mama.restartSeries(this, source, time, commitment)) {
             app.mama.platform.Mama.SeriesStart.Started -> {
                 restartFlow = false
                 commitmentKop = null

@@ -25,7 +25,7 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         data object Rejected : Result
     }
 
-    /** "Начать серию" for a free series. Busy and 30-day checks are the caller's. */
+    /** "Начать серию" for a free series with a fixed window (MANUAL start). */
     fun schedule(
         s: Snapshot,
         seriesId: String,
@@ -36,8 +36,26 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         mode: SessionMode,
         commitmentKop: Long?,
         now: Instant,
+    ): Result = schedule(s, seriesId, sessionId, kind, LaunchTime.Fixed(window), contact, mode, commitmentKop, now)
+
+    /**
+     * "Начать серию" for a free series. Busy and 30-day checks are the
+     * caller's. [time] is resolved here, at the confirmation: AUTO_NOW starts
+     * now for the draft's length, MANUAL keeps its window.
+     */
+    fun schedule(
+        s: Snapshot,
+        seriesId: String,
+        sessionId: String,
+        kind: SeriesKind,
+        time: LaunchTime,
+        contact: TrustedContact,
+        mode: SessionMode,
+        commitmentKop: Long?,
+        now: Instant,
     ): Result {
-        val u = series.start(seriesId, sessionId, kind, window, contact, mode, now)
+        val launch = SeriesDraft.resolve(time, now)
+        val u = series.start(seriesId, sessionId, kind, launch.window, contact, mode, now, startNow = launch.startNow)
         val wallet = when (val r = reserveCommitment(s.wallet, seriesId, commitmentKop, now)) {
             is WalletEngine.Result.Ok -> r.wallet
             is WalletEngine.Result.Insufficient -> return Result.NotEnoughBalance(r.availableKop)
@@ -67,6 +85,17 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         sessionId: String,
         commitmentKop: Long?,
         now: Instant,
+    ): Result = restart(s, source, LaunchTime.Fixed(window), seriesId, sessionId, commitmentKop, now)
+
+    /** [restart] with the draft's [time], resolved at the confirmation like [schedule]. */
+    fun restart(
+        s: Snapshot,
+        source: GrantSource,
+        time: LaunchTime,
+        seriesId: String,
+        sessionId: String,
+        commitmentKop: Long?,
+        now: Instant,
     ): Result {
         val failed = s.series?.takeIf { it.status == SeriesStatus.BROKEN } ?: return Result.NotAllowed
         var wallet = s.wallet
@@ -77,7 +106,8 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
                 is WalletEngine.Result.Invalid -> return Result.Rejected
             }
         }
-        val u = series.start(seriesId, sessionId, failed.kind, window, failed.contact, failed.mode, now, restartOf = failed.id)
+        val launch = SeriesDraft.resolve(time, now)
+        val u = series.start(seriesId, sessionId, failed.kind, launch.window, failed.contact, failed.mode, now, restartOf = failed.id, startNow = launch.startNow)
         wallet = when (val r = reserveCommitment(wallet, seriesId, commitmentKop, now)) {
             is WalletEngine.Result.Ok -> r.wallet
             is WalletEngine.Result.Insufficient -> return Result.NotEnoughBalance(r.availableKop)

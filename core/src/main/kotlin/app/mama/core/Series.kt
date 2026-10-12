@@ -108,7 +108,9 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
      * The user pressed "Начать серию" (or a Restart was granted): the series
      * is SCHEDULED and its first lock is planned for the next FULL window
      * ([DailyWindow.nextFullPlan]), never a shortened one already in
-     * progress. Nothing is binding yet.
+     * progress. Nothing is binding yet. With [startNow] (an AUTO_NOW launch,
+     * see [LaunchTime.AutoNow]) the first lock starts at [now] instead, for
+     * the window's whole length, and the series goes straight to ACTIVATING.
      */
     fun start(
         seriesId: String,
@@ -119,9 +121,10 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
         mode: SessionMode,
         now: Instant,
         restartOf: String? = null,
+        startNow: Boolean = false,
     ): Update {
         val series = Series(seriesId, kind, window, contact, mode, startedAt = now, restartOf = restartOf)
-        val session = planFirst(series, sessionId, now)
+        val session = if (startNow) planNow(series, sessionId, now) else planFirst(series, sessionId, now)
         return Update(enter(series, session, now), session)
     }
 
@@ -288,7 +291,7 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
         }
     }
 
-    /** SCHEDULED, or ACTIVATING when the planned lock is already running (not for a first lock, see [planFirst]). */
+    /** SCHEDULED, or ACTIVATING when the planned lock is already running (a first lock only for AUTO_NOW, see [planNow]). */
     private fun enter(series: Series, session: Session?, now: Instant) =
         if (session?.status == SessionStatus.ACTIVE) {
             series.copy(status = SeriesStatus.ACTIVATING, activatingSince = now)
@@ -299,6 +302,12 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
     /** First lock: the next full window, starting in the future. */
     private fun planFirst(series: Series, sessionId: String, now: Instant): Session? {
         val plan = series.window.nextFullPlan(now, series.mode)
+        return (engine.create(sessionId, plan, series.contact, now) as? LockEngine.CreateResult.Created)?.session
+    }
+
+    /** First lock of an AUTO_NOW launch: from the confirmation itself, for the window's whole length. */
+    private fun planNow(series: Series, sessionId: String, now: Instant): Session? {
+        val plan = LockPlan(start = now, end = now.plus(series.window.length), zone = series.window.zone, mode = series.mode)
         return (engine.create(sessionId, plan, series.contact, now) as? LockEngine.CreateResult.Created)?.session
     }
 

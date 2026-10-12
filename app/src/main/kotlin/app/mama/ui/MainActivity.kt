@@ -20,11 +20,15 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Toast
 import app.mama.billing.FeatureFlags
+import app.mama.core.DailyWindow
+import app.mama.core.LaunchTime
 import app.mama.core.LockState
+import app.mama.core.SeriesDraft
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
 import app.mama.platform.Mama
+import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -44,6 +48,13 @@ class MainActivity : Activity() {
 
     enum class Step { WELCOME, PERMISSIONS, SERIES, TIME, CONTACT, PROMISE, COMMITMENT, REVIEW }
 
+    /**
+     * How the draft's start is meant. AUTO_NOW (a new draft, start untouched):
+     * the series starts at the final confirmation, for the chosen length.
+     * MANUAL (the user set the start): a fixed daily window.
+     */
+    enum class StartMode { AUTO_NOW, MANUAL }
+
     internal val prefs by lazy { getSharedPreferences("mama_setup", Context.MODE_PRIVATE) }
     internal val kit by lazy { Kit(this) }
     internal val nightKit by lazy { Kit(this, night = true) }
@@ -53,6 +64,7 @@ class MainActivity : Activity() {
     internal var start: LocalTime = LocalTime.of(23, 0)
     internal var end: LocalTime = LocalTime.of(7, 0)
     internal var zone: ZoneId = ZoneId.systemDefault()
+    internal var startMode = StartMode.MANUAL
     internal lateinit var contactName: EditText
     internal lateinit var contactPhone: EditText
     internal lateinit var promiseField: EditText
@@ -103,6 +115,8 @@ class MainActivity : Activity() {
         start = runCatching { LocalTime.parse(prefs.getString("start", null)) }.getOrDefault(start)
         end = runCatching { LocalTime.parse(prefs.getString("end", null)) }.getOrDefault(end)
         zone = runCatching { ZoneId.of(prefs.getString("zone", null)) }.getOrDefault(zone)
+        // A draft from before AUTO_NOW keeps its time as it was: MANUAL.
+        startMode = runCatching { StartMode.valueOf(prefs.getString(DRAFT_START_MODE, null)!!) }.getOrDefault(StartMode.MANUAL)
         contactName = kit.textField("Имя, например «Жена»", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
             .apply { setText(prefs.getString("contactName", "")) }
         contactPhone = kit.textField("+7 900 123-45-67", InputType.TYPE_CLASS_PHONE)
@@ -170,17 +184,55 @@ class MainActivity : Activity() {
 
     /**
      * A new draft's time starts from now (never the previous series' window),
-     * once; after that the user's choice is kept.
+     * once, as AUTO_NOW; after that the user's choice is kept.
      */
     internal fun ensureDraftTime() {
         // Screenshot tour: sample data only.
         if (preview != null || prefs.getBoolean(DRAFT_TIME_SET, false)) return
-        val (s, e) = app.mama.core.SeriesDraft.freshTimes(Mama.trustedNow(this), zone)
+        val (s, e) = SeriesDraft.freshTimes(Mama.trustedNow(this), zone)
         start = s
         end = e
+        startMode = StartMode.AUTO_NOW
         prefs.edit().putBoolean(DRAFT_TIME_SET, true).apply()
         saveForm()
     }
+
+    /** The draft's window length (start to end, across midnight); zero when they coincide. */
+    internal val draftLength: Duration
+        get() = Duration.between(start, end).let { if (it.isNegative) it.plusDays(1) else it }
+
+    /** AUTO_NOW: the preview start follows the current minute and the end keeps the chosen length. */
+    internal fun refreshAutoNow() {
+        if (startMode != StartMode.AUTO_NOW || preview != null) return
+        val length = draftLength
+        start = SeriesDraft.freshTimes(Mama.trustedNow(this), zone).first
+        end = start.plus(length)
+        saveForm()
+    }
+
+    /** Start time set by hand: from now on a fixed daily window (MANUAL). */
+    internal fun pickStart(t: LocalTime) {
+        if (t != start) {
+            start = t
+            startMode = StartMode.MANUAL
+        }
+        saveForm()
+    }
+
+    /** End time set: under AUTO_NOW only the length changes, the start stays "at the confirmation". */
+    internal fun pickEnd(t: LocalTime) {
+        refreshAutoNow()
+        end = t
+        saveForm()
+    }
+
+    /** What the final confirmation starts; resolved by the platform on trusted time at that moment. */
+    internal fun launchTime(): LaunchTime =
+        if (startMode == StartMode.AUTO_NOW && start != end) {
+            LaunchTime.AutoNow(draftLength, zone)
+        } else {
+            LaunchTime.Fixed(DailyWindow(start, end, zone))
+        }
 
     /**
      * «Начать заново» on the failure screen: a Restart is a new launch with the
@@ -237,6 +289,7 @@ class MainActivity : Activity() {
             .putString("start", start.toString())
             .putString("end", end.toString())
             .putString("zone", zone.id)
+            .putString(DRAFT_START_MODE, startMode.name)
             .putString("contactName", contactName.text.toString())
             .putString("contactPhone", contactPhone.text.toString())
             .apply()
@@ -510,6 +563,7 @@ class MainActivity : Activity() {
         private const val STATE_RESTART_STEP = "restartStep"
         internal const val DRAFT_OPEN = "draft.open"
         internal const val DRAFT_TIME_SET = "draft.timeSet"
+        internal const val DRAFT_START_MODE = "draft.startMode"
         private const val PICK_CONTACT = 10
         private const val SETUP_ALL = 20
     }

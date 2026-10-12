@@ -182,7 +182,10 @@ internal object SeriesPrices {
 // ---------------- 4. Time ----------------
 
 internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
-    if (choice != Choice.TEST) ensureDraftTime()
+    if (choice != Choice.TEST) {
+        ensureDraftTime()
+        refreshAutoNow()
+    }
     val b = body()
     val now = Mama.trustedNow(this)
     val today = LocalDateTime.ofInstant(now, zone).toLocalDate()
@@ -197,22 +200,33 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
             (if (restartFlow) "Restart: ${Texts.seriesName(choice.series ?: app.mama.core.SeriesKind.SEVEN)}. " else "") +
                 "Одно окно, которое повторяется каждый день серии.",
         ))
-        // A standard series always starts with a full window (never one already in progress).
-        val plan = DailyWindow(start, end, zone).nextFullPlan(now, mode)
-        val firstStart = LocalDateTime.ofInstant(plan.start, zone).toLocalDate()
-        val firstEnd = LocalDateTime.ofInstant(plan.end, zone).toLocalDate()
+        // AUTO_NOW (start untouched): the series starts at the confirmation, for the chosen length.
+        // MANUAL: a fixed window, whose first lock is always a full one (never one already in progress).
+        val auto = startMode == MainActivity.StartMode.AUTO_NOW && start != end
+        val (firstStart, firstEnd, length) = if (auto) {
+            Triple(today, LocalDateTime.ofInstant(now + draftLength, zone).toLocalDate(), draftLength)
+        } else if (start == end) {
+            Triple(today, today, Duration.ZERO) // not a window yet: the warning below says so
+        } else {
+            val plan = DailyWindow(start, end, zone).nextFullPlan(now, mode)
+            Triple(
+                LocalDateTime.ofInstant(plan.start, zone).toLocalDate(),
+                LocalDateTime.ofInstant(plan.end, zone).toLocalDate(),
+                Duration.between(plan.start, plan.end),
+            )
+        }
         b.addView(kit.timeField(
             "Начало", "Каждый день", Texts.hhmm(start), null,
-            { DigitalTimePicker.show(this, "Начало блокировки", start) { start = it; saveForm(); render() } },
-            "Первая ночь: ${Texts.dayName(firstStart, today)}, ${Texts.date(firstStart)}",
+            { DigitalTimePicker.show(this, "Начало блокировки", start) { pickStart(it); render() } },
+            if (auto) "Начать после подтверждения" else "Первая ночь: ${Texts.dayName(firstStart, today)}, ${Texts.date(firstStart)}",
         ), kit.gap(22))
         b.addView(kit.timeField(
             "Окончание", "Каждый день", Texts.hhmm(end), null,
-            { DigitalTimePicker.show(this, "Окончание блокировки", end) { end = it; saveForm(); render() } },
+            { DigitalTimePicker.show(this, "Окончание блокировки", end) { pickEnd(it); render() } },
             "${Texts.dayName(firstEnd, today)}, ${Texts.date(firstEnd)}",
         ), kit.gap(12))
-        val length = Duration.between(plan.start, plan.end)
-        b.addView(kit.hintRow(Icon.CLOCK, "${Texts.hhmm(start)} → ${Texts.hhmm(end)} · каждый день · ${Texts.flexDuration(length)}"), kit.gap(18))
+        b.addView(kit.hintRow(Icon.CLOCK, "${Texts.hhmm(start)} → ${Texts.hhmm(end)} · каждый день · ${Texts.flexDuration(length)}"), kit.gap(if (auto) 8 else 18))
+        if (auto) b.addView(kit.hintRow(Icon.INFO, "Начало уточнится в момент запуска."), kit.gap(18))
         b.addView(kit.row().apply {
             addView(kit.hintRow(Icon.GLOBE, "Часовой пояс: ${Texts.zone(zone)}"), kit.weight())
             addView(kit.text("Изменить", MamaType.CAPTION, MamaColors.Emerald).apply {
@@ -383,9 +397,18 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
             val kind = choice.series!!
             b.addView(kit.sectionHeader("Проверь свои условия", "Если всё верно — запускаем серию."))
             line(Icon.CALENDAR, "Серия", Texts.seriesName(kind))
-            line(Icon.CLOCK, "Время", "${Texts.hhmm(start)} → ${Texts.hhmm(end)}", "каждый день · ${zone.id}")
             val now = Mama.trustedNow(this)
-            line(Icon.MOON, "Первая блокировка", Texts.firstLock(DailyWindow(start, end, zone).nextFullPlan(now, mode).start, zone, now), "полное окно, до этого серия запланирована")
+            when (val time = launchTime()) {
+                is app.mama.core.LaunchTime.AutoNow -> {
+                    val w = app.mama.core.SeriesDraft.resolve(time, now).window
+                    line(Icon.CLOCK, "Время", "${Texts.hhmm(w.start)} → ${Texts.hhmm(w.end)}", "каждый день · ${zone.id} · начало уточнится в момент запуска")
+                    line(Icon.MOON, "Первая блокировка", "Сразу после подтверждения", "полное окно, ${Texts.flexDuration(time.length)}")
+                }
+                is app.mama.core.LaunchTime.Fixed -> {
+                    line(Icon.CLOCK, "Время", "${Texts.hhmm(start)} → ${Texts.hhmm(end)}", "каждый день · ${zone.id}")
+                    line(Icon.MOON, "Первая блокировка", Texts.firstLock(time.window.nextFullPlan(now, mode).start, zone, now), "полное окно, до этого серия запланирована")
+                }
+            }
             line(Icon.PERSON, "Доверенный контакт", contactLine, phoneLine)
             line(Icon.HEART, "Моя причина", "«$reason»")
             line(Icon.REFRESH, "Restart при срыве", Texts.price(kind.restartPriceRub), "Старт серии бесплатный")
@@ -444,7 +467,7 @@ internal fun MainActivity.startChosen() {
             }
             return
         }
-        else -> when (val r = Mama.startSeries(this, choice.series!!, DailyWindow(start, end, zone), contact, mode, commitmentKop)) {
+        else -> when (val r = Mama.startSeries(this, choice.series!!, launchTime(), contact, mode, commitmentKop)) {
             Mama.SeriesStart.Started -> {
                 commitmentKop = null
                 closeDraft()

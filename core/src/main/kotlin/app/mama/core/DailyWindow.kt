@@ -28,6 +28,9 @@ data class DailyWindow(
     /** True when the window crosses midnight, e.g. 23:00–07:00. */
     val overnight: Boolean get() = !end.isAfter(start)
 
+    /** Nominal length on the clock face: 23:00–07:00 is 8 hours (a DST night is not counted). */
+    val length: Duration get() = Duration.between(start, end).let { if (it.isNegative) it.plusDays(1) else it }
+
     /**
      * The window occurrence that is in progress or comes next after [now].
      *
@@ -76,6 +79,31 @@ data class DailyWindow(
 }
 
 /**
+ * When a new standard series (or a Restart) starts, as chosen in its draft.
+ * Resolved once, at the final confirmation ([SeriesDraft.resolve]); after
+ * that the series has an ordinary fixed daily window.
+ */
+sealed interface LaunchTime {
+    /**
+     * MANUAL: the user set the start time. A fixed window; the first lock is
+     * its next full occurrence ([DailyWindow.nextFullPlan]), never moved.
+     */
+    data class Fixed(val window: DailyWindow) : LaunchTime
+
+    /**
+     * AUTO_NOW, the default of a new draft while its start is untouched: the
+     * series starts at the moment of the final confirmation and keeps the
+     * draft's [length]. Opened at 16:48 with 8 hours, confirmed at 16:53:
+     * 16:53 → 00:53 from now on, the first lock right away — not tomorrow.
+     */
+    data class AutoNow(val length: Duration, val zone: ZoneId) : LaunchTime {
+        init {
+            require(!length.isNegative && !length.isZero && length < Duration.ofDays(1)) { "length must be within a day" }
+        }
+    }
+}
+
+/**
  * Default times of a NEW standard series draft: never the previous series'
  * window. The start is the current local time to the minute, the end the
  * usual length later. An existing draft keeps whatever the user chose.
@@ -87,5 +115,21 @@ object SeriesDraft {
     fun freshTimes(now: Instant, zone: ZoneId): Pair<LocalTime, LocalTime> {
         val start = now.atZone(zone).toLocalTime().withSecond(0).withNano(0)
         return start to start.plus(DEFAULT_LENGTH)
+    }
+
+    /** A launch resolved at the final confirmation: the series' fixed daily window, and whether its first lock starts at once. */
+    data class Resolved(val window: DailyWindow, val startNow: Boolean)
+
+    /**
+     * MANUAL keeps its window. AUTO_NOW takes the confirmation minute as the
+     * daily start and the draft's length for the end; its first lock starts
+     * at [now] and lasts that whole length.
+     */
+    fun resolve(time: LaunchTime, now: Instant): Resolved = when (time) {
+        is LaunchTime.Fixed -> Resolved(time.window, startNow = false)
+        is LaunchTime.AutoNow -> {
+            val (start, _) = freshTimes(now, time.zone)
+            Resolved(DailyWindow(start, start.plus(time.length), time.zone), startNow = true)
+        }
     }
 }

@@ -108,6 +108,7 @@ class SamsungFixesTest {
         val after = LocalTime.now(zone).withSecond(0).withNano(0)
         assertTrue("draft start ${a.start}, now $before..$after", a.start == before || a.start == after)
         assertEquals(a.start.plusHours(8), a.end)
+        assertEquals(MainActivity.StartMode.AUTO_NOW, a.startMode)
     }
 
     @Test
@@ -117,28 +118,30 @@ class SamsungFixesTest {
         a.choice = MainActivity.Choice.SEVEN
         a.beginDraft()
         a.go(Step.TIME)
-        a.start = LocalTime.of(18, 0)
-        a.saveForm()
+        // A time set by hand (never equal to the draft's "now", which would be no change).
+        val manual = LocalTime.of(18, 0).let { if (it == a.start) it.plusMinutes(5) else it }
+        a.pickStart(manual)
+        assertEquals(MainActivity.StartMode.MANUAL, a.startMode)
         a.go(Step.CONTACT)
         a.back()
         assertEquals(Step.TIME, a.step)
-        assertEquals(LocalTime.of(18, 0), a.start)
+        assertEquals(manual, a.start)
         // «Начать» again from the welcome screen keeps the open draft.
         a.beginDraft()
         a.go(Step.TIME)
-        assertEquals(LocalTime.of(18, 0), a.start)
+        assertEquals(manual, a.start)
         // Rotation / recreation: same step, same time.
         controller.recreate()
         val b = controller.get()
         assertEquals(Step.TIME, b.step)
-        assertEquals(LocalTime.of(18, 0), b.start)
+        assertEquals(manual, b.start)
         // Once the draft became a series, the next draft starts from now again.
         b.closeDraft()
         b.beginDraft()
         b.go(Step.TIME)
         val now = LocalTime.now(zone).withSecond(0).withNano(0)
-        if (now != LocalTime.of(18, 0) && now.minusMinutes(1) != LocalTime.of(18, 0)) {
-            assertFalse("a new draft does not reuse 18:00", b.start == LocalTime.of(18, 0))
+        if (now != manual && now.minusMinutes(1) != manual) {
+            assertFalse("a new draft does not reuse the manual time", b.start == manual)
         }
     }
 
@@ -161,18 +164,19 @@ class SamsungFixesTest {
         assertEquals(a.start.plusHours(8), a.end)
         assertTrue(texts(content(a)).toString(), texts(content(a)).any { it.startsWith("Restart: 7 дней") })
 
-        // The user picks a time; it survives going on, coming back and a recreated screen.
-        a.start = LocalTime.of(16, 20)
-        a.end = LocalTime.of(0, 20)
+        // The user sets the time by hand; it survives going on, coming back and a recreated screen.
+        val manual = LocalTime.of(16, 20).let { if (it == a.start) it.plusMinutes(5) else it }
+        a.pickStart(manual)
+        a.pickEnd(manual.plusHours(8))
         find(content(a), "Далее")!!.performClick()
         assertEquals(Step.COMMITMENT, a.restartStep)
         a.onBackPressed()
         assertEquals(Step.TIME, a.restartStep)
-        assertEquals(LocalTime.of(16, 20), a.start)
+        assertEquals(manual, a.start)
         controller.recreate()
         val b = controller.get()
         assertTrue(b.restartFlow)
-        assertEquals(LocalTime.of(16, 20), b.start)
+        assertEquals(manual, b.start)
 
         // Confirmed: SCHEDULED with the chosen time and the failed series' length, fixed from now on.
         find(content(b), "Далее")!!.performClick()
@@ -181,14 +185,14 @@ class SamsungFixesTest {
         val restarted = Mama.series(context)!!
         assertEquals(SeriesStatus.SCHEDULED, restarted.status)
         assertEquals(SeriesKind.SEVEN, restarted.kind)
-        assertEquals(DailyWindow(LocalTime.of(16, 20), LocalTime.of(0, 20), zone), restarted.window)
+        assertEquals(DailyWindow(manual, manual.plusHours(8), zone), restarted.window)
         assertFalse(b.restartFlow)
         // The next launch draft starts from the current time again.
         b.beginDraft()
         b.ensureDraftTime()
         val now = LocalTime.now(zone).withSecond(0).withNano(0)
-        if (now != LocalTime.of(16, 20) && now.minusMinutes(1) != LocalTime.of(16, 20)) {
-            assertFalse("a new draft does not reuse 16:20", b.start == LocalTime.of(16, 20))
+        if (now != manual && now.minusMinutes(1) != manual) {
+            assertFalse("a new draft does not reuse the manual time", b.start == manual)
         }
     }
 
@@ -246,6 +250,7 @@ class SamsungFixesTest {
         assertTrue(Mama.topUpTest(context, 1_000_00))
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         find(content(a), "Начать заново")!!.performClick()
+        a.pickStart(LocalTime.now(zone).plusHours(2).withSecond(0).withNano(0))
         find(content(a), "Далее")!!.performClick()
         find(content(a), "Пропустить")!!.performClick()
         val pay = find(dialogRoot(), "Оплатить с баланса MAMA")
@@ -270,6 +275,7 @@ class SamsungFixesTest {
         failedSeries(availableKop = 200_00)
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         find(content(a), "Начать заново")!!.performClick()
+        a.pickStart(LocalTime.now(zone).plusHours(2).withSecond(0).withNano(0))
         find(content(a), "Далее")!!.performClick()
         find(content(a), "Пропустить")!!.performClick()
         val first = texts(dialogRoot())

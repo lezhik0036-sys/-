@@ -58,6 +58,7 @@ object Previews {
         a.start = LocalTime.of(23, 0)
         a.end = LocalTime.of(7, 0)
         a.choice = Choice.SEVEN
+        a.startMode = MainActivity.StartMode.MANUAL
         val now = Instant.now()
         val waiting = LockState.Waiting(now + Duration.ofSeconds(13 * 3600 + 18 * 60 + 24), now + Duration.ofHours(21))
         return when (name) {
@@ -103,6 +104,7 @@ object Previews {
             "restart_time" -> {
                 // Restart 7/7 after a failure at 15:46: a new time draft from "now" (16:20).
                 a.restartFlow = true
+                a.startMode = MainActivity.StartMode.AUTO_NOW
                 a.start = LocalTime.of(16, 20)
                 a.end = LocalTime.of(0, 20)
                 a.timeScreen()

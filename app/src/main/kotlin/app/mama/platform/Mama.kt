@@ -5,6 +5,7 @@ import android.util.Log
 import app.mama.core.ClockGuard
 import app.mama.core.CorePolicy
 import app.mama.core.DailyWindow
+import app.mama.core.LaunchTime
 import app.mama.core.Entitlements
 import app.mama.core.FlexPackage
 import app.mama.core.LedgerType
@@ -190,11 +191,25 @@ object Mama {
      * [commitmentKop] ("Цена слова", optional) is set aside from the internal
      * balance in the same save as the series, so they cannot get out of step.
      */
-    @Synchronized
     fun startSeries(
         context: Context,
         kind: SeriesKind,
         window: DailyWindow,
+        contact: TrustedContact,
+        mode: SessionMode,
+        commitmentKop: Long? = null,
+    ): SeriesStart = startSeries(context, kind, LaunchTime.Fixed(window), contact, mode, commitmentKop)
+
+    /**
+     * [startSeries] with the draft's [time]: resolved here, at the final
+     * confirmation, on trusted time. AUTO_NOW starts the first lock at once
+     * for the draft's length; MANUAL waits for its fixed window.
+     */
+    @Synchronized
+    fun startSeries(
+        context: Context,
+        kind: SeriesKind,
+        time: LaunchTime,
         contact: TrustedContact,
         mode: SessionMode,
         commitmentKop: Long? = null,
@@ -206,7 +221,7 @@ object Mama {
             return SeriesStart.Waiting(StandardRules.daysUntilFreeStart(ent, r.trustedNow))
         }
         val result = flow.schedule(
-            r.snapshot, UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, window, contact, mode, commitmentKop, r.trustedNow,
+            r.snapshot, UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, time, contact, mode, commitmentKop, r.trustedNow,
         )
         return saveStart(context, result)
     }
@@ -220,12 +235,16 @@ object Mama {
      * before ACTIVE gives the held Restart back and restores the failure.
      * "Цена слова" is asked again and is never added to the Restart price.
      */
+    fun restartSeries(context: Context, source: GrantSource, window: DailyWindow, commitmentKop: Long? = null): SeriesStart =
+        restartSeries(context, source, LaunchTime.Fixed(window), commitmentKop)
+
+    /** [restartSeries] with the draft's [time], resolved at the confirmation like [startSeries]. */
     @Synchronized
-    fun restartSeries(context: Context, source: GrantSource, window: DailyWindow, commitmentKop: Long? = null): SeriesStart {
+    fun restartSeries(context: Context, source: GrantSource, time: LaunchTime, commitmentKop: Long? = null): SeriesStart {
         val r = reconcile(context)
         if (r.snapshot.series?.status != SeriesStatus.BROKEN || r.state != LockState.Free) return SeriesStart.Rejected
         Log.i(TAG, "Restart of ${r.snapshot.series?.kind} granted: $source")
-        val result = flow.restart(r.snapshot, source, window, UUID.randomUUID().toString(), UUID.randomUUID().toString(), commitmentKop, r.trustedNow)
+        val result = flow.restart(r.snapshot, source, time, UUID.randomUUID().toString(), UUID.randomUUID().toString(), commitmentKop, r.trustedNow)
         return saveStart(context, result)
     }
 
