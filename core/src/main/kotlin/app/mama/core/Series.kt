@@ -70,18 +70,21 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
             return Update(series, session)
         }
         val counted = series.copy(lastSessionId = session.id)
+        // The series ends when its session ended (Trusted Exit, cancel, or the
+        // planned end), not when this reconcile happened to run.
+        val endedAt = session.finishedAt ?: now
         return when (session.finishReason) {
             FinishReason.COMPLETED -> {
                 val done = counted.completedPeriods + 1
                 if (done >= series.kind.periods) {
-                    Update(counted.copy(completedPeriods = done, status = SeriesStatus.COMPLETED, endedAt = now), session)
+                    Update(counted.copy(completedPeriods = done, status = SeriesStatus.COMPLETED, endedAt = endedAt), session)
                 } else {
                     val next = counted.copy(completedPeriods = done)
                     Update(next, planNext(next, nextSessionId, now) ?: session)
                 }
             }
             FinishReason.EXITED_WITH_CONTACT, FinishReason.CANCELLED_BEFORE_START, null ->
-                Update(counted.copy(status = SeriesStatus.BROKEN, endedAt = now), session)
+                Update(counted.copy(status = SeriesStatus.BROKEN, endedAt = endedAt), session)
         }
     }
 

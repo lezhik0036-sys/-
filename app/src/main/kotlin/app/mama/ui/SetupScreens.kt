@@ -9,6 +9,7 @@ import android.widget.LinearLayout
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
 import app.mama.billing.Product
+import app.mama.core.CommitmentConfig
 import app.mama.core.DailyWindow
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
@@ -360,7 +361,10 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
     if (choice.series != null) {
         b.addView(kit.infoCard(
             "Прогресс обнулится. Сразу начать заново — Restart за ${Texts.price(choice.series!!.restartPriceRub)}, " +
-                "бесплатная новая серия — через ${StandardRules.FREE_START_AFTER.toDays()} дней. Выход по коду доверенного контакта всегда бесплатный.",
+                "бесплатная новая серия — через ${StandardRules.FREE_START_AFTER.toDays()} дней.\n\n" +
+                "Доверенный выход всегда доступен и не требует отдельной оплаты.\n\n" +
+                "Если серия будет завершена досрочно, она считается сорванной.\n\n" +
+                "Если установлена «Цена слова», через 24 часа ${CommitmentConfig.RETURN_PERCENT}% этой суммы вернётся на баланс MAMA.",
             Icon.ALERT, Tone.WARNING, "Если серия будет прервана",
         ), kit.gap(14))
     }

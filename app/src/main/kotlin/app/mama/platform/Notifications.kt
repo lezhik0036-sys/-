@@ -25,7 +25,7 @@ object Notifications {
     const val BALANCE_CHANNEL = "balance"
     private const val BALANCE_ID = 2
 
-    /** "Часть суммы вернулась на баланс MAMA" (the 24-hour partial return of "Цена слова"). */
+    /** "Мы вернули … на ваш баланс MAMA" (the 24-hour partial return of "Цена слова"). */
     fun balanceReturn(context: Context, amountKop: Long) {
         if (amountKop <= 0) return
         runCatching {
@@ -40,8 +40,8 @@ object Notifications {
                 BALANCE_ID,
                 Notification.Builder(context, BALANCE_CHANNEL)
                     .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
-                    .setContentTitle("${app.mama.ui.Texts.money(amountKop)} вернулись на баланс MAMA.")
-                    .setContentText("Их можно использовать только внутри MAMA.")
+                    .setContentTitle("Мы вернули ${app.mama.ui.Texts.money(amountKop)} на ваш баланс MAMA.")
+                    .setContentText("Средства доступны для внутренних функций приложения.")
                     .setContentIntent(open)
                     .setAutoCancel(true)
                     .build(),

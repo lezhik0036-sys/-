@@ -178,4 +178,25 @@ class WalletTest {
         assertIs<WalletEngine.Result.Invalid>(WalletEngine.reserve(w, "b", CommitmentConfig.MAX_KOP + 100, t0))
         assertIs<WalletEngine.Result.Invalid>(WalletEngine.reserve(w, "c", CommitmentConfig.MIN_KOP - 1, t0))
     }
+
+    @Test
+    fun `return is due 24 hours after the moment of the exit, even if processed later`() {
+        val engine = engine()
+        val seriesEngine = SeriesEngine(engine)
+        val window = DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), MSK)
+        val start = seriesEngine.start("s1", "n1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, t0)
+        val wallet = ok(WalletEngine.reserve(funded(5_000), "s1", 5_000 * rub, t0))
+        val exitAt = t0 + Duration.ofMinutes(10)
+        val cancelled = assertIs<LockEngine.CancelResult.Cancelled>(engine.cancelBeforeStart(start.session!!, exitAt)).session
+        // The app only reconciles three hours later (e.g. it was not running).
+        val later = exitAt + Duration.ofHours(3)
+        val broken = seriesEngine.afterSession(start.series, cancelled, "n2", later).series
+        assertEquals(exitAt, broken.endedAt)
+        val settled = WalletEngine.settle(wallet, broken, later)
+        assertEquals(exitAt + Duration.ofHours(24), settled.commitmentFor("s1")!!.returnDueAt)
+        assertEquals(settled, WalletEngine.processDue(settled, exitAt + Duration.ofHours(24).minusMillis(1)), "never before the due moment")
+        val credited = WalletEngine.processDue(settled, exitAt + Duration.ofHours(30))
+        assertEquals(2_500 * rub, credited.availableKop)
+        assertEquals(credited, WalletEngine.processDue(credited, exitAt + Duration.ofHours(31)), "exactly once")
+    }
 }

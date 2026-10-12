@@ -130,7 +130,7 @@ private fun MainActivity.confirmBreak(series: Series) {
             "Сразу начать заново — Restart за ${Texts.price(series.kind.restartPriceRub)}, бесплатная новая серия — через " +
             "${StandardRules.FREE_START_AFTER.toDays()} дней." +
             (commitment?.let {
-                "\nЦена слова ${Texts.money(it.amountKop)} останется в MAMA, через 24 часа " +
+                "\nЦена слова: ${Texts.money(it.amountKop)}. Через 24 часа " +
                     "${Texts.money(it.amountKop * app.mama.core.CommitmentConfig.RETURN_PERCENT / 100)} вернутся на баланс MAMA."
             } ?: ""),
         confirm = "Прервать", cancel = "Продолжить",
@@ -217,7 +217,7 @@ internal fun MainActivity.failureScreen(
     val k = nightKit
     val b = body(40).apply { gravity = Gravity.CENTER_HORIZONTAL }
     b.addView(k.emblem(Icon.ALERT, MamaColors.Warning))
-    b.addView(k.text("Серия остановлена", MamaType.H1, MamaColors.OnNight, center = true), k.gap(20))
+    b.addView(k.text("Серия завершена досрочно", MamaType.H1, MamaColors.OnNight, center = true), k.gap(20))
     b.addView(k.text("Ты прошёл ${series.completedPeriods} из ${Texts.days(series.kind.periods)}.", MamaType.BODY, MamaColors.OnNight, center = true), k.gap(10))
     b.addView(k.text("Так бывает. Это не поражение —\nтелефон уже разблокирован.", MamaType.CAPTION, MamaColors.OnNightMuted, center = true), k.gap(6))
 

@@ -69,7 +69,7 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
 
     b.addView(kit.infoCard(
         "Если серия пройдена — вся сумма снова доступна на твоём балансе MAMA.\n" +
-            "Если выйдешь досрочно — сумма остаётся в MAMA, а через 24 часа ${CommitmentConfig.RETURN_PERCENT}% вернутся на баланс.\n" +
+            "Если серия будет завершена досрочно, она считается сорванной. Через 24 часа ${CommitmentConfig.RETURN_PERCENT}% этой суммы вернётся на баланс MAMA.\n" +
             "Баланс MAMA — только внутри приложения: его нельзя вывести или перевести.",
         Icon.SHIELD, Tone.NEUTRAL, "Как это работает",
     ), kit.gap(14))
@@ -234,7 +234,7 @@ private fun ledgerLabel(e: LedgerEntry): Pair<String, String> = when (e.type) {
     LedgerType.BALANCE_TOPUP_TEST -> "Тестовое пополнение" to "+"
     LedgerType.COMMITMENT_RESERVED -> "Цена слова: в резерве" to ""
     LedgerType.COMMITMENT_RELEASED_SUCCESS -> "Слово сдержано: сумма снова доступна" to "+"
-    LedgerType.COMMITMENT_FORFEITED_FAILURE -> "Цена слова: серия прервана" to "−"
+    LedgerType.COMMITMENT_FORFEITED_FAILURE -> "Цена слова: серия завершена досрочно" to "−"
     LedgerType.COMMITMENT_PARTIAL_RETURN ->
         (if (e.status == LedgerStatus.SCHEDULED) "Возврат ${CommitmentConfig.RETURN_PERCENT}% (ожидается)" else "Возврат ${CommitmentConfig.RETURN_PERCENT}% на баланс") to
             (if (e.status == LedgerStatus.SCHEDULED) "" else "+")
@@ -242,7 +242,7 @@ private fun ledgerLabel(e: LedgerEntry): Pair<String, String> = when (e.type) {
     LedgerType.FLEX_PURCHASE_TEST -> "MAMA FLEX (тест)" to "−"
 }
 
-/** Shows "Часть суммы вернулась на баланс MAMA" once per credited return. */
+/** Shows "Мы вернули … на ваш баланс MAMA" once per credited return. */
 internal fun MainActivity.showReturnNoticeIfAny() {
     if (!FeatureFlags.WALLET_ENABLED || returnNoticeOpen) return
     val unseen = Mama.wallet(this).unseenReturns
@@ -250,8 +250,8 @@ internal fun MainActivity.showReturnNoticeIfAny() {
     returnNoticeOpen = true
     val amount = unseen.sumOf { it.returnKop }
     BrandDialog.show(
-        this, "${Texts.money(amount)} вернулись на баланс MAMA.",
-        message = "Их можно использовать только внутри MAMA: вывести или перевести их нельзя.",
+        this, "Мы вернули ${Texts.money(amount)} на ваш баланс MAMA.",
+        message = "Средства доступны для внутренних функций приложения.",
         confirm = "Понятно",
         cancel = null,
         onConfirm = {
@@ -272,10 +272,10 @@ internal fun MainActivity.commitmentOutcome(seriesId: String, night: Boolean, zo
         )
         CommitmentState.FORFEITED -> k.infoCard(
             if (c.returnProcessed) {
-                "${Texts.money(c.returnKop)} уже вернулись на баланс MAMA и доступны внутри приложения."
+                "Мы вернули ${Texts.money(c.returnKop)} на ваш баланс MAMA. Средства доступны для внутренних функций приложения."
             } else {
-                "По условию серии сумма осталась в MAMA. Через 24 часа ${Texts.money(c.returnKop)} вернутся на баланс MAMA" +
-                    (c.returnDueAt?.let { " — ${Texts.dayTime(it, zone)}" } ?: "") + "."
+                "Через 24 часа ${Texts.money(c.returnKop)} вернутся на баланс MAMA." +
+                    (c.returnDueAt?.let { "\nНачисление: ${Texts.dayTime(it, zone)}" } ?: "")
             },
             Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(c.amountKop)}",
         )
