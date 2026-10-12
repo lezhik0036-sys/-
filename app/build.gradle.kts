@@ -13,14 +13,23 @@ android {
         applicationId = "app.mama"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.6.0"
+        versionCode = 18
+        versionName = "0.6.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
+        debug {
+            // Pilot test credits for the internal balance: debug builds only.
+            buildConfigField("boolean", "PILOT_TEST_CREDITS", "true")
+        }
         release {
             isMinifyEnabled = false
+            buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
         }
     }
 

@@ -7,6 +7,7 @@ import android.view.View
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
 import app.mama.billing.Product
+import app.mama.core.CommitmentConfig
 import app.mama.core.CommitmentState
 import app.mama.core.LedgerEntry
 import app.mama.core.LedgerStatus
@@ -21,8 +22,8 @@ import java.time.ZoneId
 // "Цена слова" (optional commitment before every standard series) and the
 // internal MAMA balance. Pilot: test credits only, internal only.
 
-/** Quick amounts on the "Цена слова" screen, in kopecks. */
-private val QUICK = listOf(500_00L, 1_000_00L, 5_000_00L)
+/** Quick amounts on the "Цена слова" screen, in kopecks (from [CommitmentConfig]). */
+private val QUICK get() = CommitmentConfig.QUICK_AMOUNTS_RUB.map { it * 100L }
 
 /**
  * "Цена слова". Shown before every standard series: the wizard (first or
@@ -57,17 +58,24 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): 
     val chosen = commitmentKop
     if (chosen != null && chosen > wallet.availableKop) {
         b.addView(kit.infoCard(
-            "Для этой суммы нужно ${Texts.money(chosen)} на балансе MAMA, сейчас доступно ${Texts.money(wallet.availableKop)}.",
-            Icon.INFO, Tone.WARNING, "Не хватает на балансе",
+            "Выбрано ${Texts.money(chosen)}, доступно ${Texts.money(wallet.availableKop)}.",
+            Icon.INFO, Tone.NEUTRAL, NOT_ENOUGH,
         ), kit.gap(10))
+        val choices = kit.row()
+        choices.addView(kit.secondaryButton("Изменить сумму") { commitmentKop = null; render() }, kit.weight())
+        choices.addView(kit.secondaryButton("Без Цены слова") { commitmentKop = null; proceedCommitment(restart, kind) }, kit.weight().apply { leftMargin = kit.dp(10) })
+        b.addView(choices, kit.gap(10))
     }
 
     b.addView(kit.infoCard(
         "Если серия пройдена — вся сумма снова доступна на твоём балансе MAMA.\n" +
-            "Если выйдешь досрочно — сумма остаётся в MAMA, а через 24 часа ${WalletEngine.RETURN_PERCENT}% вернутся на баланс.\n" +
+            "Если выйдешь досрочно — сумма остаётся в MAMA, а через 24 часа ${CommitmentConfig.RETURN_PERCENT}% вернутся на баланс.\n" +
             "Баланс MAMA — только внутри приложения: его нельзя вывести или перевести.",
         Icon.SHIELD, Tone.NEUTRAL, "Как это работает",
     ), kit.gap(14))
+    if (restart) {
+        b.addView(kit.hintRow(Icon.LOCK, "После запуска условия серии изменить нельзя. Серия начнётся сразу после Restart."), kit.gap(14))
+    }
     b.addView(kit.hintRow(
         Icon.REFRESH,
         "Restart при срыве — отдельно: ${Texts.price(kind.restartPriceRub)}. Цена слова к нему не прибавляется." +
@@ -102,8 +110,8 @@ private fun MainActivity.customAmount() {
         filters = arrayOf(InputFilter.LengthFilter(6))
         commitmentKop?.let { setText((it / 100).toString()) }
     }
-    val min = WalletEngine.MIN_COMMITMENT_KOP
-    val max = WalletEngine.MAX_COMMITMENT_KOP
+    val min = CommitmentConfig.MIN_KOP
+    val max = CommitmentConfig.MAX_KOP
     val error = kit.text("", MamaType.CAPTION, MamaColors.Warning).apply { visibility = View.GONE }
     val content = kit.column().apply {
         addView(field, kit.fill())
@@ -131,17 +139,32 @@ private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
         return
     }
     val commitment = commitmentKop
-    Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0) { source ->
-        when (val r = Mama.restartSeries(this, source, commitment)) {
+    val note = "После запуска условия серии изменить нельзя." +
+        (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
+    Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0, note = note) { source ->
+        when (Mama.restartSeries(this, source, commitment)) {
             app.mama.platform.Mama.SeriesStart.Started -> {
                 restartFlow = false
                 commitmentKop = null
             }
-            is app.mama.platform.Mama.SeriesStart.NotEnoughBalance ->
-                alert("Не хватает на балансе", "Доступно ${Texts.money(r.availableKop)}. Выбери сумму меньше или пропусти «Цену слова».")
+            is app.mama.platform.Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; proceedCommitment(true, kind) }
             else -> alert("Не получилось", "Restart сейчас недоступен.")
         }
         render()
+    }
+}
+
+internal const val NOT_ENOUGH = "На балансе MAMA недостаточно средств для выбранной Цены слова."
+
+/** Calm choice when the balance does not cover the chosen "Цена слова". */
+internal fun MainActivity.notEnoughBalance(withoutCommitment: () -> Unit) {
+    BrandDialog.show(
+        this, "Цена слова", message = NOT_ENOUGH,
+        confirm = "Без Цены слова", cancel = "Изменить сумму",
+        onCancel = { if (onWizard) go(MainActivity.Step.COMMITMENT) else render() },
+    ) {
+        withoutCommitment()
+        true
     }
 }
 
@@ -169,13 +192,13 @@ internal fun MainActivity.balanceCard(wallet: Wallet, compact: Boolean = false):
     if (FeatureFlags.WALLET_TEST_TOPUP_ENABLED) {
         val row = kit.row()
         listOf(1_000_00L, 5_000_00L).forEachIndexed { i, amount ->
-            row.addView(kit.secondaryButton("+${Texts.money(amount)}") {
+            row.addView(kit.secondaryButton("+${Texts.money(amount)} · тест") {
                 Mama.topUpTest(this@balanceCard, amount)
                 render()
             }.apply { minHeight = kit.dp(44); textSize = 14f }, kit.weight().apply { if (i > 0) leftMargin = kit.dp(8) })
         }
         addView(row, kit.gap(14))
-        addView(kit.text("Тестовые кредиты для пилота — не деньги. Вывести или перевести баланс нельзя.", MamaType.SMALL, MamaColors.TextSecondary), kit.gap(8))
+        addView(kit.text("Тестовая сборка: кнопки добавляют тестовые кредиты, не деньги. Пополнение картой не подключено. Вывести или перевести баланс нельзя.", MamaType.SMALL, MamaColors.TextSecondary), kit.gap(8))
     } else if (!compact) {
         addView(kit.text("Вывести или перевести баланс нельзя.", MamaType.SMALL, MamaColors.TextSecondary), kit.gap(8))
     }
@@ -213,7 +236,7 @@ private fun ledgerLabel(e: LedgerEntry): Pair<String, String> = when (e.type) {
     LedgerType.COMMITMENT_RELEASED_SUCCESS -> "Слово сдержано: сумма снова доступна" to "+"
     LedgerType.COMMITMENT_FORFEITED_FAILURE -> "Цена слова: серия прервана" to "−"
     LedgerType.COMMITMENT_PARTIAL_RETURN ->
-        (if (e.status == LedgerStatus.SCHEDULED) "Возврат ${WalletEngine.RETURN_PERCENT}% (ожидается)" else "Возврат ${WalletEngine.RETURN_PERCENT}% на баланс") to
+        (if (e.status == LedgerStatus.SCHEDULED) "Возврат ${CommitmentConfig.RETURN_PERCENT}% (ожидается)" else "Возврат ${CommitmentConfig.RETURN_PERCENT}% на баланс") to
             (if (e.status == LedgerStatus.SCHEDULED) "" else "+")
     LedgerType.RESTART_PURCHASE_TEST -> "Restart серии (тест)" to "−"
     LedgerType.FLEX_PURCHASE_TEST -> "MAMA FLEX (тест)" to "−"
@@ -227,8 +250,8 @@ internal fun MainActivity.showReturnNoticeIfAny() {
     returnNoticeOpen = true
     val amount = unseen.sumOf { it.returnKop }
     BrandDialog.show(
-        this, "Часть суммы вернулась на баланс MAMA",
-        message = "${Texts.money(amount)} доступны внутри приложения.",
+        this, "${Texts.money(amount)} вернулись на баланс MAMA.",
+        message = "Их можно использовать только внутри MAMA: вывести или перевести их нельзя.",
         confirm = "Понятно",
         cancel = null,
         onConfirm = {

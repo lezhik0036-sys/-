@@ -123,11 +123,16 @@ internal fun MainActivity.seriesDashboard(series: Series, state: () -> LockState
 }
 
 private fun MainActivity.confirmBreak(series: Series) {
+    val commitment = Mama.wallet(this).commitmentFor(series.id)?.takeIf { it.state == app.mama.core.CommitmentState.RESERVED }
     BrandDialog.show(
         this, "Прервать серию?",
-        message = "Пройдено ${series.completedPeriods} из ${series.kind.periods}. Прогресс обнулится.\n" +
+        message = "Серия уже запущена, поэтому отмена считается срывом. Пройдено ${series.completedPeriods} из ${series.kind.periods}, прогресс обнулится.\n" +
             "Сразу начать заново — Restart за ${Texts.price(series.kind.restartPriceRub)}, бесплатная новая серия — через " +
-            "${StandardRules.FREE_START_AFTER.toDays()} дней.",
+            "${StandardRules.FREE_START_AFTER.toDays()} дней." +
+            (commitment?.let {
+                "\nЦена слова ${Texts.money(it.amountKop)} останется в MAMA, через 24 часа " +
+                    "${Texts.money(it.amountKop * app.mama.core.CommitmentConfig.RETURN_PERCENT / 100)} вернутся на баланс MAMA."
+            } ?: ""),
         confirm = "Прервать", cancel = "Продолжить",
     ) {
         Mama.cancelBeforeStart(this)

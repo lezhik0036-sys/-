@@ -365,6 +365,13 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
         ), kit.gap(14))
     }
     val cta = kit.primaryButton(ctaLabel) { startChosen() }
+    if (choice.series != null) {
+        b.addView(kit.infoCard(
+            "После запуска условия серии изменить нельзя." +
+                (commitmentKop?.let { " Цена слова: ${Texts.money(it)} — резерв с баланса MAMA до конца серии." } ?: ""),
+            Icon.LOCK, Tone.NEUTRAL,
+        ), kit.gap(12))
+    }
     if (needsAgreement) {
         b.addView(kit.checkRow("Я понимаю условия и принимаю ответственность за своё решение.", agreed) { agreed = it; render() }, kit.gap(18))
         cta.isEnabled = agreed
@@ -372,7 +379,7 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
     return lightFrame(kit.stepHeader(null, 0) { back() }, b, cta)
 }
 
-private fun MainActivity.startChosen() {
+internal fun MainActivity.startChosen() {
     val contact = readyContact() ?: return
     when (choice) {
         Choice.TEST -> when (val r = Mama.startTest(this, contact, zone, mode)) {
@@ -395,10 +402,7 @@ private fun MainActivity.startChosen() {
                 "Бесплатная серия пока недоступна",
                 "Следующая бесплатная серия через ${Texts.days(r.days.toInt())}. Телефон при этом не заблокирован.",
             )
-            is Mama.SeriesStart.NotEnoughBalance -> return alert(
-                "Не хватает на балансе",
-                "Для «Цены слова» нужно ${Texts.money(commitmentKop ?: 0)}, доступно ${Texts.money(r.availableKop)}.",
-            )
+            is Mama.SeriesStart.NotEnoughBalance -> return notEnoughBalance { commitmentKop = null; startChosen() }
             Mama.SeriesStart.Rejected -> return alert("Не получилось", "Серию сейчас нельзя начать.")
         }
     }

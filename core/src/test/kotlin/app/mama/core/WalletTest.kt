@@ -139,4 +139,43 @@ class WalletTest {
         val map = StateCodec.encode(Snapshot()).filterKeys { !it.startsWith("wl.") } + ("v" to "1")
         assertEquals(Wallet(), StateCodec.decode(map).wallet)
     }
+
+    @Test
+    fun `purchases use only the available balance, never the reserved one`() {
+        // Balance 10 000, "Цена слова" 5 000 reserved: only 5 000 can be spent.
+        val reserved = ok(WalletEngine.reserve(funded(10_000), "s1", 5_000 * rub, t0))
+        assertEquals(5_000 * rub, reserved.availableKop)
+        assertEquals(5_000 * rub, reserved.reservedKop)
+        assertIs<WalletEngine.Result.Insufficient>(
+            WalletEngine.spend(reserved, 5_001 * rub, LedgerType.FLEX_PURCHASE_TEST, "f", t0),
+        )
+        val spent = ok(WalletEngine.spend(reserved, 5_000 * rub, LedgerType.FLEX_PURCHASE_TEST, "f", t0))
+        assertEquals(0, spent.availableKop)
+        assertEquals(5_000 * rub, spent.reservedKop, "the reserve is untouched")
+    }
+
+    @Test
+    fun `cancelling a started series before its first lock is a failure for the commitment`() {
+        val engine = engine()
+        val seriesEngine = SeriesEngine(engine)
+        val start = seriesEngine.start("s1", "n1", SeriesKind.THREE, DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), MSK), MOM, SessionMode.SLEEP, t0)
+        val wallet = ok(WalletEngine.reserve(funded(10_000), "s1", 5_000 * rub, t0))
+        // The first night has not started yet; the user cancels.
+        val cancelled = assertIs<LockEngine.CancelResult.Cancelled>(engine.cancelBeforeStart(start.session!!, t0 + Duration.ofMinutes(5))).session
+        val after = seriesEngine.afterSession(start.series, cancelled, "n2", t0 + Duration.ofMinutes(5))
+        assertEquals(SeriesStatus.BROKEN, after.series.status)
+        val settled = WalletEngine.settle(wallet, after.series, t0 + Duration.ofMinutes(5))
+        assertEquals(CommitmentState.FORFEITED, settled.commitmentFor("s1")!!.state)
+        assertEquals(5_000 * rub, settled.availableKop)
+        assertEquals(0, settled.reservedKop)
+        assertEquals(2_500 * rub, WalletEngine.processDue(settled, t0 + Duration.ofMinutes(5) + Duration.ofHours(24)).availableKop - 5_000 * rub)
+    }
+
+    @Test
+    fun `limits come from the commitment configuration`() {
+        val w = funded(CommitmentConfig.MAX_COMMITMENT_PRICE_RUB.toLong() + 1)
+        assertIs<WalletEngine.Result.Ok>(WalletEngine.reserve(w, "a", CommitmentConfig.MAX_KOP, t0))
+        assertIs<WalletEngine.Result.Invalid>(WalletEngine.reserve(w, "b", CommitmentConfig.MAX_KOP + 100, t0))
+        assertIs<WalletEngine.Result.Invalid>(WalletEngine.reserve(w, "c", CommitmentConfig.MIN_KOP - 1, t0))
+    }
 }

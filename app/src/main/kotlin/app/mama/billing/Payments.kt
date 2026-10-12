@@ -67,8 +67,12 @@ object FeatureFlags {
      */
     const val WALLET_ENABLED = true
 
-    /** Pilot only: test credits can be added to the balance. Never real money. */
-    const val WALLET_TEST_TOPUP_ENABLED = true
+    /**
+     * Test credits can be added to the balance: debug/pilot builds only, never
+     * in a release build (BuildConfig.PILOT_TEST_CREDITS). Never real money;
+     * card top-ups are not implemented.
+     */
+    val WALLET_TEST_TOPUP_ENABLED: Boolean get() = app.mama.BuildConfig.PILOT_TEST_CREDITS
 
     /** Pilot: Restart and FLEX may be paid from the internal balance. */
     const val WALLET_SPEND_ENABLED = true
@@ -96,7 +100,14 @@ object Checkout {
      * "Цена слова" about to be reserved), so paying from the balance never
      * leaves too little for it.
      */
-    fun obtain(activity: Activity, product: Product, title: String, reserveAheadKop: Long = 0, onGranted: (GrantSource) -> Unit) {
+    fun obtain(
+        activity: Activity,
+        product: Product,
+        title: String,
+        reserveAheadKop: Long = 0,
+        note: String? = null,
+        onGranted: (GrantSource) -> Unit,
+    ) {
         val payments = Billing.payments
         if (FeatureFlags.PAYMENTS_ENABLED && payments.available) {
             payments.purchase(activity, product) { result ->
@@ -115,6 +126,7 @@ object Checkout {
         if (FeatureFlags.TEST_GRANTS_ENABLED || fromBalance) {
             val kit = Kit(activity)
             val content = kit.column()
+            note?.let { content.addView(kit.infoCard(it, app.mama.ui.Icon.LOCK), kit.fill().apply { bottomMargin = kit.dp(14) }) }
             lateinit var handle: app.mama.ui.BrandDialogHandle
             if (fromBalance) {
                 content.addView(kit.primaryButton("Оплатить с баланса MAMA") { handle.dismiss(); onGranted(GrantSource.INTERNAL_BALANCE) }, kit.fill())

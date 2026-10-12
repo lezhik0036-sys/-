@@ -82,13 +82,36 @@ data class Wallet(
         get() = commitments.filter { it.returnProcessed && !it.returnSeen }
 }
 
-object WalletEngine {
+/**
+ * "Цена слова" configuration: the only place these numbers live. UI and
+ * logic read them from here.
+ */
+object CommitmentConfig {
+    /**
+     * Pilot technical safety limit, NOT a product rule. TODO(product/legal):
+     * revisit after testing, payment integration and legal review.
+     */
+    const val MAX_COMMITMENT_PRICE_RUB = 100_000
+
+    /** Smallest own amount. TODO(product): confirm. */
+    const val MIN_COMMITMENT_PRICE_RUB = 100
+
+    /** Quick choices on the "Цена слова" screen. */
+    val QUICK_AMOUNTS_RUB = listOf(500, 1_000, 5_000)
+
+    /** Share of a forfeited commitment credited back to the available balance. */
     const val RETURN_PERCENT = 50
+
+    /** Delay of that credit after the failure. */
     val RETURN_DELAY: Duration = Duration.ofHours(24)
 
-    /** Pilot limits for "Цена слова". TODO(product): confirm. */
-    const val MIN_COMMITMENT_KOP = 100_00L
-    const val MAX_COMMITMENT_KOP = 100_000_00L
+    const val MIN_KOP = MIN_COMMITMENT_PRICE_RUB * 100L
+    const val MAX_KOP = MAX_COMMITMENT_PRICE_RUB * 100L
+}
+
+object WalletEngine {
+    val RETURN_PERCENT get() = CommitmentConfig.RETURN_PERCENT
+    val RETURN_DELAY: Duration get() = CommitmentConfig.RETURN_DELAY
 
     sealed interface Result {
         data class Ok(val wallet: Wallet) : Result
@@ -109,7 +132,7 @@ object WalletEngine {
 
     /** Moves "Цена слова" from available to reserved for one series. */
     fun reserve(w: Wallet, seriesId: String, amountKop: Long, now: Instant): Result {
-        if (amountKop < MIN_COMMITMENT_KOP || amountKop > MAX_COMMITMENT_KOP) return Result.Invalid("amount")
+        if (amountKop < CommitmentConfig.MIN_KOP || amountKop > CommitmentConfig.MAX_KOP) return Result.Invalid("amount")
         if (w.commitmentFor(seriesId) != null) return Result.Invalid("already reserved")
         if (w.availableKop < amountKop) return Result.Insufficient(w.availableKop)
         return Result.Ok(
@@ -122,7 +145,10 @@ object WalletEngine {
         )
     }
 
-    /** Spends available balance on an approved MAMA product. */
+    /**
+     * Spends the AVAILABLE balance on an approved MAMA product. The reserved
+     * balance belongs to an active "Цена слова" and is never spent.
+     */
     fun spend(w: Wallet, amountKop: Long, type: LedgerType, id: String, now: Instant, seriesId: String? = null, flexId: String? = null): Result {
         require(type == LedgerType.RESTART_PURCHASE_TEST || type == LedgerType.FLEX_PURCHASE_TEST) { "not a purchase: $type" }
         if (amountKop <= 0) return Result.Invalid("amount")

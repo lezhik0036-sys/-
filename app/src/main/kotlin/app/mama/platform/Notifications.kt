@@ -40,8 +40,8 @@ object Notifications {
                 BALANCE_ID,
                 Notification.Builder(context, BALANCE_CHANNEL)
                     .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
-                    .setContentTitle("Часть суммы вернулась на баланс MAMA")
-                    .setContentText("${app.mama.ui.Texts.money(amountKop)} доступны внутри приложения.")
+                    .setContentTitle("${app.mama.ui.Texts.money(amountKop)} вернулись на баланс MAMA.")
+                    .setContentText("Их можно использовать только внутри MAMA.")
                     .setContentIntent(open)
                     .setAutoCancel(true)
                     .build(),
