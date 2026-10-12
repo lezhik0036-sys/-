@@ -22,6 +22,7 @@ import app.mama.core.Snapshot
 import app.mama.core.StateCodec
 import app.mama.core.TrustedContact
 import app.mama.core.Wallet
+import app.mama.core.WalletEngine
 import app.mama.platform.Mama
 import app.mama.ui.MainActivity.Step
 import org.junit.Assert.assertEquals
@@ -58,15 +59,17 @@ class SamsungFixesTest {
         Mama.reconcile(context)
     }
 
-    private fun failedSeries(commitment: Commitment? = null, availableKop: Long = 0) = seed(
+    private val broken = Series(
+        "old", SeriesKind.SEVEN, DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), zone), mom, SessionMode.SLEEP,
+        startedAt = failedAt.minus(Duration.ofDays(3)), completedPeriods = 2, status = SeriesStatus.BROKEN, endedAt = failedAt,
+        actualStartedAt = failedAt.minus(Duration.ofDays(3)),
+    )
+
+    private fun failedSeries(commitment: Commitment? = null, availableKop: Long = 0, wallet: Wallet? = null) = seed(
         Snapshot(
-            series = Series(
-                "old", SeriesKind.SEVEN, DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), zone), mom, SessionMode.SLEEP,
-                startedAt = failedAt.minus(Duration.ofDays(3)), completedPeriods = 2, status = SeriesStatus.BROKEN, endedAt = failedAt,
-                actualStartedAt = failedAt.minus(Duration.ofDays(3)),
-            ),
+            series = broken,
             entitlements = Entitlements(standardFailedAt = failedAt),
-            wallet = Wallet(availableKop = availableKop, commitments = listOfNotNull(commitment)),
+            wallet = wallet ?: Wallet(availableKop = availableKop, commitments = listOfNotNull(commitment)),
         ),
     )
 
@@ -172,9 +175,9 @@ class SamsungFixesTest {
 
     @Test
     fun `4 - once the return is really credited, MAMA says so`() {
-        failedSeries(
-            Commitment("old", 500_00, failedAt, CommitmentState.FORFEITED, failedAt, returnKop = 250_00, returnDueAt = failedAt.plus(Duration.ofHours(24))),
-        )
+        // The real path: «Цена слова» 500 reserved, the ACTIVE series failed two days ago (return due a day ago).
+        val reserved = (WalletEngine.reserve(Wallet(availableKop = 500_00), "old", 500_00, failedAt.minus(Duration.ofDays(3))) as WalletEngine.Result.Ok).wallet
+        failedSeries(wallet = WalletEngine.settle(reserved, broken, failedAt))
         val w = Mama.reconcile(context).snapshot.wallet
         assertEquals(250_00L, w.availableKop)
         val nm = context.getSystemService(NotificationManager::class.java)
