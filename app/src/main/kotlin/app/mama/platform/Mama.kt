@@ -314,7 +314,9 @@ object Mama {
 
     /**
      * After NEEDS_ATTENTION, once the protection is fixed: the user's explicit
-     * new launch with the same conditions (the next window is planned).
+     * new launch with the same conditions. A MANUAL window plans its next full
+     * occurrence; an AUTO_NOW series (not frozen before ACTIVE) starts now,
+     * its window resolved again from this moment.
      */
     @Synchronized
     fun relaunchSeries(context: Context): SeriesEdit {

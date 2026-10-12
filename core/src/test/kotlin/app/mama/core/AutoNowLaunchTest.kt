@@ -4,6 +4,7 @@ import java.time.Duration
 import java.time.LocalTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -92,5 +93,64 @@ class AutoNowLaunchTest {
         assertEquals(SeriesStatus.ACTIVE, active.series!!.status)
         assertEquals(0, active.wallet.restartReservedKop, "used at ACTIVE")
         assertEquals(1_000 * rub - 299 * rub, active.wallet.availableKop)
+    }
+
+    // ---------------- AUTO_NOW + NEEDS_ATTENTION: frozen only at ACTIVE ----------------
+
+    @Test
+    fun `AUTO_NOW 18_00, protection did not come up, relaunched at 18_20 - 18_20 to 02_20, frozen at ACTIVE`() {
+        val at1800 = t("2026-10-12T15:00:00Z")
+        val launched = done(flow.schedule(Snapshot(), "s1", "n1", SeriesKind.SEVEN, LaunchTime.AutoNow(eight, MSK), MOM, SessionMode.SLEEP, null, at1800))
+        assertTrue(launched.series!!.autoNow)
+        val missed = flow.protectionFailed(launched, at1800.plusSeconds(30))!!
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, missed.series!!.status)
+        assertEquals(DailyWindow(LocalTime.of(18, 0), LocalTime.of(2, 0), MSK), missed.series!!.window, "not frozen yet")
+        assertTrue(missed.series!!.autoNow)
+
+        // Permission fixed, «Подтвердить запуск» at 18:20.
+        val at1820 = t("2026-10-12T15:20:00Z")
+        val relaunched = done(flow.reschedule(missed, "n2", at1820))
+        assertEquals(DailyWindow(LocalTime.of(18, 20), LocalTime.of(2, 20), MSK), relaunched.series!!.window, "from the actual launch, not 18:00")
+        assertEquals(at1820, relaunched.session!!.plan.start, "right away")
+        assertEquals(at1820 + eight, relaunched.session!!.plan.end)
+        assertEquals(SeriesStatus.ACTIVATING, relaunched.series!!.status)
+
+        // ACTIVATING -> ACTIVE: the freeze point.
+        val activeAt = at1820.plusSeconds(3)
+        val active = flow.confirm(relaunched, activeAt)!!
+        assertEquals(SeriesStatus.ACTIVE, active.series!!.status)
+        assertEquals(activeAt, active.series!!.actualStartedAt)
+        assertFalse(active.series!!.autoNow, "frozen")
+        assertEquals(DailyWindow(LocalTime.of(18, 20), LocalTime.of(2, 20), MSK), active.series!!.window)
+        // The next night keeps the frozen window, whenever it is planned.
+        val firstEnd = active.session!!.plan.end
+        val next = flow.fold(active.copy(session = lock.advance(active.session!!, firstEnd)), "n3", firstEnd)
+        assertEquals(DailyWindow(LocalTime.of(18, 20), LocalTime.of(2, 20), MSK), next.series!!.window)
+        assertEquals(t("2026-10-13T15:20:00Z"), next.session!!.plan.start)
+    }
+
+    @Test
+    fun `MANUAL 23_00 - 07_00 needing attention keeps its time - the next full window after the fix`() {
+        val manual = DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), MSK)
+        val scheduled = done(flow.schedule(Snapshot(), "s1", "n1", SeriesKind.SEVEN, LaunchTime.Fixed(manual), MOM, SessionMode.SLEEP, null, t("2026-10-12T17:00:00Z")))
+        assertFalse(scheduled.series!!.autoNow)
+        val at23 = t("2026-10-12T20:00:00Z")
+        val activating = flow.fold(scheduled.copy(session = lock.advance(scheduled.session!!, at23)), "n2", at23)
+        assertEquals(SeriesStatus.ACTIVATING, activating.series!!.status)
+        val missed = flow.protectionFailed(activating, at23.plusSeconds(30))!!
+        assertEquals(SeriesStatus.NEEDS_ATTENTION, missed.series!!.status)
+
+        val relaunched = done(flow.reschedule(missed, "n3", t("2026-10-12T20:20:00Z"))) // fixed at 23:20
+        assertEquals(manual, relaunched.series!!.window, "not recalculated")
+        assertEquals(SeriesStatus.SCHEDULED, relaunched.series!!.status)
+        assertEquals(t("2026-10-13T20:00:00Z"), relaunched.session!!.plan.start, "tomorrow 23:00 (full window)")
+    }
+
+    @Test
+    fun `an unfrozen AUTO_NOW launch survives a restart of the app`() {
+        val s = done(flow.schedule(Snapshot(), "s1", "n1", SeriesKind.SEVEN, LaunchTime.AutoNow(eight, MSK), MOM, SessionMode.SLEEP, null, t("2026-10-12T15:00:00Z")))
+        assertTrue(StateCodec.decode(StateCodec.encode(s)).series!!.autoNow)
+        val manual = done(flow.schedule(Snapshot(), "s1", "n1", SeriesKind.SEVEN, LaunchTime.Fixed(DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), MSK)), MOM, SessionMode.SLEEP, null, t("2026-10-12T15:00:00Z")))
+        assertFalse(StateCodec.decode(StateCodec.encode(manual)).series!!.autoNow)
     }
 }

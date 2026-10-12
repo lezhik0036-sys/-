@@ -74,10 +74,18 @@ data class Series(
     /** Start of the current activation attempt (ACTIVATING). */
     val activatingSince: Instant? = null,
     /**
-     * Set for a Restart: the id of the failed series it restarts (same length
-     * and time window; its Restart price was paid).
+     * Set for a Restart: the id of the failed series it restarts (same length,
+     * whose Restart price was paid; the time is a new choice).
      */
     val restartOf: String? = null,
+    /**
+     * An AUTO_NOW launch not frozen yet: [window] was resolved from the moment
+     * of the launch, and until the series becomes ACTIVE a new launch after
+     * NEEDS_ATTENTION resolves it again from that moment, with the same
+     * length. Cleared at ACTIVE: from then on the window is fixed like any
+     * other. A MANUAL window never moves.
+     */
+    val autoNow: Boolean = false,
 ) {
     /** Not over yet. */
     val inProgress: Boolean get() = beforeCommitment || status == SeriesStatus.ACTIVE
@@ -123,7 +131,7 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
         restartOf: String? = null,
         startNow: Boolean = false,
     ): Update {
-        val series = Series(seriesId, kind, window, contact, mode, startedAt = now, restartOf = restartOf)
+        val series = Series(seriesId, kind, window, contact, mode, startedAt = now, restartOf = restartOf, autoNow = startNow)
         val session = if (startNow) planNow(series, sessionId, now) else planFirst(series, sessionId, now)
         return Update(enter(series, session, now), session)
     }
@@ -155,10 +163,19 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
 
     /**
      * After NEEDS_ATTENTION: the user explicitly confirms a new launch with
-     * the same conditions; the next window is planned (SCHEDULED).
+     * the same conditions. MANUAL: the next full window of the same fixed
+     * time is planned (SCHEDULED). AUTO_NOW ([Series.autoNow]): the window is
+     * resolved again from this moment, same length, and the lock starts now.
      */
     fun reschedule(series: Series, newSessionId: String, now: Instant): Update? {
         if (series.status != SeriesStatus.NEEDS_ATTENTION) return null
+        if (series.autoNow) {
+            // Not ACTIVE yet, so not frozen: "now" is the moment of this launch (18:00 missed, relaunched at 18:20 -> 18:20).
+            val window = SeriesDraft.resolve(LaunchTime.AutoNow(series.window.length, series.window.zone), now).window
+            val relaunched = series.copy(window = window, protectionMissedAt = null)
+            val session = planNow(relaunched, newSessionId, now) ?: return null
+            return Update(enter(relaunched, session, now), session)
+        }
         val session = planFirst(series, newSessionId, now) ?: return null
         return Update(enter(series.copy(protectionMissedAt = null), session, now), session)
     }
@@ -195,7 +212,8 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
     fun confirmActive(series: Series, session: Session?, now: Instant): Series? {
         if (series.status != SeriesStatus.ACTIVATING || session == null) return null
         if (engine.stateOf(session, now) !is LockState.Locked) return null
-        return series.copy(status = SeriesStatus.ACTIVE, actualStartedAt = now, activatingSince = null, protectionMissedAt = null)
+        // The freeze point: an AUTO_NOW window is final from here on.
+        return series.copy(status = SeriesStatus.ACTIVE, actualStartedAt = now, activatingSince = null, protectionMissedAt = null, autoNow = false)
     }
 
     /**

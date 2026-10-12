@@ -166,10 +166,11 @@ internal fun MainActivity.seriesDashboard(
 /** Time, length, contact, "Цена слова" and a held Restart of a series. */
 private fun MainActivity.seriesParameters(b: LinearLayout, series: Series, sampleCommitment: Commitment?, sampleRestart: RestartHold?) {
     val k = nightKit
+    val window = shownWindow(series)
     infoTiles(
         b,
-        Triple(Icon.CALENDAR, "Начало", Texts.hhmm(series.window.start)),
-        Triple(Icon.MOON, "Окончание", Texts.hhmm(series.window.end)),
+        Triple(Icon.CALENDAR, "Начало", Texts.hhmm(window.start)),
+        Triple(Icon.MOON, "Окончание", Texts.hhmm(window.end)),
         Triple(Icon.REFRESH, "Серия", Texts.seriesName(series.kind)),
     )
     b.addView(k.contactCard(series.contact.name, Texts.phone(series.contact.phone), "Доверенный контакт", null), k.gap(12))
@@ -199,6 +200,19 @@ private fun MainActivity.seriesParameters(b: LinearLayout, series: Series, sampl
 
 private fun missingList(missing: List<Requirement>) = missing.joinToString("\n") { "• ${it.title}" }
 
+/**
+ * The window to show. An AUTO_NOW series waiting in NEEDS_ATTENTION is not
+ * frozen: a new launch starts it from that moment, so it shows "from now".
+ */
+internal fun MainActivity.shownWindow(series: Series): app.mama.core.DailyWindow =
+    if (series.autoNow && series.status == SeriesStatus.NEEDS_ATTENTION) {
+        app.mama.core.SeriesDraft.resolve(
+            app.mama.core.LaunchTime.AutoNow(series.window.length, series.window.zone), Mama.trustedNow(this),
+        ).window
+    } else {
+        series.window
+    }
+
 // ---------------- NEEDS_ATTENTION: the start time came, protection could not be switched on ----------------
 
 private fun MainActivity.needsAttentionScreen(
@@ -220,12 +234,15 @@ private fun MainActivity.needsAttentionScreen(
         b.addView(k.infoCard(missingList(missing), Icon.ALERT, Tone.WARNING, "Не работает защита"), k.gap(18))
         b.addView(k.primaryButton("Исправить защиту") { startSetupAll(Protection.strict) }, k.gap(14))
     } else {
-        val now = Mama.trustedNow(this)
-        val first = series.window.nextFullPlan(now, series.mode)
-        b.addView(k.infoCard(
-            "Подтверди новый запуск. Первая блокировка: ${Texts.firstLock(first.start, series.window.zone, now)}.",
-            Icon.CHECK, Tone.SUCCESS, "Защита готова",
-        ), k.gap(18))
+        val text = if (series.autoNow) {
+            "Подтверди новый запуск. Блокировка начнётся сразу после подтверждения и продлится " +
+                "${Texts.flexDuration(series.window.length)}; время серии отсчитается от этого момента."
+        } else {
+            val now = Mama.trustedNow(this)
+            val first = series.window.nextFullPlan(now, series.mode)
+            "Подтверди новый запуск. Первая блокировка: ${Texts.firstLock(first.start, series.window.zone, now)}."
+        }
+        b.addView(k.infoCard(text, Icon.CHECK, Tone.SUCCESS, "Защита готова"), k.gap(18))
         b.addView(k.primaryButton("Подтвердить запуск") { relaunch() }, k.gap(14))
     }
     b.addView(k.secondaryButton("Изменить условия") { beginEditing(series) }, k.gap(10))
@@ -236,7 +253,10 @@ private fun MainActivity.needsAttentionScreen(
 
 private fun MainActivity.relaunch() {
     when (val r = Mama.relaunchSeries(this)) {
-        Mama.SeriesEdit.Saved -> android.widget.Toast.makeText(this, "Серия запланирована", android.widget.Toast.LENGTH_SHORT).show()
+        Mama.SeriesEdit.Saved -> {
+            val started = Mama.series(this)?.status != SeriesStatus.SCHEDULED
+            android.widget.Toast.makeText(this, if (started) "Серия запускается" else "Серия запланирована", android.widget.Toast.LENGTH_SHORT).show()
+        }
         is Mama.SeriesEdit.ProtectionMissing -> alert("Сначала исправь защиту", missingList(r.missing))
         else -> alert("Не получилось", "Запланировать серию сейчас нельзя.")
     }

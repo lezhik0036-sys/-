@@ -191,6 +191,7 @@ object StateCodec {
         it.protectionMissedAt?.let { m -> put("${p}missedAt", m.toString()) }
         it.activatingSince?.let { a -> put("${p}activatingSince", a.toString()) }
         it.restartOf?.let { r -> put("${p}restartOf", r) }
+        if (it.autoNow) put("${p}autoNow", "1")
     }
 
     private fun Map<String, String>.series(p: String): Series? = this["${p}id"]?.let { id ->
@@ -213,6 +214,7 @@ object StateCodec {
             protectionMissedAt = this["${p}missedAt"]?.let(Instant::parse),
             activatingSince = this["${p}activatingSince"]?.let(Instant::parse),
             restartOf = this["${p}restartOf"],
+            autoNow = this["${p}autoNow"] == "1",
         )
     }
 

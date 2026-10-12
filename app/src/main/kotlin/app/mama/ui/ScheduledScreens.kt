@@ -56,7 +56,11 @@ internal fun MainActivity.editScreen(series: Series? = Mama.series(this)): Pair<
     }
     if (series != null) {
         line(Icon.CALENDAR, "Серия", Texts.seriesName(series.kind), if (series.isRestart) "Restart · зафиксирована" else "зафиксирована", null)
-        line(Icon.CLOCK, "Время", "${Texts.hhmm(series.window.start)} → ${Texts.hhmm(series.window.end)}", "каждый день · зафиксировано", null)
+        if (series.autoNow && series.status == SeriesStatus.NEEDS_ATTENTION) {
+            line(Icon.CLOCK, "Время", "${Texts.flexDuration(series.window.length)} с момента запуска", "каждый день · начало уточнится при подтверждении запуска", null)
+        } else {
+            line(Icon.CLOCK, "Время", "${Texts.hhmm(series.window.start)} → ${Texts.hhmm(series.window.end)}", "каждый день · зафиксировано", null)
+        }
     }
     line(Icon.PERSON, "Доверенный контакт", contactName.text.toString().trim(), Texts.phone(contactPhone.text.toString().trim()), Step.CONTACT)
     if (FeatureFlags.WALLET_ENABLED) {

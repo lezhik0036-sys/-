@@ -123,6 +123,8 @@ class AutoNowDraftTest {
         assertNotEquals("not the preview time", stale, window.start)
         assertEquals(window.start.plus(eight), window.end)
         assertStartedAtConfirmation(from)
+        // Not ACTIVE (no protection here), so the AUTO_NOW time is not frozen yet.
+        if (Mama.series(context)!!.status != SeriesStatus.ACTIVE) assertTrue(Mama.series(context)!!.autoNow)
     }
 
     @Test
@@ -222,5 +224,29 @@ class AutoNowDraftTest {
         assertEquals(restarted.window.start.plus(eight), restarted.window.end)
         assertStartedAtConfirmation(from)
         assertEquals("held until ACTIVE, as before", 299_00L, Mama.wallet(context).restartReservedKop)
+    }
+
+    @Test
+    fun `AUTO_NOW waiting in NEEDS_ATTENTION shows the time a new launch would take, MANUAL keeps its own`() {
+        val missedAt = Instant.now().minus(Duration.ofMinutes(20))
+        val old = minute().minusHours(2)
+        fun waiting(autoNow: Boolean) = seed(
+            Snapshot(
+                series = Series(
+                    "s1", SeriesKind.SEVEN, DailyWindow(old, old.plusHours(8), zone), mom, SessionMode.SLEEP, startedAt = missedAt,
+                    status = SeriesStatus.NEEDS_ATTENTION, protectionMissedAt = missedAt, autoNow = autoNow,
+                ),
+            ),
+        )
+        waiting(autoNow = true)
+        val before = minute()
+        val shown = texts(content(Robolectric.buildActivity(MainActivity::class.java).setup().get()))
+        val after = minute()
+        assertTrue(shown.toString(), Texts.hhmm(before) in shown || Texts.hhmm(after) in shown)
+        assertFalse(shown.toString(), Texts.hhmm(old) in shown)
+
+        waiting(autoNow = false)
+        val manual = texts(content(Robolectric.buildActivity(MainActivity::class.java).setup().get()))
+        assertTrue(manual.toString(), Texts.hhmm(old) in manual)
     }
 }
