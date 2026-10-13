@@ -4,6 +4,8 @@
 name: MAMA
 options:
   bundleIdPrefix: app.mama
+  # Readable by Xcode 15.3+ (Kotlin 2.0.21 supports Xcode up to 16.0).
+  projectFormat: xcode15_3
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
