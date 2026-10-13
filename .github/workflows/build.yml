@@ -14,8 +14,8 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - name: Core tests
-        run: ./gradlew :core:test --console=plain
+      - name: Core tests (shared logic, JVM)
+        run: ./gradlew :core:jvmTest --console=plain
       - name: App startup tests (Robolectric)
         run: ./gradlew :app:testDebugUnitTest --console=plain
       - name: Build debug APK
@@ -73,7 +73,7 @@ jobs:
       # Screenshots of every screen for visual review: a "ui-screenshots"
       # pre-release, replaced on every push to a claude/* branch.
       - name: Publish UI screenshots
-        if: ${{ !cancelled() && startsWith(github.ref_name, 'claude/') }}
+        if: ${{ !cancelled() && startsWith(github.ref_name, 'claude/') && github.ref_name != 'claude/mama-ios' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -83,3 +83,49 @@ jobs:
           gh release delete ui-screenshots --yes --cleanup-tag || true
           gh release create ui-screenshots shots_jpg/*.jpg --prerelease --target "$GITHUB_SHA" \
             --title "UI screenshots (CI)" --notes "Screens of MAMA $GITHUB_SHA rendered on an Android 14 emulator (Pixel 6), preview mode with sample data."
+
+  # The iPhone app: shared logic on the iOS simulator, the MamaCore framework
+  # and an unsigned simulator build (no Apple account needed for this).
+  ios:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Select Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app
+          # Kotlin 2.0.21 supports Xcode up to 16.0.
+          for v in 15.4 16.0 15.3; do
+            if [ -d "/Applications/Xcode_$v.app" ]; then sudo xcode-select -s "/Applications/Xcode_$v.app/Contents/Developer"; break; fi
+          done
+          xcodebuild -version
+      - name: Shared logic on the iOS simulator
+        shell: bash
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          print(next(d['udid'] for runtime in sorted(devices, reverse=True) if 'iOS' in runtime for d in devices[runtime] if d['name'].startswith('iPhone')))
+          ")
+          echo "simulator $udid"
+          ./gradlew :core:iosSimulatorArm64Test -Pmama.simulator="$udid" --console=plain
+      - name: MamaCore framework
+        run: ./gradlew :core:assembleMamaCoreDebugXCFramework --console=plain
+      - name: Generate the Xcode project
+        shell: bash
+        run: |
+          brew install xcodegen
+          cd iosApp && xcodegen generate
+      - name: Build the iPhone app (simulator, unsigned)
+        shell: bash
+        run: |
+          cd iosApp
+          xcodebuild -project MAMA.xcodeproj -scheme MAMA -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 300

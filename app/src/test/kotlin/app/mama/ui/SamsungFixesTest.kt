@@ -23,8 +23,13 @@ import app.mama.core.StateCodec
 import app.mama.core.TrustedContact
 import app.mama.core.Wallet
 import app.mama.core.WalletEngine
+import app.mama.core.minuteOfDay
+import app.mama.core.plusOnClock
 import app.mama.platform.Mama
 import app.mama.ui.MainActivity.Step
+import kotlinx.datetime.Clock
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -38,19 +43,19 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /** Regression tests for the three findings on the physical Samsung. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SamsungFixesTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
-    private val zone: ZoneId = ZoneId.systemDefault()
+    private val zone: TimeZone = TimeZone.currentSystemDefault()
     private val mom = TrustedContact("Мама", "+79001234567")
-    private val failedAt = Instant.now().minus(Duration.ofDays(2))
+    private val failedAt = Clock.System.now().minus(2.days)
 
     private fun seed(snapshot: Snapshot) {
         val store = context.createDeviceProtectedStorageContext().getSharedPreferences("mama_state", Context.MODE_PRIVATE).edit().clear()
@@ -60,9 +65,9 @@ class SamsungFixesTest {
     }
 
     private val broken = Series(
-        "old", SeriesKind.SEVEN, DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), zone), mom, SessionMode.SLEEP,
-        startedAt = failedAt.minus(Duration.ofDays(3)), completedPeriods = 2, status = SeriesStatus.BROKEN, endedAt = failedAt,
-        actualStartedAt = failedAt.minus(Duration.ofDays(3)),
+        "old", SeriesKind.SEVEN, DailyWindow(LocalTime(23, 0), LocalTime(7, 0), zone), mom, SessionMode.SLEEP,
+        startedAt = failedAt.minus(3.days), completedPeriods = 2, status = SeriesStatus.BROKEN, endedAt = failedAt,
+        actualStartedAt = failedAt.minus(3.days),
     )
 
     private fun failedSeries(commitment: Commitment? = null, availableKop: Long = 0, wallet: Wallet? = null) = seed(
@@ -102,12 +107,12 @@ class SamsungFixesTest {
         context.getSharedPreferences("mama_setup", Context.MODE_PRIVATE).edit()
             .putString("start", "23:00").putString("end", "07:00").putString("choice", "SEVEN").commit()
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        val before = LocalTime.now(zone).withSecond(0).withNano(0)
+        val before = Clock.System.now().minuteOfDay(zone)
         a.beginDraft()
         a.go(Step.TIME)
-        val after = LocalTime.now(zone).withSecond(0).withNano(0)
+        val after = Clock.System.now().minuteOfDay(zone)
         assertTrue("draft start ${a.start}, now $before..$after", a.start == before || a.start == after)
-        assertEquals(a.start.plusHours(8), a.end)
+        assertEquals(a.start.plusOnClock(8.hours), a.end)
         assertEquals(MainActivity.StartMode.AUTO_NOW, a.startMode)
     }
 
@@ -119,7 +124,7 @@ class SamsungFixesTest {
         a.beginDraft()
         a.go(Step.TIME)
         // A time set by hand (never equal to the draft's "now", which would be no change).
-        val manual = LocalTime.of(18, 0).let { if (it == a.start) it.plusMinutes(5) else it }
+        val manual = LocalTime(18, 0).let { if (it == a.start) it.plusOnClock(5.minutes) else it }
         a.pickStart(manual)
         assertEquals(MainActivity.StartMode.MANUAL, a.startMode)
         a.go(Step.CONTACT)
@@ -139,35 +144,35 @@ class SamsungFixesTest {
         b.closeDraft()
         b.beginDraft()
         b.go(Step.TIME)
-        val now = LocalTime.now(zone).withSecond(0).withNano(0)
-        if (now != manual && now.minusMinutes(1) != manual) {
+        val now = Clock.System.now().minuteOfDay(zone)
+        if (now != manual && now.plusOnClock(-1.minutes) != manual) {
             assertFalse("a new draft does not reuse the manual time", b.start == manual)
         }
     }
 
     @Test
     fun `Restart 7_7 after a 15_46 failure - the time is a new draft from now, only the length is kept`() {
-        val failed = broken.copy(window = DailyWindow(LocalTime.of(15, 46), LocalTime.of(7, 0), zone))
+        val failed = broken.copy(window = DailyWindow(LocalTime(15, 46), LocalTime(7, 0), zone))
         seed(Snapshot(series = failed, entitlements = Entitlements(standardFailedAt = failedAt), wallet = Wallet(availableKop = 1_000_00)))
         // Left over from the failed series' wizard.
         context.getSharedPreferences("mama_setup", Context.MODE_PRIVATE).edit()
             .putString("start", "15:46").putString("end", "07:00").putString("choice", "SEVEN").commit()
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         val a = controller.get()
-        val before = LocalTime.now(zone).withSecond(0).withNano(0)
+        val before = Clock.System.now().minuteOfDay(zone)
         find(content(a), "Начать заново")!!.performClick()
-        val after = LocalTime.now(zone).withSecond(0).withNano(0)
+        val after = Clock.System.now().minuteOfDay(zone)
         assertTrue(a.restartFlow)
         assertEquals(Step.TIME, a.restartStep)
         assertEquals(MainActivity.Choice.SEVEN, a.choice)
         assertTrue("restart draft start ${a.start}, now $before..$after", a.start == before || a.start == after)
-        assertEquals(a.start.plusHours(8), a.end)
+        assertEquals(a.start.plusOnClock(8.hours), a.end)
         assertTrue(texts(content(a)).toString(), texts(content(a)).any { it.startsWith("Restart: 7 дней") })
 
         // The user sets the time by hand; it survives going on, coming back and a recreated screen.
-        val manual = LocalTime.of(16, 20).let { if (it == a.start) it.plusMinutes(5) else it }
+        val manual = LocalTime(16, 20).let { if (it == a.start) it.plusOnClock(5.minutes) else it }
         a.pickStart(manual)
-        a.pickEnd(manual.plusHours(8))
+        a.pickEnd(manual.plusOnClock(8.hours))
         find(content(a), "Далее")!!.performClick()
         assertEquals(Step.COMMITMENT, a.restartStep)
         a.onBackPressed()
@@ -185,13 +190,13 @@ class SamsungFixesTest {
         val restarted = Mama.series(context)!!
         assertEquals(SeriesStatus.SCHEDULED, restarted.status)
         assertEquals(SeriesKind.SEVEN, restarted.kind)
-        assertEquals(DailyWindow(manual, manual.plusHours(8), zone), restarted.window)
+        assertEquals(DailyWindow(manual, manual.plusOnClock(8.hours), zone), restarted.window)
         assertFalse(b.restartFlow)
         // The next launch draft starts from the current time again.
         b.beginDraft()
         b.ensureDraftTime()
-        val now = LocalTime.now(zone).withSecond(0).withNano(0)
-        if (now != manual && now.minusMinutes(1) != manual) {
+        val now = Clock.System.now().minuteOfDay(zone)
+        if (now != manual && now.plusOnClock(-1.minutes) != manual) {
             assertFalse("a new draft does not reuse the manual time", b.start == manual)
         }
     }
@@ -207,7 +212,7 @@ class SamsungFixesTest {
     @Test
     fun `3 - failure with a commitment - the failure screen does not announce any return`() {
         failedSeries(
-            Commitment("old", 500_00, failedAt, CommitmentState.FORFEITED, failedAt, returnKop = 250_00, returnDueAt = Instant.now().plus(Duration.ofHours(20))),
+            Commitment("old", 500_00, failedAt, CommitmentState.FORFEITED, failedAt, returnKop = 250_00, returnDueAt = Clock.System.now().plus(20.hours)),
         )
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         val shown = texts(content(a))
@@ -222,7 +227,7 @@ class SamsungFixesTest {
         assertNoAnnouncement("commitment", texts(a.commitmentScreen(false, SeriesKind.SEVEN).first))
         assertNoAnnouncement("restart", texts(a.commitmentScreen(true, SeriesKind.SEVEN).first))
         // The balance history does not list a return that has not happened.
-        val pending = LedgerEntry("return-old", failedAt, 250_00, LedgerType.COMMITMENT_PARTIAL_RETURN, "old", status = LedgerStatus.SCHEDULED, dueAt = failedAt.plusSeconds(86_400))
+        val pending = LedgerEntry("return-old", failedAt, 250_00, LedgerType.COMMITMENT_PARTIAL_RETURN, "old", status = LedgerStatus.SCHEDULED, dueAt = failedAt + 86_400.seconds)
         val history = texts(a.ledgerList(Wallet(entries = listOf(pending)), zone))
         assertFalse(history.toString(), history.any { "Возврат" in it })
     }
@@ -230,7 +235,7 @@ class SamsungFixesTest {
     @Test
     fun `4 - once the return is really credited, MAMA says so`() {
         // The real path: «Цена слова» 500 reserved, the ACTIVE series failed two days ago (return due a day ago).
-        val reserved = (WalletEngine.reserve(Wallet(availableKop = 500_00), "old", 500_00, failedAt.minus(Duration.ofDays(3))) as WalletEngine.Result.Ok).wallet
+        val reserved = (WalletEngine.reserve(Wallet(availableKop = 500_00), "old", 500_00, failedAt.minus(3.days)) as WalletEngine.Result.Ok).wallet
         failedSeries(wallet = WalletEngine.settle(reserved, broken, failedAt))
         val w = Mama.reconcile(context).snapshot.wallet
         assertEquals(250_00L, w.availableKop)
@@ -250,7 +255,7 @@ class SamsungFixesTest {
         assertTrue(Mama.topUpTest(context, 1_000_00))
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         find(content(a), "Начать заново")!!.performClick()
-        a.pickStart(LocalTime.now(zone).plusHours(2).withSecond(0).withNano(0))
+        a.pickStart(Clock.System.now().minuteOfDay(zone).plusOnClock(2.hours))
         find(content(a), "Далее")!!.performClick()
         find(content(a), "Пропустить")!!.performClick()
         val pay = find(dialogRoot(), "Оплатить с баланса MAMA")
@@ -275,7 +280,7 @@ class SamsungFixesTest {
         failedSeries(availableKop = 200_00)
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         find(content(a), "Начать заново")!!.performClick()
-        a.pickStart(LocalTime.now(zone).plusHours(2).withSecond(0).withNano(0))
+        a.pickStart(Clock.System.now().minuteOfDay(zone).plusOnClock(2.hours))
         find(content(a), "Далее")!!.performClick()
         find(content(a), "Пропустить")!!.performClick()
         val first = texts(dialogRoot())
@@ -299,7 +304,7 @@ class SamsungFixesTest {
     @Test
     fun `8 - test top-up reserves «Цена слова»`() {
         assertTrue(Mama.topUpTest(context, 5_000_00))
-        val window = DailyWindow(LocalTime.now(zone).plusHours(10).withSecond(0).withNano(0), LocalTime.now(zone).plusHours(18).withSecond(0).withNano(0), zone)
+        val window = DailyWindow(Clock.System.now().minuteOfDay(zone).plusOnClock(10.hours), Clock.System.now().minuteOfDay(zone).plusOnClock(18.hours), zone)
         assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.SEVEN, window, mom, SessionMode.SLEEP, 1_000_00))
         assertEquals(4_000_00L, Mama.wallet(context).availableKop)
         assertEquals(1_000_00L, Mama.wallet(context).reservedKop)

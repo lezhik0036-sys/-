@@ -18,7 +18,6 @@ import app.mama.platform.EmergencyCalls
 import app.mama.platform.Mama
 import app.mama.platform.Notifications
 import app.mama.ui.Texts
-import java.time.Duration
 
 /**
  * Keeps the lock alive: runs in the foreground while a session is ACTIVE,
@@ -166,7 +165,7 @@ class LockService : Service() {
         val now = Mama.trustedNow(this)
         when {
             s is LockState.Locked && session != null -> {
-                if (!s.endsAt.isAfter(now)) {
+                if (s.endsAt <= now) {
                     refresh()
                     return
                 }
@@ -179,12 +178,12 @@ class LockService : Service() {
             }
             s is LockState.EmergencyPass && session != null -> {
                 overlay.hide()
-                if (!s.until.isAfter(now)) {
+                if (s.until <= now) {
                     refresh()
                     return
                 }
                 updateNotification(
-                    "Экстренный доступ: осталось ${Texts.duration(Duration.between(now, s.until))}",
+                    "Экстренный доступ: осталось ${Texts.duration(s.until - now)}",
                 )
             }
             else -> overlay.hide()

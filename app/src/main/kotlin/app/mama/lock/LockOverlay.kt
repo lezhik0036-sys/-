@@ -18,8 +18,7 @@ import app.mama.platform.EmergencyCalls
 import app.mama.platform.Mama
 import app.mama.platform.Promise
 import app.mama.ui.Texts
-import java.time.Duration
-import java.time.Instant
+import kotlinx.datetime.Instant
 
 /**
  * The lock surface: a full-screen window drawn above every app (including the
@@ -125,13 +124,13 @@ class LockOverlay(private val service: LockService) : LockActions {
                 contactName = s.contact.name,
                 contactPhone = Texts.phone(s.contact.phone),
                 dayLabel = dayLabel(s),
-                phrase = Texts.lockPhrase(s.id, Duration.between(s.plan.start, now).toMinutes()),
+                phrase = Texts.lockPhrase(s.id, (now - s.plan.start).inWholeMinutes),
                 promise = Promise.get(service),
                 call = LockService.callState,
                 exitOpen = exitOpen,
                 codeActive = challenge != null && challenge.kind == ExitKind.END_SESSION,
                 attemptsLeft = challenge?.attemptsLeft ?: Mama.policy.maxAttempts,
-                resendAt = resendAt?.takeIf { it.isAfter(now) },
+                resendAt = resendAt?.takeIf { it > now },
                 codeLength = Mama.policy.codeLength,
                 input = input.toString(),
                 message = message,
@@ -152,7 +151,7 @@ class LockOverlay(private val service: LockService) : LockActions {
         }
         val flex = Mama.entitlements(service).flex
         if (flex != null && flex.currentSessionId == s.id) return "FLEX · день ${flex.used} из 7"
-        if (Duration.between(s.plan.start, s.plan.end) == TestMode.DURATION) return "Тестовый режим · 15 минут"
+        if (s.plan.end - s.plan.start == TestMode.DURATION) return "Тестовый режим · 15 минут"
         return Texts.mode(s.plan.mode)
     }
 

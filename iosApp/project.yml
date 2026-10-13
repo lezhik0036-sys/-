@@ -1,0 +1,89 @@
+# XcodeGen spec: `xcodegen` in this folder creates MAMA.xcodeproj.
+# Build the shared Kotlin framework first (from the repository root):
+#   ./gradlew :core:assembleMamaCoreDebugXCFramework
+name: MAMA
+options:
+  bundleIdPrefix: app.mama
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  MAMA:
+    type: application
+    platform: iOS
+    sources:
+      - path: MAMA
+      - path: Shared
+    dependencies:
+      - framework: ../core/build/XCFrameworks/debug/MamaCore.xcframework
+        embed: true
+      - target: MAMAActivityMonitor
+      - target: MAMAShieldConfiguration
+    info:
+      path: MAMA/Info.plist
+      properties:
+        CFBundleDisplayName: MAMA
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    entitlements:
+      path: MAMA/MAMA.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.app.mama.shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.mama.ios
+    scheme: {}
+
+  # DeviceActivity: switches the shield on and off at the series' window, without the app.
+  MAMAActivityMonitor:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ActivityMonitor
+      - path: Shared
+    info:
+      path: ActivityMonitor/Info.plist
+      properties:
+        CFBundleDisplayName: MAMA Monitor
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).MamaActivityMonitor
+    entitlements:
+      path: ActivityMonitor/ActivityMonitor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.app.mama.shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.mama.ios.monitor
+
+  # ManagedSettingsUI: what a shielded app shows during a MAMA lock.
+  MAMAShieldConfiguration:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShieldConfiguration
+    info:
+      path: ShieldConfiguration/Info.plist
+      properties:
+        CFBundleDisplayName: MAMA Shield
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).MamaShieldConfiguration
+    entitlements:
+      path: ShieldConfiguration/ShieldConfiguration.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.app.mama.shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.mama.ios.shield

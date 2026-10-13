@@ -19,8 +19,10 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import java.time.LocalDate
-import java.time.LocalTime
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.plus
 
 /** Handle of a shown [BrandDialog]. */
 class BrandDialogHandle(private val dialog: Dialog, val confirm: BrandButtonView?) {
@@ -175,7 +177,7 @@ object DigitalTimePicker {
                 error.visibility = View.VISIBLE
                 false
             } else {
-                onPicked(LocalTime.of(h!!, m!!))
+                onPicked(LocalTime(h!!, m!!))
                 true
             }
         }
@@ -245,7 +247,7 @@ object DigitalTimePicker {
 /** Date choice as a plain list of days: no calendar widget. */
 object DateList {
     fun show(context: Context, title: String, initial: LocalDate, from: LocalDate, to: LocalDate, onPicked: (LocalDate) -> Unit) {
-        val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.toList()
+        val days = generateSequence(from) { it.plus(1, DateTimeUnit.DAY) }.takeWhile { it <= to }.toList()
         if (days.isEmpty()) return
         BrandDialog.list(context, title, days.map { Texts.dayName(it, from) to Texts.date(it) }, days.indexOf(initial)) { onPicked(days[it]) }
     }

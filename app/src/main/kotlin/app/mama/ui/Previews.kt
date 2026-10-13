@@ -19,11 +19,14 @@ import app.mama.lock.LockScreenView
 import app.mama.platform.Calls
 import app.mama.ui.MainActivity.Choice
 import app.mama.ui.MainActivity.Step
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.temporal.ChronoUnit
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Debug builds only: every screen with sample data, for the screenshot tour
@@ -38,13 +41,13 @@ object Previews {
         "needs_attention", "restart_scheduled", "emergency", "restart_time",
     )
 
-    private val zone: ZoneId = ZoneId.of("Europe/Moscow")
+    private val zone: TimeZone = TimeZone.of("Europe/Moscow")
     private val contact = TrustedContact("Жена", "+79856322062")
 
     private fun series(done: Int, status: SeriesStatus = SeriesStatus.ACTIVE) = Series(
         id = "preview", kind = SeriesKind.SEVEN,
-        window = DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), zone),
-        contact = contact, mode = SessionMode.SLEEP, startedAt = Instant.now().minus(3, ChronoUnit.DAYS),
+        window = DailyWindow(LocalTime(23, 0), LocalTime(7, 0), zone),
+        contact = contact, mode = SessionMode.SLEEP, startedAt = Clock.System.now() - 3.days,
         completedPeriods = done, status = status,
     )
 
@@ -55,12 +58,12 @@ object Previews {
         a.contactPhone.setText(Texts.phone(contact.phone))
         a.promiseField.setText("Хочу нормально высыпаться и чувствовать себя лучше утром.")
         a.zone = zone
-        a.start = LocalTime.of(23, 0)
-        a.end = LocalTime.of(7, 0)
+        a.start = LocalTime(23, 0)
+        a.end = LocalTime(7, 0)
         a.choice = Choice.SEVEN
         a.startMode = MainActivity.StartMode.MANUAL
-        val now = Instant.now()
-        val waiting = LockState.Waiting(now + Duration.ofSeconds(13 * 3600 + 18 * 60 + 24), now + Duration.ofHours(21))
+        val now = Clock.System.now()
+        val waiting = LockState.Waiting(now + (13 * 3600 + 18 * 60 + 24).seconds, now + 21.hours)
         return when (name) {
             "welcome" -> a.welcomeScreen()
             "permissions" -> a.permissionsScreen()
@@ -73,7 +76,7 @@ object Previews {
             "dashboard" -> a.seriesDashboard(series(0, SeriesStatus.SCHEDULED), scheduledCommitment(now), protectionMissing = emptyList()) { waiting }
             "dashboard_active" -> a.seriesDashboard(
                 series(2),
-                Commitment("preview", 5_000_00, now.minus(3, ChronoUnit.DAYS), CommitmentState.RESERVED, fixedAt = now.minus(2, ChronoUnit.DAYS)),
+                Commitment("preview", 5_000_00, (now - 3.days), CommitmentState.RESERVED, fixedAt = (now - 2.days)),
                 protectionMissing = emptyList(),
             ) { waiting }
             "needs_attention" -> a.seriesDashboard(
@@ -92,25 +95,25 @@ object Previews {
             "failure" -> a.failureScreen(
                 series(4, SeriesStatus.BROKEN), freeInDays = 30,
                 sampleCommitment = Commitment(
-                    "preview", 5_000_00, now.minus(4, ChronoUnit.DAYS), CommitmentState.FORFEITED, now,
-                    returnKop = 2_500_00, returnDueAt = now.plus(24, ChronoUnit.HOURS),
+                    "preview", 5_000_00, (now - 4.days), CommitmentState.FORFEITED, now,
+                    returnKop = 2_500_00, returnDueAt = (now + 24.hours),
                 ),
             )
             "success" -> a.successScreen(
                 series(7, SeriesStatus.COMPLETED),
-                Commitment("preview", 5_000_00, now.minus(7, ChronoUnit.DAYS), CommitmentState.RELEASED, now),
+                Commitment("preview", 5_000_00, (now - 7.days), CommitmentState.RELEASED, now),
             )
             "commitment" -> { a.commitmentKop = 5_000_00; a.choice = Choice.THREE; a.commitmentScreen(false, SeriesKind.THREE) }
             "restart_time" -> {
                 // Restart 7/7 after a failure at 15:46: a new time draft from "now" (16:20).
                 a.restartFlow = true
                 a.startMode = MainActivity.StartMode.AUTO_NOW
-                a.start = LocalTime.of(16, 20)
-                a.end = LocalTime.of(0, 20)
+                a.start = LocalTime(16, 20)
+                a.end = LocalTime(0, 20)
                 a.timeScreen()
             }
             "restart_commitment" -> { a.commitmentKop = null; a.commitmentScreen(true, SeriesKind.THREE) }
-            "flex" -> a.flexDashboard(FlexPackage("p", now.minus(6, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 5, successful = 5)) { LockState.Free }
+            "flex" -> a.flexDashboard(FlexPackage("p", (now - 6.days), GrantSource.TEST_NO_PAYMENT, used = 5, successful = 5)) { LockState.Free }
             "flex_plan" -> { a.flexStartNow = false; a.flexPlannerScreen(FlexPackage("p", now, GrantSource.TEST_NO_PAYMENT)) }
             "stats" -> { a.tab = 1; a.statisticsScreen() }
             "settings" -> { a.tab = 2; a.settingsScreen() }
@@ -134,14 +137,14 @@ object Previews {
             override fun answer() = Unit
             override fun hangUp() = Unit
         })
-        val now = Instant.now()
+        val now = Clock.System.now()
         view.bind(
             LockModel(
-                now = now, start = now.minus(Duration.ofMinutes(77)), end = now + Duration.ofSeconds(6 * 3600 + 42 * 60 + 17), zone = zone,
+                now = now, start = now - 77.minutes, end = now + (6 * 3600 + 42 * 60 + 17).seconds, zone = zone,
                 contactName = contact.name, contactPhone = Texts.phone(contact.phone), dayLabel = Texts.dayOf(3, 7),
                 phrase = Texts.lockPhrases[0], promise = "Хочу нормально высыпаться и чувствовать себя лучше утром.",
                 call = Calls.CallState.NONE, exitOpen = name == "exit" || name == "code", codeActive = name == "code",
-                attemptsLeft = 3, resendAt = if (name == "code") now + Duration.ofSeconds(57) else null, codeLength = 5,
+                attemptsLeft = 3, resendAt = if (name == "code") now + 57.seconds else null, codeLength = 5,
                 input = if (name == "code") "47" else "", message = null, diagnostics = null,
                 emergencyOpen = name == "emergency",
                 emergencyServices = app.mama.core.EmergencyNumberCatalog.RUSSIA_FALLBACK,

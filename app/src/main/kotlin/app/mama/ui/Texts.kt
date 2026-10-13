@@ -7,17 +7,25 @@ import app.mama.core.FinishReason
 import app.mama.core.LockEngine
 import app.mama.core.SeriesKind
 import app.mama.core.SessionMode
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
+import kotlinx.datetime.Clock
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.offsetAt
+import kotlinx.datetime.plus
+import kotlinx.datetime.toJavaLocalDateTime
+import kotlinx.datetime.toLocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.time.Duration
 
 /** All user-facing copy in one place (RU for v0.1). */
 object Texts {
     private val ru = Locale.forLanguageTag("ru")
-    private val time = DateTimeFormatter.ofPattern("HH:mm", ru)
     private val dayTime = DateTimeFormatter.ofPattern("EEE, d MMM, HH:mm", ru)
 
     fun version(context: Context): String = runCatching {
@@ -40,7 +48,7 @@ object Texts {
         return if (rest == 0L) "$grouped ₽" else "$grouped,%02d ₽".format(rest)
     }
 
-    fun localDayTime(t: java.time.LocalDateTime): String = dayTime.format(t)
+    fun localDayTime(t: LocalDateTime): String = dayTime.format(t.toJavaLocalDateTime())
 
     fun flexPlanError(e: app.mama.core.FlexEngine.PlanError) = when (e) {
         app.mama.core.FlexEngine.PlanError.START_IN_PAST ->
@@ -56,9 +64,9 @@ object Texts {
     }
 
     /** "Сегодня · 17:12", "Завтра · 07:00", otherwise the full date. */
-    fun relativeDayTime(t: java.time.LocalDateTime, today: java.time.LocalDate): String = when (t.toLocalDate()) {
-        today -> "Сегодня · " + time.format(t)
-        today.plusDays(1) -> "Завтра · " + time.format(t)
+    fun relativeDayTime(t: LocalDateTime, today: LocalDate): String = when (t.date) {
+        today -> "Сегодня · " + hhmm(t.time)
+        today.plus(1, DateTimeUnit.DAY) -> "Завтра · " + hhmm(t.time)
         else -> localDayTime(t)
     }
 
@@ -66,21 +74,21 @@ object Texts {
     private val weekdays = listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
 
     /** "01 окт 2026". */
-    fun date(d: java.time.LocalDate): String = "%02d %s %d".format(d.dayOfMonth, months[d.monthValue - 1], d.year)
+    fun date(d: LocalDate): String = "%02d %s %d".format(d.dayOfMonth, months[d.monthNumber - 1], d.year)
 
     /** First lock of a series: "Сегодня в 23:00", "Завтра в 23:00" or "Четверг, 15 окт 2026 в 23:00". */
-    fun firstLock(start: Instant, zone: ZoneId, now: Instant): String {
-        val d = start.atZone(zone).toLocalDate()
-        val today = now.atZone(zone).toLocalDate()
+    fun firstLock(start: Instant, zone: TimeZone, now: Instant): String {
+        val d = start.toLocalDateTime(zone).date
+        val today = now.toLocalDateTime(zone).date
         val at = time(start, zone)
-        return if (d == today || d == today.plusDays(1)) "${dayName(d, today)} в $at" else "${dayName(d, today)}, ${date(d)} в $at"
+        return if (d == today || d == today.plus(1, DateTimeUnit.DAY)) "${dayName(d, today)} в $at" else "${dayName(d, today)}, ${date(d)} в $at"
     }
 
     /** "Сегодня", "Завтра", or the weekday. */
-    fun dayName(d: java.time.LocalDate, today: java.time.LocalDate): String = when (d) {
+    fun dayName(d: LocalDate, today: LocalDate): String = when (d) {
         today -> "Сегодня"
-        today.plusDays(1) -> "Завтра"
-        else -> weekdays[d.dayOfWeek.value - 1]
+        today.plus(1, DateTimeUnit.DAY) -> "Завтра"
+        else -> weekdays[d.dayOfWeek.isoDayNumber - 1]
     }
 
     /** 24-hour "HH:mm", never AM/PM. */
@@ -109,7 +117,7 @@ object Texts {
 
     /** "Продолжительность" value: "3 ч 1 мин", "6 часов", "24 часа". */
     fun flexDuration(d: Duration): String {
-        val totalMin = maxOf(0, d.toMinutes())
+        val totalMin = maxOf(0, d.inWholeMinutes)
         val h = totalMin / 60
         val m = totalMin % 60
         if (m != 0L) return if (h == 0L) "$m мин" else "$h ч $m мин"
@@ -141,17 +149,17 @@ object Texts {
         SessionMode.DETOX -> "Цифровой детокс"
     }
 
-    fun time(at: Instant, zone: ZoneId): String = time.format(at.atZone(zone))
+    fun time(at: Instant, zone: TimeZone): String = hhmm(at.toLocalDateTime(zone).time)
 
-    fun dayTime(at: Instant, zone: ZoneId): String = dayTime.format(at.atZone(zone))
+    fun dayTime(at: Instant, zone: TimeZone): String = localDayTime(at.toLocalDateTime(zone))
 
-    fun zone(zone: ZoneId, at: Instant = Instant.now()): String {
-        val offset = zone.rules.getOffset(at).id.let { if (it == "Z") "+00:00" else it }
+    fun zone(zone: TimeZone, at: Instant = Clock.System.now()): String {
+        val offset = zone.offsetAt(at).toString().let { if (it == "Z") "+00:00" else it }
         return "${zone.id} (UTC$offset)"
     }
 
     fun duration(d: Duration): String {
-        val totalMin = maxOf(0, (d.toMillis() + 59_999) / 60_000)
+        val totalMin = maxOf(0, (d.inWholeMilliseconds + 59_999) / 60_000)
         val h = totalMin / 60
         val m = totalMin % 60
         return when {
@@ -162,7 +170,7 @@ object Texts {
     }
 
     fun countdown(d: Duration): String {
-        val s = maxOf(0, d.seconds)
+        val s = maxOf(0, d.inWholeSeconds)
         return "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
     }
 
@@ -179,7 +187,7 @@ object Texts {
 
     /** "13 : 18 : 24" parts: hours, minutes, seconds (hours may exceed 24). */
     fun hms(d: Duration): Triple<String, String, String> {
-        val s = maxOf(0, d.seconds)
+        val s = maxOf(0, d.inWholeSeconds)
         return Triple("%02d".format(s / 3600), "%02d".format((s % 3600) / 60), "%02d".format(s % 60))
     }
 
@@ -200,7 +208,7 @@ object Texts {
         LockEngine.CreateError.TOO_LONG -> "Слишком долго: максимум ${duration(CorePolicy().maxDuration)}."
     }
 
-    fun codeRequestError(e: LockEngine.CodeRequestError, retryAt: Instant?, zone: ZoneId) = when (e) {
+    fun codeRequestError(e: LockEngine.CodeRequestError, retryAt: Instant?, zone: TimeZone) = when (e) {
         LockEngine.CodeRequestError.NOT_LOCKED -> "Блокировка сейчас не активна."
         LockEngine.CodeRequestError.ALREADY_PENDING -> "Код уже отправлен. Введите его или дождитесь " +
             (retryAt?.let { "${time(it, zone)}, когда он истечёт." } ?: "его истечения.")

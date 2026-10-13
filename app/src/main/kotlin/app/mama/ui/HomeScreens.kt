@@ -7,23 +7,28 @@ import android.widget.LinearLayout
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
 import app.mama.billing.Product
+import app.mama.core.Commitment
+import app.mama.core.CommitmentState
 import app.mama.core.FlexEngine
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
 import app.mama.core.LockState
-import app.mama.core.Commitment
-import app.mama.core.CommitmentState
 import app.mama.core.RestartHold
 import app.mama.core.RestartHoldState
 import app.mama.core.Series
 import app.mama.core.SeriesStatus
 import app.mama.core.Session
 import app.mama.core.StandardRules
+import app.mama.core.truncatedToMinute
 import app.mama.platform.Mama
 import app.mama.platform.Protection
-import java.time.Duration
-import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 
 // Dashboards (night), statistics/settings tabs, failure, success, FLEX.
 
@@ -86,7 +91,7 @@ private fun MainActivity.countdownCard(b: LinearLayout, state: () -> LockState, 
             LockState.Free -> null to "Следующий период планируется…"
         }
         caption.text = text
-        val (h, m, s) = Texts.hms(if (target != null) Duration.between(now, target) else Duration.ZERO)
+        val (h, m, s) = Texts.hms(if (target != null) target - now else Duration.ZERO)
         digits[0].text = h; digits[1].text = m; digits[2].text = s
     }
 }
@@ -141,9 +146,10 @@ internal fun MainActivity.seriesDashboard(
     val zone = series.window.zone
     countdownCard(b, state) { w ->
         val now = Mama.trustedNow(this)
-        when (w.startsAt.atZone(zone).toLocalDate()) {
-            now.atZone(zone).toLocalDate() -> "Сегодня MAMA включится через"
-            now.atZone(zone).toLocalDate().plusDays(1) -> "MAMA включится завтра в ${Texts.time(w.startsAt, zone)}. Осталось"
+        val today = now.toLocalDateTime(zone).date
+        when (w.startsAt.toLocalDateTime(zone).date) {
+            today -> "Сегодня MAMA включится через"
+            today.plus(1, DateTimeUnit.DAY) -> "MAMA включится завтра в ${Texts.time(w.startsAt, zone)}. Осталось"
             else -> "MAMA включится через"
         }
     }
@@ -269,7 +275,7 @@ internal fun MainActivity.sessionDashboard(session: Session, state: () -> LockSt
     val k = nightKit
     val b = body(8)
     b.addView(nightTop(), LinearLayout.LayoutParams(-1, k.dp(52)))
-    val isTest = Duration.between(session.plan.start, session.plan.end) == app.mama.core.TestMode.DURATION
+    val isTest = session.plan.end - session.plan.start == app.mama.core.TestMode.DURATION
     b.addView(k.text(if (isTest) "Тестовый режим" else "Блокировка", MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
     b.addView(k.text(if (isTest) "15 минут · только для тестирования" else Texts.mode(session.plan.mode), MamaType.BODY, MamaColors.OnNightMuted, center = true), k.gap(6))
     countdownCard(b, state, "Блокировка начнётся через")
@@ -400,13 +406,13 @@ internal fun MainActivity.flexDashboard(flex: FlexPackage, state: () -> LockStat
         Icon.INFINITY, Tone.NEUTRAL,
         if (flex.rewardStillPossible) "Пройди 7 из 7 — следующий FLEX бесплатно" else "Успешно: ${flex.successful} из ${FlexPackage.PERIODS}",
     ), k.gap(18))
-    flex.lastBurntAt?.takeIf { Duration.between(it, now) < Duration.ofHours(18) }?.let {
+    flex.lastBurntAt?.takeIf { now - it < 18.hours }?.let {
         b.addView(k.infoCard(
             "Успешно: ${flex.successful} из ${FlexPackage.PERIODS}. Остальные дни FLEX остаются доступны.",
             Icon.ALERT, Tone.NEUTRAL, "Сегодняшний FLEX-день завершён досрочно.",
         ), k.gap(10))
     }
-    val daysLeft = maxOf(0L, Duration.between(now, flex.expiresAt).toDays())
+    val daysLeft = maxOf(0L, (flex.expiresAt - now).inWholeDays)
     infoTiles(
         b,
         Triple(Icon.INFINITY, "Осталось", "${flex.remaining} из ${FlexPackage.PERIODS}"),
@@ -427,12 +433,12 @@ internal fun MainActivity.flexDashboard(flex: FlexPackage, state: () -> LockStat
 
 /** FLEX period planner: explicit dates and 24-hour times (reference screen 4). */
 internal fun MainActivity.flexPlannerScreen(flex: FlexPackage): Pair<View, Boolean> {
-    val now = LocalDateTime.ofInstant(Mama.trustedNow(this), zone).truncatedTo(ChronoUnit.MINUTES)
-    val today = now.toLocalDate()
-    val start = if (flexStartNow) now else (flexStart ?: now.plusHours(1))
+    val now = localMinuteNow()
+    val today = now.date
+    val start = if (flexStartNow) now else (flexStart ?: plusOnZone(now, 1.hours))
     val end = flexEnd ?: defaultFlexEnd(start)
     if (!flexStartNow && flexStart == null) flexStart = start
-    val lastStartDay = maxOf(today, LocalDateTime.ofInstant(flex.expiresAt, zone).toLocalDate())
+    val lastStartDay = maxOf(today, flex.expiresAt.toLocalDateTime(zone).date)
 
     val b = body()
     b.addView(kit.sectionHeader("Выбери время", "Укажи точные дату и время начала и окончания FLEX-периода."))
@@ -441,22 +447,22 @@ internal fun MainActivity.flexPlannerScreen(flex: FlexPackage): Pair<View, Boole
         render()
     }, kit.gap(20))
     b.addView(kit.timeField(
-        "Начало", "${Texts.dayName(start.toLocalDate(), today)}, ${Texts.date(start.toLocalDate())}", Texts.hhmm(start.toLocalTime()),
+        "Начало", "${Texts.dayName(start.date, today)}, ${Texts.date(start.date)}", Texts.hhmm(start.time),
         if (flexStartNow) null else ({
-            DateList.show(this, "Дата начала", start.toLocalDate(), today, lastStartDay) { d -> flexStart = LocalDateTime.of(d, start.toLocalTime()); render() }
+            DateList.show(this, "Дата начала", start.date, today, lastStartDay) { d -> flexStart = LocalDateTime(d, start.time); render() }
         }),
         if (flexStartNow) null else ({
-            DigitalTimePicker.show(this, "Время начала", start.toLocalTime()) { t -> flexStart = LocalDateTime.of(start.toLocalDate(), t); render() }
+            DigitalTimePicker.show(this, "Время начала", start.time) { t -> flexStart = LocalDateTime(start.date, t); render() }
         }),
         if (flexStartNow) "сейчас" else null,
     ), kit.gap(16))
     b.addView(kit.timeField(
-        "Окончание", "${Texts.dayName(end.toLocalDate(), today)}, ${Texts.date(end.toLocalDate())}", Texts.hhmm(end.toLocalTime()),
-        { DateList.show(this, "Дата окончания", end.toLocalDate(), today, lastStartDay.plusDays(1)) { d -> flexEnd = LocalDateTime.of(d, end.toLocalTime()); render() } },
-        { DigitalTimePicker.show(this, "Время окончания", end.toLocalTime()) { t -> flexEnd = LocalDateTime.of(end.toLocalDate(), t); render() } },
+        "Окончание", "${Texts.dayName(end.date, today)}, ${Texts.date(end.date)}", Texts.hhmm(end.time),
+        { DateList.show(this, "Дата окончания", end.date, today, lastStartDay.plus(1, DateTimeUnit.DAY)) { d -> flexEnd = LocalDateTime(d, end.time); render() } },
+        { DigitalTimePicker.show(this, "Время окончания", end.time) { t -> flexEnd = LocalDateTime(end.date, t); render() } },
     ), kit.gap(12))
-    val length = Duration.between(start, end)
-    b.addView(kit.hintRow(Icon.CLOCK, "Продолжительность: " + if (!length.isNegative && !length.isZero) Texts.flexDuration(length) else "—"), kit.gap(18))
+    val length = end.toInstant(zone) - start.toInstant(zone)
+    b.addView(kit.hintRow(Icon.CLOCK, "Продолжительность: " + if (length.isPositive()) Texts.flexDuration(length) else "—"), kit.gap(18))
     b.addView(kit.hintRow(Icon.INFO, "Минимальная длительность FLEX — 3 часа, максимальная — 24 часа."), kit.gap(10))
     b.addView(kit.hintRow(Icon.INFO, "Время начала не может быть в прошлом. FLEX-день расходуется в момент начала."), kit.gap(10))
     b.addView(kit.hintRow(Icon.GLOBE, "Часовой пояс: ${zone.id}"), kit.gap(10))
@@ -466,17 +472,24 @@ internal fun MainActivity.flexPlannerScreen(flex: FlexPackage): Pair<View, Boole
 
 private fun MainActivity.defaultFlexEnd(start: LocalDateTime): LocalDateTime = if (flexStartNow) {
     // 3 h after the real moment, rounded up to the minute (17:12:37 → 20:13).
-    LocalDateTime.ofInstant(FlexPackage.defaultEndForStartNow(Mama.trustedNow(this)), zone)
+    FlexPackage.defaultEndForStartNow(Mama.trustedNow(this)).toLocalDateTime(zone)
 } else {
-    start.plus(FlexPackage.MIN_DURATION)
+    plusOnZone(start, FlexPackage.MIN_DURATION)
 }
+
+/** The current local date and time in the chosen zone, to the minute. */
+private fun MainActivity.localMinuteNow(): LocalDateTime =
+    Mama.trustedNow(this).truncatedToMinute().toLocalDateTime(zone)
+
+/** The local moment [t] moved by [d] of real time in the chosen zone. */
+private fun MainActivity.plusOnZone(t: LocalDateTime, d: Duration): LocalDateTime = (t.toInstant(zone) + d).toLocalDateTime(zone)
 
 private fun MainActivity.submitFlexPeriod() {
     val contact = readyContact() ?: return
     val start = if (flexStartNow) null else flexStart
-    val now = LocalDateTime.ofInstant(Mama.trustedNow(this), zone).truncatedTo(ChronoUnit.MINUTES)
+    val now = localMinuteNow()
     val end = flexEnd ?: defaultFlexEnd(start ?: now)
-    when (val r = Mama.startFlexPeriod(this, start?.atZone(zone)?.toInstant(), end.atZone(zone).toInstant(), zone, contact, mode)) {
+    when (val r = Mama.startFlexPeriod(this, start?.toInstant(zone), end.toInstant(zone), zone, contact, mode)) {
         is FlexEngine.PlanResult.Planned -> {
             flexStart = null
             flexEnd = null

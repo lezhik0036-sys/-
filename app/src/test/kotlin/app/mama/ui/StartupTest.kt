@@ -4,9 +4,9 @@ import android.content.Context
 import android.view.ViewGroup
 import androidx.test.core.app.ApplicationProvider
 import app.mama.core.DailyWindow
+import app.mama.core.Entitlements
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
-import app.mama.core.Entitlements
 import app.mama.core.Series
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
@@ -14,6 +14,10 @@ import app.mama.core.SessionMode
 import app.mama.core.Snapshot
 import app.mama.core.StateCodec
 import app.mama.core.TrustedContact
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,10 +25,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.temporal.ChronoUnit
+import kotlin.time.Duration.Companion.days
 
 /**
  * Startup regression tests: MainActivity must open and render its first
@@ -62,18 +63,18 @@ class StartupTest {
             .putString("contactPhone", "+79001234567")
             .commit()
         // Engine state in the v0.3.2 format: an active FLEX package and a finished series.
-        val now = Instant.now().truncatedTo(ChronoUnit.SECONDS)
+        val now = Instant.fromEpochSeconds(Clock.System.now().epochSeconds)
         val snapshot = Snapshot(
             lastTrusted = now,
             series = Series(
                 id = "old-series", kind = SeriesKind.THREE,
-                window = DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), ZoneId.of("Europe/Moscow")),
+                window = DailyWindow(LocalTime(23, 0), LocalTime(7, 0), TimeZone.of("Europe/Moscow")),
                 contact = TrustedContact("Мама", "+79001234567"), mode = SessionMode.SLEEP,
-                startedAt = now.minus(5, ChronoUnit.DAYS), completedPeriods = 3,
-                status = SeriesStatus.COMPLETED, endedAt = now.minus(1, ChronoUnit.DAYS),
+                startedAt = now - 5.days, completedPeriods = 3,
+                status = SeriesStatus.COMPLETED, endedAt = now - 1.days,
             ),
             entitlements = Entitlements(
-                flex = FlexPackage("old-flex", now.minus(2, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 1, successful = 1),
+                flex = FlexPackage("old-flex", now - 2.days, GrantSource.TEST_NO_PAYMENT, used = 1, successful = 1),
             ),
         )
         val store = context.createDeviceProtectedStorageContext().getSharedPreferences("mama_state", Context.MODE_PRIVATE).edit()

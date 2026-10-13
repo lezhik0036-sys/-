@@ -5,7 +5,8 @@ import app.mama.core.FlexPackage
 import app.mama.core.Series
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
-import java.time.Instant
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 
 /** Finished series, newest first, for the statistics screen. */
 object History {
@@ -21,14 +22,14 @@ object History {
 
     fun record(context: Context, series: Series) {
         val line = listOf(
-            (series.endedAt ?: Instant.now()).toEpochMilli(), series.kind.name, series.completedPeriods, series.status.name,
+            (series.endedAt ?: Clock.System.now()).toEpochMilliseconds(), series.kind.name, series.completedPeriods, series.status.name,
         ).joinToString("|")
         val old = prefs(context).getString(KEY, "").orEmpty().lines().filter { it.isNotBlank() }
         prefs(context).edit().putString(KEY, (listOf(line) + old).take(MAX).joinToString("\n")).apply()
     }
 
     fun recordFlex(context: Context, pkg: FlexPackage) {
-        val line = listOf((pkg.endedAt ?: Instant.now()).toEpochMilli(), "FLEX", pkg.successful, pkg.used).joinToString("|")
+        val line = listOf((pkg.endedAt ?: Clock.System.now()).toEpochMilliseconds(), "FLEX", pkg.successful, pkg.used).joinToString("|")
         val old = prefs(context).getString(FLEX_KEY, "").orEmpty().lines().filter { it.isNotBlank() }
         prefs(context).edit().putString(FLEX_KEY, (listOf(line) + old).take(MAX).joinToString("\n")).apply()
     }
@@ -39,7 +40,7 @@ object History {
         prefs(context).getString(KEY, "").orEmpty().lines().mapNotNull { line ->
             val p = line.split("|")
             runCatching {
-                Entry(Instant.ofEpochMilli(p[0].toLong()), SeriesKind.valueOf(p[1]), p[2].toInt(), SeriesStatus.valueOf(p[3]))
+                Entry(Instant.fromEpochMilliseconds(p[0].toLong()), SeriesKind.valueOf(p[1]), p[2].toInt(), SeriesStatus.valueOf(p[3]))
             }.getOrNull()
         }
 }

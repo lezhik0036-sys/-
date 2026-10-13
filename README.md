@@ -24,16 +24,18 @@
 ## Структура
 
 ```
-core/   чистый Kotlin: расписание, часовые пояса, коды, ClockGuard, Recovery (+ тесты)
-app/    Android: оверлей, foreground-служба, Accessibility-страж, Device Admin,
-        будильники, приёмники загрузки, SMS, экран настройки
-docs/   спецификация MAMA Core v0.1, монетизация, дизайн-система (DESIGN.md)
+core/     общая бизнес-логика на Kotlin Multiplatform (Android + iPhone): серии,
+          FLEX, Restart, «Цена слова», кошелёк, 30 дней, время, доверенный выход (+ тесты)
+app/      Android: оверлей, foreground-служба, Accessibility-страж, Device Admin,
+          будильники, приёмники загрузки, SMS, экран настройки
+iosApp/   iPhone (ветка claude/mama-ios): SwiftUI + Screen Time, см. iosApp/README.md
+docs/     спецификация MAMA Core v0.1, монетизация, дизайн-система (DESIGN.md)
 ```
 
 ## Сборка
 
 ```bash
-./gradlew :core:test            # только JDK 17+
+./gradlew :core:jvmTest         # общая логика, только JDK 17+
 ./gradlew :app:assembleDebug    # нужен Android SDK (ANDROID_HOME или local.properties)
 ```
 

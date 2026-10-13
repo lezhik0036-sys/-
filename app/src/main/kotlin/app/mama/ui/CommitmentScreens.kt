@@ -17,7 +17,7 @@ import app.mama.core.Wallet
 import app.mama.core.WalletEngine
 import app.mama.platform.Mama
 import app.mama.ui.MainActivity.Step
-import java.time.ZoneId
+import kotlinx.datetime.TimeZone
 
 // "Цена слова" (optional commitment before every standard series) and the
 // internal MAMA balance. Pilot: test credits only, internal only.
@@ -247,7 +247,7 @@ internal fun MainActivity.balanceCard(wallet: Wallet, compact: Boolean = false):
 }
 
 /** Ledger history (newest first), for the settings screen. */
-internal fun MainActivity.ledgerList(wallet: Wallet, zone: ZoneId): View = kit.card(paddingDp = 0).apply {
+internal fun MainActivity.ledgerList(wallet: Wallet, zone: TimeZone): View = kit.card(paddingDp = 0).apply {
     // A partial return is not announced: it appears only once it has really been credited.
     val entries = wallet.entries
         .filterNot { it.type == LedgerType.COMMITMENT_PARTIAL_RETURN && it.status == LedgerStatus.SCHEDULED }
@@ -316,7 +316,7 @@ internal fun MainActivity.showReturnNoticeIfAny() {
 }
 
 /** "Цена слова" outcome on the failure / success screens. */
-internal fun MainActivity.commitmentOutcome(seriesId: String, night: Boolean, zone: ZoneId, sample: app.mama.core.Commitment? = null): View? {
+internal fun MainActivity.commitmentOutcome(seriesId: String, night: Boolean, zone: TimeZone, sample: app.mama.core.Commitment? = null): View? {
     val c = sample ?: Mama.wallet(this).commitmentFor(seriesId) ?: return null
     val k = if (night) nightKit else kit
     return when (c.state) {

@@ -20,8 +20,10 @@ import app.mama.platform.Mama
 import app.mama.platform.Promise
 import app.mama.ui.MainActivity.Choice
 import app.mama.ui.MainActivity.Step
-import java.time.Duration
-import java.time.LocalDateTime
+import kotlinx.datetime.toJavaZoneId
+import kotlinx.datetime.toKotlinTimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration
 
 // The setup wizard: Welcome → Permissions → Series → Time → Contact → Reason → Review.
 
@@ -158,7 +160,7 @@ internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
     val free = Mama.entitlements(this).freeFlexCredits > 0
     option(
         Choice.FLEX, Icon.INFINITY, "FLEX",
-        "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.toDays()} дней. Пройди 7 из 7 — следующий FLEX бесплатно.",
+        "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.inWholeDays} дней. Пройди 7 из 7 — следующий FLEX бесплатно.",
         if (free) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB),
     )
     val wait = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this))
@@ -188,7 +190,7 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
     }
     val b = body()
     val now = Mama.trustedNow(this)
-    val today = LocalDateTime.ofInstant(now, zone).toLocalDate()
+    val today = now.toLocalDateTime(zone).date
     if (choice == Choice.TEST) {
         b.addView(kit.sectionHeader("Тестовый режим", "Блокировка начнётся сразу после запуска и продлится ровно 15 минут."))
         b.addView(kit.timeField("Начало", "Сегодня, ${Texts.date(today)}", Texts.time(now, zone), null, null, "сразу после запуска"), kit.gap(22))
@@ -204,16 +206,12 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         // MANUAL: a fixed window, whose first lock is always a full one (never one already in progress).
         val auto = startMode == MainActivity.StartMode.AUTO_NOW && start != end
         val (firstStart, firstEnd, length) = if (auto) {
-            Triple(today, LocalDateTime.ofInstant(now + draftLength, zone).toLocalDate(), draftLength)
+            Triple(today, (now + draftLength).toLocalDateTime(zone).date, draftLength)
         } else if (start == end) {
             Triple(today, today, Duration.ZERO) // not a window yet: the warning below says so
         } else {
             val plan = DailyWindow(start, end, zone).nextFullPlan(now, mode)
-            Triple(
-                LocalDateTime.ofInstant(plan.start, zone).toLocalDate(),
-                LocalDateTime.ofInstant(plan.end, zone).toLocalDate(),
-                Duration.between(plan.start, plan.end),
-            )
+            Triple(plan.start.toLocalDateTime(zone).date, plan.end.toLocalDateTime(zone).date, plan.end - plan.start)
         }
         b.addView(kit.timeField(
             "Начало", "Каждый день", Texts.hhmm(start), null,
@@ -271,8 +269,8 @@ internal fun MainActivity.pickZone() {
     val items = listOf(system) + zones.filter { it != system }
     BrandDialog.list(this, "Часовой пояс", items.map { z ->
         z.id to "UTC" + z.rules.getOffset(now).id.let { if (it == "Z") "+00:00" else it }
-    }, items.indexOf(zone)) { i ->
-        zone = items[i]
+    }, items.indexOf(zone.toJavaZoneId())) { i ->
+        zone = items[i].toKotlinTimeZone()
         saveForm()
         render()
     }
@@ -384,7 +382,7 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
         }
         Choice.FLEX -> {
             b.addView(kit.sectionHeader("Проверь условия", "FLEX — разовый пакет, не подписка."))
-            line(Icon.INFINITY, "Пакет", "MAMA FLEX", "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.toDays()} дней")
+            line(Icon.INFINITY, "Пакет", "MAMA FLEX", "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.inWholeDays} дней")
             line(Icon.CLOCK, "Периоды", "От 3 до 24 часов", "Дата и время — для каждого периода отдельно")
             line(Icon.PERSON, "Доверенный контакт", contactLine, phoneLine)
             line(Icon.HEART, "Моя причина", "«$reason»")
@@ -428,7 +426,7 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
     if (choice.series != null) {
         b.addView(kit.infoCard(
             "Прогресс обнулится. Сразу начать заново — Restart за ${Texts.price(choice.series!!.restartPriceRub)}, " +
-                "бесплатная новая серия — через ${StandardRules.FREE_START_AFTER.toDays()} дней.\n\n" +
+                "бесплатная новая серия — через ${StandardRules.FREE_START_AFTER.inWholeDays} дней.\n\n" +
                 "Доверенный выход всегда доступен и не требует отдельной оплаты.\n\n" +
                 "Если серия будет завершена досрочно, она считается сорванной. Если установлена «Цена слова», она применяется.",
             Icon.ALERT, Tone.WARNING, "Если серия будет прервана",

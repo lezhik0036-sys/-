@@ -34,8 +34,8 @@ import app.mama.billing.FeatureFlags
 import app.mama.lock.LockService
 import app.mama.ui.Requirement
 import app.mama.ui.Texts
-import java.time.Instant
-import java.time.ZoneId
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
 import java.util.UUID
 
 /**
@@ -415,7 +415,7 @@ object Mama {
         context: Context,
         start: Instant?,
         end: Instant,
-        zone: ZoneId,
+        zone: TimeZone,
         contact: TrustedContact,
         mode: SessionMode,
     ): FlexEngine.PlanResult {
@@ -453,7 +453,7 @@ object Mama {
      * running: no series, no FLEX period, no session.
      */
     @Synchronized
-    fun startTest(context: Context, contact: TrustedContact, zone: ZoneId, mode: SessionMode): TestStart {
+    fun startTest(context: Context, contact: TrustedContact, zone: TimeZone, mode: SessionMode): TestStart {
         if (!FeatureFlags.TEST_MODE_ENABLED) return TestStart.Busy
         val r = reconcile(context)
         if (!idle(r)) return TestStart.Busy

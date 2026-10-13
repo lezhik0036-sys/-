@@ -22,16 +22,15 @@ import app.mama.ui.RingView
 import app.mama.ui.Scene
 import app.mama.ui.Texts
 import app.mama.ui.Tone
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
 
 /** What the lock screen shows; built by [LockOverlay] (or a preview) every tick. */
 data class LockModel(
     val now: Instant,
     val start: Instant,
     val end: Instant,
-    val zone: ZoneId,
+    val zone: TimeZone,
     val contactName: String,
     val contactPhone: String,
     /** "День 3 из 7", "Тестовый режим", "FLEX-период"… */
@@ -324,11 +323,11 @@ class LockScreenView(private val context: Context, private val actions: LockActi
     // ---------------- binding ----------------
 
     fun bind(m: LockModel) {
-        val left = Duration.between(m.now, m.end)
+        val left = m.end - m.now
         val (h, mi, s) = Texts.hms(left)
         countdown.text = "$h:$mi:$s"
-        val total = Duration.between(m.start, m.end).toMillis().coerceAtLeast(1)
-        ring.progress = 1f - left.toMillis().coerceIn(0, total).toFloat() / total
+        val total = (m.end - m.start).inWholeMilliseconds.coerceAtLeast(1)
+        ring.progress = 1f - left.inWholeMilliseconds.coerceIn(0, total).toFloat() / total
         dayLabel.text = m.dayLabel
         phrase.text = m.phrase
         subline.text = if (m.promise.isNotBlank()) "«${m.promise}»" else Texts.LOCK_SUBLINE
@@ -355,7 +354,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         promiseBlock.visibility = if (m.promise.isBlank()) View.GONE else View.VISIBLE
         promiseText.text = "«${m.promise}»"
         requestButton.text = "Запросить код у: ${m.contactName}"
-        val canRequest = m.resendAt == null || !m.now.isBefore(m.resendAt)
+        val canRequest = m.resendAt.let { it == null || m.now >= it }
         requestButton.isEnabled = canRequest
         callContactButton.text = "Позвонить: ${m.contactName}"
         introMessage.text = m.message.orEmpty()
@@ -375,7 +374,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         resend.text = if (canRequest) {
             "Отправить код ещё раз"
         } else {
-            val (rh, rm, rs) = Texts.hms(Duration.between(m.now, m.resendAt))
+            val (rh, rm, rs) = Texts.hms((m.resendAt ?: m.now) - m.now)
             "Отправить код ещё раз (" + (if (rh != "00") "$rh:" else "") + "$rm:$rs)"
         }
     }

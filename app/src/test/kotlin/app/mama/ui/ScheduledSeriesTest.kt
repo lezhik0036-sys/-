@@ -19,7 +19,11 @@ import app.mama.core.Snapshot
 import app.mama.core.StateCodec
 import app.mama.core.TrustedContact
 import app.mama.core.Wallet
+import app.mama.core.minuteOfDay
+import app.mama.core.plusOnClock
 import app.mama.platform.Mama
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -30,10 +34,9 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * "Начать серию" schedules a series; it becomes binding only when its first
@@ -45,14 +48,14 @@ import java.time.ZoneId
 @Config(sdk = [34])
 class ScheduledSeriesTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
-    private val zone: ZoneId = ZoneId.systemDefault()
+    private val zone: TimeZone = TimeZone.currentSystemDefault()
     private val mom = TrustedContact("Мама", "+79001234567")
     private val sister = TrustedContact("Сестра", "+79007654321")
 
     /** A daily 8-hour window starting about [hoursAhead] hours from now. */
     private fun windowIn(hoursAhead: Long): DailyWindow {
-        val start = LocalTime.now(zone).plusHours(hoursAhead).withSecond(0).withNano(0)
-        return DailyWindow(start, start.plusHours(8), zone)
+        val start = Clock.System.now().minuteOfDay(zone).plusOnClock(hoursAhead.hours)
+        return DailyWindow(start, start.plusOnClock(8.hours), zone)
     }
 
     private fun seed(snapshot: Snapshot) {
@@ -106,18 +109,18 @@ class ScheduledSeriesTest {
         assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.SEVEN, windowIn(-1), mom, SessionMode.SLEEP))
         assertEquals(SeriesStatus.SCHEDULED, Mama.series(context)!!.status)
         val waiting = Mama.state(context) as LockState.Waiting
-        val untilStart = Duration.between(Instant.now(), waiting.startsAt)
-        assertTrue("first lock about 23 hours ahead: $untilStart", untilStart > Duration.ofHours(22) && untilStart < Duration.ofHours(24))
+        val untilStart = (waiting.startsAt - Clock.System.now())
+        assertTrue("first lock about 23 hours ahead: $untilStart", untilStart > 22.hours && untilStart < 24.hours)
     }
 
     @Test
     fun `start time reached without strict protection - needs attention, nothing charged, nothing failed`() {
         // A series confirmed two hours ago whose first lock started a minute ago.
-        val now = Instant.now()
-        val start = now.minusSeconds(60).atZone(zone).toLocalTime().withSecond(0).withNano(0)
+        val now = Clock.System.now()
+        val start = (now - 60.seconds).minuteOfDay(zone)
         val scheduled = SeriesFlow(LockEngine()).schedule(
             Snapshot(wallet = Wallet(availableKop = 10_000_00)), "s1", "n1", SeriesKind.SEVEN,
-            DailyWindow(start, start.plusHours(8), zone), mom, SessionMode.SLEEP, 5_000_00, now.minus(Duration.ofHours(2)),
+            DailyWindow(start, start.plusOnClock(8.hours), zone), mom, SessionMode.SLEEP, 5_000_00, now.minus(2.hours),
         ) as SeriesFlow.Result.Done
         seed(scheduled.snapshot)
 
@@ -151,9 +154,9 @@ class ScheduledSeriesTest {
 
     @Test
     fun `restart from the balance is held, and a cancel before the first lock gives it back and restores the failure`() {
-        val failedAt = Instant.now().minus(Duration.ofDays(2))
+        val failedAt = Clock.System.now().minus(2.days)
         val failed = Series(
-            "old", SeriesKind.SEVEN, windowIn(10), mom, SessionMode.SLEEP, startedAt = failedAt.minus(Duration.ofDays(3)),
+            "old", SeriesKind.SEVEN, windowIn(10), mom, SessionMode.SLEEP, startedAt = failedAt.minus(3.days),
             completedPeriods = 2, status = SeriesStatus.BROKEN, endedAt = failedAt,
         )
         seed(Snapshot(series = failed, entitlements = Entitlements(standardFailedAt = failedAt), wallet = Wallet(availableKop = 10_000_00)))

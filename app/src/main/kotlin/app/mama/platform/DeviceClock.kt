@@ -3,11 +3,11 @@ package app.mama.platform
 import android.content.Context
 import android.os.SystemClock
 import android.provider.Settings
-import java.time.Instant
+import kotlinx.datetime.Instant
 
 /** Platform clocks fed into [app.mama.core.ClockGuard]. */
 object DeviceClock {
-    fun wallNow(): Instant = Instant.ofEpochMilli(System.currentTimeMillis())
+    fun wallNow(): Instant = Instant.fromEpochMilliseconds(System.currentTimeMillis())
 
     /** Monotonic, counts deep sleep, cannot be changed by the user. */
     fun elapsedMs(): Long = SystemClock.elapsedRealtime()

@@ -27,11 +27,13 @@ import app.mama.core.SeriesDraft
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
+import app.mama.core.clockDistance
+import app.mama.core.plusOnClock
 import app.mama.platform.Mama
-import java.time.Duration
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.ZoneId
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlin.time.Duration
 
 /**
  * MAMA's only activity. Shows, in this order of priority: the result of a
@@ -61,9 +63,9 @@ class MainActivity : Activity() {
 
     internal var mode = SessionMode.SLEEP
     internal var choice = Choice.SEVEN
-    internal var start: LocalTime = LocalTime.of(23, 0)
-    internal var end: LocalTime = LocalTime.of(7, 0)
-    internal var zone: ZoneId = ZoneId.systemDefault()
+    internal var start: LocalTime = LocalTime(23, 0)
+    internal var end: LocalTime = LocalTime(7, 0)
+    internal var zone: TimeZone = TimeZone.currentSystemDefault()
     internal var startMode = StartMode.MANUAL
     internal lateinit var contactName: EditText
     internal lateinit var contactPhone: EditText
@@ -112,9 +114,9 @@ class MainActivity : Activity() {
         // Back on the same wizard step after a screen rotation or recreation.
         savedInstanceState?.getString(STATE_STEP)?.let { s -> runCatching { step = Step.valueOf(s) } }
         savedInstanceState?.getString(STATE_RESTART_STEP)?.let { s -> runCatching { restartStep = Step.valueOf(s); restartFlow = true } }
-        start = runCatching { LocalTime.parse(prefs.getString("start", null)) }.getOrDefault(start)
-        end = runCatching { LocalTime.parse(prefs.getString("end", null)) }.getOrDefault(end)
-        zone = runCatching { ZoneId.of(prefs.getString("zone", null)) }.getOrDefault(zone)
+        start = runCatching { LocalTime.parse(prefs.getString("start", null)!!) }.getOrDefault(start)
+        end = runCatching { LocalTime.parse(prefs.getString("end", null)!!) }.getOrDefault(end)
+        zone = runCatching { TimeZone.of(prefs.getString("zone", null)!!) }.getOrDefault(zone)
         // A draft from before AUTO_NOW keeps its time as it was: MANUAL.
         startMode = runCatching { StartMode.valueOf(prefs.getString(DRAFT_START_MODE, null)!!) }.getOrDefault(StartMode.MANUAL)
         contactName = kit.textField("Имя, например «Жена»", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
@@ -179,7 +181,7 @@ class MainActivity : Activity() {
     internal fun beginDraft() {
         if (prefs.getBoolean(DRAFT_OPEN, false)) return
         prefs.edit().putBoolean(DRAFT_OPEN, true).putBoolean(DRAFT_TIME_SET, false).apply()
-        zone = ZoneId.systemDefault()
+        zone = TimeZone.currentSystemDefault()
     }
 
     /**
@@ -199,14 +201,14 @@ class MainActivity : Activity() {
 
     /** The draft's window length (start to end, across midnight); zero when they coincide. */
     internal val draftLength: Duration
-        get() = Duration.between(start, end).let { if (it.isNegative) it.plusDays(1) else it }
+        get() = clockDistance(start, end)
 
     /** AUTO_NOW: the preview start follows the current minute and the end keeps the chosen length. */
     internal fun refreshAutoNow() {
         if (startMode != StartMode.AUTO_NOW || preview != null) return
         val length = draftLength
         start = SeriesDraft.freshTimes(Mama.trustedNow(this), zone).first
-        end = start.plus(length)
+        end = start.plusOnClock(length)
         saveForm()
     }
 

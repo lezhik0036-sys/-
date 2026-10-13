@@ -24,8 +24,12 @@ import app.mama.core.Snapshot
 import app.mama.core.StateCodec
 import app.mama.core.TrustedContact
 import app.mama.core.Wallet
+import app.mama.core.minuteOfDay
+import app.mama.core.plusOnClock
 import app.mama.platform.EmergencyCalls
 import app.mama.platform.Mama
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -37,16 +41,15 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
 
 /** Emergency calls through the real platform code: list, dialer, session — and nothing else changes. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class EmergencyCallsTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
-    private val zone: ZoneId = ZoneId.systemDefault()
+    private val zone: TimeZone = TimeZone.currentSystemDefault()
     private val mom = TrustedContact("Мама", "+79001234567")
 
     private fun telephony(on: Boolean) {
@@ -56,13 +59,13 @@ class EmergencyCallsTest {
 
     /** An ACTIVE 7-day series in its first night, with «Цена слова» 5 000 fixed. */
     private fun activeSeries() {
-        val now = Instant.now()
-        val start = now.minus(Duration.ofHours(1))
-        val window = DailyWindow(start.atZone(zone).toLocalTime().withSecond(0).withNano(0), start.atZone(zone).toLocalTime().plusHours(8).withSecond(0).withNano(0), zone)
+        val now = Clock.System.now()
+        val start = now.minus(1.hours)
+        val window = DailyWindow(start.minuteOfDay(zone), start.minuteOfDay(zone).plusOnClock(8.hours), zone)
         val snapshot = Snapshot(
-            session = Session("night1", LockPlan(start, now.plus(Duration.ofHours(7)), zone), mom, SessionStatus.ACTIVE),
+            session = Session("night1", LockPlan(start, now.plus(7.hours), zone), mom, SessionStatus.ACTIVE),
             lastTrusted = now,
-            series = Series("s1", SeriesKind.SEVEN, window, mom, SessionMode.SLEEP, startedAt = now.minus(Duration.ofDays(1)), status = SeriesStatus.ACTIVE, actualStartedAt = start, lastSessionId = null),
+            series = Series("s1", SeriesKind.SEVEN, window, mom, SessionMode.SLEEP, startedAt = now.minus(1.days), status = SeriesStatus.ACTIVE, actualStartedAt = start, lastSessionId = null),
             wallet = Wallet(
                 availableKop = 5_000_00, reservedKop = 5_000_00,
                 commitments = listOf(Commitment("s1", 5_000_00, start, CommitmentState.RESERVED, fixedAt = start)),

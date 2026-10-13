@@ -7,7 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import app.mama.core.ClockGuard
-import java.time.Instant
+import kotlinx.datetime.Instant
 
 /** One wake-up at the next moment the lock state changes by itself. */
 object Alarms {
@@ -22,7 +22,7 @@ object Alarms {
             return
         }
         // Alarms run on the (possibly skewed) system clock; convert from trusted time.
-        val wall = ClockGuard.wallTimeFor(target, trustedNow, DeviceClock.wallNow()).toEpochMilli()
+        val wall = ClockGuard.wallTimeFor(target, trustedNow, DeviceClock.wallNow()).toEpochMilliseconds()
         if (canScheduleExact(context)) {
             am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, wall, pi)
         } else {
