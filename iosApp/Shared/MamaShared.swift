@@ -1,4 +1,5 @@
 import DeviceActivity
+import FamilyControls
 import Foundation
 import ManagedSettings
 
@@ -26,15 +27,18 @@ extension DeviceActivityName {
 }
 
 /// The iPhone protection: the widest shield Screen Time allows. The user does
-/// not pick apps: every app category and every web category is shielded, and
-/// MAMA cannot be deleted while it is on. Phone and emergency calls are never
-/// shielded by iOS.
+/// not pick apps: every app category and every web category is shielded.
+/// Phone and emergency calls are never shielded by iOS.
+///
+/// With individual authorization (the adult owner of the iPhone) iOS gives no
+/// parental-control protections: the user can still delete MAMA, sign out of
+/// iCloud or withdraw Screen Time access. MAMA does not claim otherwise;
+/// access withdrawn during an ACTIVE series is detected and is a failure.
 enum Shield {
     static func on() {
         let store = ManagedSettingsStore(named: .mama)
         store.shield.applicationCategories = .all()
         store.shield.webDomainCategories = .all()
-        store.application.denyAppRemoval = true
         var times = MamaShared.defaults.array(forKey: MamaShared.shieldOnTimesKey) as? [Int64] ?? []
         times.append(MamaShared.nowMs)
         MamaShared.defaults.set(Array(times.suffix(14)), forKey: MamaShared.shieldOnTimesKey)
@@ -125,4 +129,39 @@ enum TestShield {
     }
 
     static var isScheduled: Bool { DeviceActivityCenter().activities.contains(.test) }
+}
+
+/// Raw Screen Time readings with their time, from the app and from the
+/// monitor extension. The app folds them into a verdict with the shared rules
+/// (`MamaBridge.observeAccess`): only a denial that lasts is a withdrawal.
+enum AccessLog {
+    private static let key = "mama.accessReadings"
+
+    /// The current authorization status, as a shared `AccessReading` name.
+    static func reading() -> String {
+        switch AuthorizationCenter.shared.authorizationStatus {
+        case .approved: return "APPROVED"
+        case .denied: return "DENIED"
+        case .notDetermined: return "NOT_DETERMINED"
+        @unknown default: return "UNREADABLE"
+        }
+    }
+
+    static func record() {
+        var list = MamaShared.defaults.stringArray(forKey: key) ?? []
+        list.append("\(MamaShared.nowMs)|\(reading())")
+        MamaShared.defaults.set(Array(list.suffix(20)), forKey: key)
+    }
+
+    /// The readings not folded yet, oldest first; they are removed.
+    static func drain() -> [(ms: Int64, reading: String)] {
+        let list = MamaShared.defaults.stringArray(forKey: key) ?? []
+        MamaShared.defaults.removeObject(forKey: key)
+        return list.compactMap { entry -> (ms: Int64, reading: String)? in
+            let parts = entry.split(separator: "|")
+            guard parts.count == 2, let ms = Int64(parts[0]) else { return nil }
+            return (ms: ms, reading: String(parts[1]))
+        }
+        .sorted { $0.ms < $1.ms }
+    }
 }

@@ -98,6 +98,18 @@ class LockEngine(
         return finish(s, FinishReason.CANCELLED_BEFORE_START, now)
     }
 
+    /**
+     * The platform protection was deliberately switched off: the lock ends at
+     * [now] like one left early ([FinishReason.PROTECTION_REVOKED]); a planned
+     * lock that has not started ends too. A finished session stays as it was,
+     * so a repeated report changes nothing.
+     */
+    fun revoke(session: Session, now: Instant): Session {
+        val s = advance(session, now)
+        if (s.status == SessionStatus.FINISHED) return s
+        return finish(s, FinishReason.PROTECTION_REVOKED, now)
+    }
+
     sealed interface CodeRequestResult {
         /**
          * A new code was generated. [plainCode] must be sent to [Session.contact]

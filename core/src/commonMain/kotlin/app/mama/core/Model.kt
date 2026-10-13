@@ -84,6 +84,13 @@ enum class FinishReason {
 
     /** The user changed their mind before the lock started. */
     CANCELLED_BEFORE_START,
+
+    /**
+     * The platform protection was deliberately switched off during the lock
+     * (iPhone: Screen Time access confirmed withdrawn). Counts like leaving
+     * early: a series fails, a FLEX period is burnt.
+     */
+    PROTECTION_REVOKED,
 }
 
 data class Session(

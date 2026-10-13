@@ -20,6 +20,21 @@ func lengthText(_ minutes: Int) -> String {
     return h == 0 ? "\(m) мин" : "\(h) ч \(m) мин"
 }
 
+/// "1 день", "2 дня", "5 дней".
+func daysText(_ n: Int) -> String {
+    let word: String
+    if (11...14).contains(n % 100) {
+        word = "дней"
+    } else if n % 10 == 1 {
+        word = "день"
+    } else if (2...4).contains(n % 10) {
+        word = "дня"
+    } else {
+        word = "дней"
+    }
+    return "\(n) \(word)"
+}
+
 /// "сегодня, 23:00" / "завтра, 07:00".
 func moment(_ epochMs: Int64) -> String {
     let f = DateFormatter()
@@ -99,6 +114,9 @@ struct HomeView: View {
             Text("Защита").font(.headline)
             Text("MAMA включает блокировку через Screen Time. Приложения выбирать не нужно: MAMA закрывает всё, что разрешает закрыть iPhone. Звонки и экстренные вызовы всегда доступны.")
                 .foregroundStyle(Theme.muted)
+            Text("Доступ можно отключить в Настройках. Если отключить его во время серии, серия будет считаться сорванной.")
+                .font(.footnote)
+                .foregroundStyle(Theme.muted)
             Button("Разрешить Screen Time") { model.requestAuthorization() }
                 .buttonStyle(.borderedProminent)
         }
@@ -109,13 +127,25 @@ struct HomeView: View {
             if let s = model.series, s.status == "COMPLETED" {
                 Text("Серия пройдена").font(.headline)
                 Text("\(s.days) из \(s.days). Ты держишь слово, данное себе.").foregroundStyle(Theme.muted)
+            } else if let s = model.series, s.status == "BROKEN" {
+                Text("Серия завершена досрочно").font(.headline)
+                Text(s.endReason == "PROTECTION_REVOKED"
+                    ? "Доступ Screen Time был отключён во время серии."
+                    : "Ты прошёл \(s.completed) из \(s.days) дней.")
+                    .foregroundStyle(Theme.muted)
             } else {
                 Text("Серия").font(.headline)
                 Text("3, 5 или 7 дней. Одно окно времени каждый день.").foregroundStyle(Theme.muted)
             }
+            let wait = model.daysUntilFreeStart
+            if wait > 0 {
+                Text("Следующая бесплатная серия через \(daysText(wait)). Телефон при этом не заблокирован.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.muted)
+            }
             Button("Начать") { model.beginDraft() }
                 .buttonStyle(.borderedProminent)
-                .disabled(!model.authorized)
+                .disabled(!model.authorized || wait > 0)
         }
     }
 }
@@ -130,6 +160,11 @@ struct SeriesCard: View {
             Text(subtitle).foregroundStyle(Theme.muted)
             Text("\(clock(Int(series.startMinute))) → \(clock(Int(series.endMinute))) · каждый день")
             Text("Доверенный контакт: \(series.contactName)").foregroundStyle(Theme.muted)
+            if series.status == "ACTIVE" {
+                Text("Отключение доступа Screen Time во время серии — срыв.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.muted)
+            }
             if series.status == "NEEDS_ATTENTION" {
                 Button("Подтвердить запуск") { model.relaunch() }
                     .buttonStyle(.borderedProminent)
@@ -330,6 +365,10 @@ struct TestShieldCard: View {
                 .disabled(!model.authorized)
             if model.testScheduled {
                 Text("Расписание создано: щит включит DeviceActivity.").font(.footnote).foregroundStyle(Theme.muted)
+            }
+            Text("Доступ Screen Time: \(model.accessVerdict)").font(.footnote).foregroundStyle(Theme.muted)
+            if let restored = model.protectionRestoredAtMs {
+                Text("Защита восстановлена: \(moment(restored))").font(.footnote).foregroundStyle(Theme.muted)
             }
         }
     }

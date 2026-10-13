@@ -222,6 +222,7 @@ object Texts {
         FinishReason.COMPLETED -> "завершена по плану"
         FinishReason.EXITED_WITH_CONTACT -> "завершена досрочно по коду доверенного контакта"
         FinishReason.CANCELLED_BEFORE_START -> "отменена до начала"
+        FinishReason.PROTECTION_REVOKED -> "завершена досрочно: защита была отключена"
         null -> "—"
     }
 }

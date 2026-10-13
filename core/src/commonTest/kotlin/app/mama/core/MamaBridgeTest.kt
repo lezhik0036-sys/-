@@ -63,7 +63,7 @@ class MamaBridgeTest {
         val state = scheduled(autoNow = true, start = 16 * 60 + 53, end = 53, nowIso = now)
         assertEquals("ACTIVATING", bridge.view(state)!!.status)
         assertTrue(bridge.view(state)!!.autoNow)
-        val active = bridge.refresh(state, ms(now) + 2_000, "n2", shieldOnTimesMs = listOf(ms(now) + 1_000), authorized = true).state!!
+        val active = bridge.refresh(state, ms(now) + 2_000, "n2", shieldOnTimesMs = listOf(ms(now) + 1_000), access = "APPROVED").state!!
         val v = bridge.view(active)!!
         assertEquals("ACTIVE", v.status)
         assertFalse(v.autoNow, "frozen at ACTIVE")
@@ -78,28 +78,28 @@ class MamaBridgeTest {
         assertEquals("SCHEDULED", v.status)
         assertEquals(ms("2026-10-12T20:00:00Z"), v.lockStartMs)
         // Opened at 01:00: the shield came on at 23:00:02.
-        val r = bridge.refresh(state, ms("2026-10-12T22:00:00Z"), "n2", shieldOnTimesMs = listOf(ms("2026-10-12T20:00:02Z")), authorized = true)
+        val r = bridge.refresh(state, ms("2026-10-12T22:00:00Z"), "n2", shieldOnTimesMs = listOf(ms("2026-10-12T20:00:02Z")), access = "APPROVED")
         assertEquals("ACTIVE", bridge.view(r.state!!)!!.status)
     }
 
     @Test
     fun `lock started without the shield - or without Screen Time - the series did not begin`() {
         val state = scheduled(autoNow = false, start = 23 * 60, end = 7 * 60, nowIso = "2026-10-12T17:00:00Z")
-        val late = bridge.refresh(state, (t("2026-10-12T20:00:00Z") + 5.minutes).toEpochMilliseconds(), "n2", shieldOnTimesMs = emptyList(), authorized = true)
+        val late = bridge.refresh(state, (t("2026-10-12T20:00:00Z") + 5.minutes).toEpochMilliseconds(), "n2", shieldOnTimesMs = emptyList(), access = "APPROVED")
         assertEquals("NEEDS_ATTENTION", bridge.view(late.state!!)!!.status)
-        val denied = bridge.refresh(state, ms("2026-10-12T20:00:05Z"), "n2", shieldOnTimesMs = listOf(ms("2026-10-12T20:00:01Z")), authorized = false)
+        val denied = bridge.refresh(state, ms("2026-10-12T20:00:05Z"), "n2", shieldOnTimesMs = listOf(ms("2026-10-12T20:00:01Z")), access = "CONFIRMED_DENIED")
         assertEquals("NEEDS_ATTENTION", bridge.view(denied.state!!)!!.status)
         // A shield from an earlier lock does not count for this one; the earliest one during this lock does.
-        val stale = bridge.refresh(state, ms("2026-10-12T20:00:05Z") + 3.minutes.inWholeMilliseconds, "n2", shieldOnTimesMs = listOf(ms("2026-10-11T20:00:01Z")), authorized = true)
+        val stale = bridge.refresh(state, ms("2026-10-12T20:00:05Z") + 3.minutes.inWholeMilliseconds, "n2", shieldOnTimesMs = listOf(ms("2026-10-11T20:00:01Z")), access = "APPROVED")
         assertEquals("NEEDS_ATTENTION", bridge.view(stale.state!!)!!.status)
-        val mixed = bridge.refresh(state, ms("2026-10-12T22:00:00Z"), "n2", shieldOnTimesMs = listOf(ms("2026-10-11T20:00:01Z"), ms("2026-10-12T20:00:03Z")), authorized = true)
+        val mixed = bridge.refresh(state, ms("2026-10-12T22:00:00Z"), "n2", shieldOnTimesMs = listOf(ms("2026-10-11T20:00:01Z"), ms("2026-10-12T20:00:03Z")), access = "APPROVED")
         assertEquals("ACTIVE", bridge.view(mixed.state!!)!!.status)
     }
 
     @Test
     fun `AUTO_NOW needing attention is relaunched from the moment of the relaunch`() {
         val state = scheduled(autoNow = true, start = 18 * 60, end = 2 * 60, nowIso = "2026-10-12T15:00:00Z")
-        val missed = bridge.refresh(state, ms("2026-10-12T15:00:05Z"), "n2", shieldOnTimesMs = emptyList(), authorized = false).state!!
+        val missed = bridge.refresh(state, ms("2026-10-12T15:00:05Z"), "n2", shieldOnTimesMs = emptyList(), access = "CONFIRMED_DENIED").state!!
         assertEquals("NEEDS_ATTENTION", bridge.view(missed)!!.status)
         val relaunched = bridge.relaunch(missed, ms("2026-10-12T15:20:00Z"), "n3").state!!
         val v = bridge.view(relaunched)!!

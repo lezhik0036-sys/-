@@ -15,10 +15,13 @@ import kotlin.time.Duration.Companion.days
  * Protection itself is native on each platform. On the iPhone it is the
  * Screen Time shield; the app reports when it was switched on for the current
  * lock ([refresh]), and that is the commitment point (ACTIVATING → ACTIVE).
+ * Screen Time access confirmed withdrawn during an ACTIVE series or FLEX
+ * period is a failure ([observeAccess], [refresh]).
  */
 object MamaBridge {
     private val lock = LockEngine()
     private val flow = SeriesFlow(lock)
+    private val flex = FlexEngine(lock)
 
     /** Series lengths offered at the start: 3, 5 and 7 days. */
     val seriesDays: List<Int> get() = SeriesKind.entries.map { it.periods }
@@ -90,16 +93,38 @@ object MamaBridge {
         }
     }
 
+    /** How long a "denied" reading must last before it counts ([AccessWatch.CONFIRM_AFTER]). */
+    val accessConfirmAfterMs: Long get() = AccessWatch.CONFIRM_AFTER.inWholeMilliseconds
+
+    /**
+     * One more Screen Time reading ([AccessReading] name: APPROVED, DENIED,
+     * NOT_DETERMINED, UNREADABLE) folded into the evidence so far
+     * ([deniedSinceMs], kept by the app). The verdict is an [AccessVerdict] name.
+     */
+    fun observeAccess(reading: String, deniedSinceMs: Long?, nowMs: Long): AccessCheck {
+        val parsed = AccessReading.entries.firstOrNull { it.name == reading } ?: AccessReading.UNREADABLE
+        val step = AccessWatch.observe(parsed, deniedSinceMs?.let(Instant::fromEpochMilliseconds), Instant.fromEpochMilliseconds(nowMs))
+        return AccessCheck(step.verdict.name, step.deniedSince?.toEpochMilliseconds())
+    }
+
     /**
      * Brings [state] up to [nowMs]. [shieldOnTimesMs] are the moments the
      * iPhone shield was switched on (by the app at an AUTO_NOW launch, or by
-     * the DeviceActivity monitor when a window began). A first lock during
-     * which the shield came on, with Screen Time authorized, is the commitment
-     * point: the series becomes ACTIVE as of that moment. If Screen Time is not
-     * authorized, or the shield never came on, the series did not begin
-     * (NEEDS_ATTENTION), exactly as on Android.
+     * the DeviceActivity monitor when a window began). [access] is the
+     * [AccessVerdict] name from [observeAccess].
+     *
+     * - A first lock during which the shield came on, with access APPROVED,
+     *   is the commitment point: the series becomes ACTIVE as of that moment.
+     *   Without that the series does not begin (the activation timeout leads
+     *   to NEEDS_ATTENTION, exactly as on Android).
+     * - CONFIRMED_DENIED before ACTIVE: NEEDS_ATTENTION, no consequences.
+     * - CONFIRMED_DENIED while ACTIVE: the series fails (once) and the
+     *   ordinary failure rules follow; a running FLEX period is burnt.
+     * - UNKNOWN never fails anything.
      */
-    fun refresh(state: Map<String, String>, nowMs: Long, nextSessionId: String, shieldOnTimesMs: List<Long>, authorized: Boolean): Outcome {
+    fun refresh(state: Map<String, String>, nowMs: Long, nextSessionId: String, shieldOnTimesMs: List<Long>, access: String): Outcome {
+        val approved = access == AccessVerdict.APPROVED.name
+        val denied = access == AccessVerdict.CONFIRMED_DENIED.name
         val now = Instant.fromEpochMilliseconds(nowMs)
         var s = StateCodec.decode(state)
         // A first lock that began while the app was not running began at its start time
@@ -117,13 +142,28 @@ object MamaBridge {
                 .filter { it >= lockNow.plan.start && it < lockNow.plan.end && it <= now }
                 .minOrNull()
         }
-        if (authorized && at != null && s.series?.status == SeriesStatus.ACTIVATING) {
+        if (approved && at != null && s.series?.status == SeriesStatus.ACTIVATING) {
             flow.confirm(s, at)?.let { s = it }
         }
         s = flow.fold(s.copy(session = s.session?.let { lock.advance(it, now) }), nextSessionId, now)
-        if (s.series?.status == SeriesStatus.ACTIVATING && !authorized) s = flow.protectionFailed(s, now) ?: s
+        if (denied) {
+            when (s.series?.status) {
+                SeriesStatus.ACTIVATING -> s = flow.protectionFailed(s, now) ?: s
+                SeriesStatus.ACTIVE -> s = flow.protectionRevoked(s, nextSessionId, now) ?: s
+                else -> {}
+            }
+            s.entitlements.flex?.let { pkg ->
+                flex.protectionRevoked(pkg, s.session, now)?.let { r ->
+                    s = s.copy(session = r.session, entitlements = s.entitlements.copy(flex = r.pkg))
+                }
+            }
+        }
         return Outcome.of(s)
     }
+
+    /** Whole days until a free series may start (the 30 days after a failure), 0 if now. */
+    fun daysUntilFreeStart(state: Map<String, String>, nowMs: Long): Int =
+        StandardRules.daysUntilFreeStart(StateCodec.decode(state).entitlements, Instant.fromEpochMilliseconds(nowMs)).toInt()
 
     /** «Отменить запуск» before ACTIVE: no consequences. NOT_ALLOWED once ACTIVE. */
     fun cancel(state: Map<String, String>, nowMs: Long): Outcome {
@@ -155,6 +195,7 @@ object MamaBridge {
             contactPhone = series.contact.phone,
             lockStartMs = session?.plan?.start?.toEpochMilliseconds(),
             lockEndMs = session?.plan?.end?.toEpochMilliseconds(),
+            endReason = s.session?.takeIf { series.status == SeriesStatus.BROKEN }?.finishReason?.name,
         )
     }
 
@@ -203,7 +244,12 @@ data class SeriesView(
     /** The current or next lock, if one is planned. */
     val lockStartMs: Long?,
     val lockEndMs: Long?,
+    /** For a failed series: how its last lock ended ([FinishReason] name), e.g. PROTECTION_REVOKED. */
+    val endReason: String?,
 )
+
+/** An [AccessVerdict] name, and since when access has read "denied" (keep it for the next reading). */
+data class AccessCheck(val verdict: String, val deniedSinceMs: Long?)
 
 /** A new state to store, or an error code ([MamaBridge.BUSY] and so on). */
 data class Outcome(val state: Map<String, String>?, val error: String?) {

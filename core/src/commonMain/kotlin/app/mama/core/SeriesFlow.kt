@@ -142,6 +142,19 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         return settle(s.copy(series = u.series, session = u.session), now)
     }
 
+    /**
+     * The platform protection was deliberately switched off during an ACTIVE
+     * series (see [SeriesEngine.protectionRevoked]): it fails, and the
+     * ordinary failure rules follow in the same step — Restart, the 30-day
+     * wait, «Цена слова». Null when the series is not ACTIVE (also when it has
+     * already failed), so one withdrawal never fails or charges twice.
+     */
+    fun protectionRevoked(s: Snapshot, nextSessionId: String, now: Instant): Snapshot? {
+        val current = s.series ?: return null
+        val u = series.protectionRevoked(current, s.session, nextSessionId, now) ?: return null
+        return settle(s.copy(series = u.series, session = u.session), now)
+    }
+
     /** Phone not unlocked since a reboot: the activation timeout waits (see [SeriesEngine.awaitUnlock]). */
     fun awaitUnlock(s: Snapshot, now: Instant): Snapshot {
         val current = s.series ?: return s

@@ -1,3 +1,4 @@
+import Combine
 import FamilyControls
 import Foundation
 import MamaCore
@@ -15,6 +16,10 @@ final class AppModel: ObservableObject {
     @Published var alert: String?
     @Published var testShieldOn = TestShield.isOn
     @Published var testScheduled = TestShield.isScheduled
+    /// The shared verdict on Screen Time access: APPROVED, CONFIRMED_DENIED or UNKNOWN.
+    @Published var accessVerdict = "UNKNOWN"
+    /// Debug: when MAMA last had to put the shield or the schedule back during an ACTIVE series.
+    @Published var protectionRestoredAtMs: Int64?
 
     // The draft: series → time → trusted contact → «Цена слова» → launch.
     @Published var days = 7
@@ -26,6 +31,10 @@ final class AppModel: ObservableObject {
 
     private let bridge = MamaBridge.shared
     private let stateKey = "mama.state"
+    private let deniedSinceKey = "mama.accessDeniedSinceMs"
+    private let restoredKey = "mama.protectionRestoredAtMs"
+    private var authorizationWatch: AnyCancellable?
+    private var recheckScheduled = false
 
     /// Usable from SwiftUI's non-isolated property initializers (@StateObject); state is read in [refresh].
     nonisolated init() {}
@@ -38,6 +47,9 @@ final class AppModel: ObservableObject {
         guard let s = series else { return false }
         return ["SCHEDULED", "ACTIVATING", "NEEDS_ATTENTION", "ACTIVE"].contains(s.status)
     }
+
+    /// Whole days until a free series may start again (the 30 days after a failure).
+    var daysUntilFreeStart: Int { Int(bridge.daysUntilFreeStart(state: state, nowMs: MamaShared.nowMs)) }
 
     /// The shared state, stored as the shared codec's string map in the App Group.
     private var state: [String: String] {
@@ -58,25 +70,95 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Brings the series up to now: the moments the shield came on are the commitment point.
+    /// Brings the series up to now. Runs at launch, on every return to the
+    /// foreground and whenever Screen Time reports a change; background
+    /// callbacks are not relied on. The moments the shield came on are the
+    /// commitment point; Screen Time access confirmed withdrawn during an
+    /// ACTIVE series is a failure (the shared rules make it happen once).
     func refresh() {
+        watchAuthorization()
         authorization = AuthorizationCenter.shared.authorizationStatus
+        let access = checkAccess()
+        accessVerdict = access.verdict
         let outcome = bridge.refresh(
             state: state,
             nowMs: MamaShared.nowMs,
             nextSessionId: UUID().uuidString,
             shieldOnTimesMs: Shield.onTimes.map { KotlinLong(value: $0) },
-            authorized: authorized
+            access: access.verdict
         )
         if let next = outcome.state { state = next }
         series = bridge.view(state: state)
-        if !inProgress {
+        if inProgress {
+            keepProtected(access.verdict)
+        } else {
             // Nothing left to protect.
             if Schedule.isMonitoring { Schedule.stop() }
             if Shield.isOn { Shield.off() }
         }
+        // A denial is only believed when it lasts: look again shortly.
+        if access.pending { recheckSoon() }
         testShieldOn = TestShield.isOn
         testScheduled = TestShield.isScheduled
+        protectionRestoredAtMs = MamaShared.defaults.object(forKey: restoredKey) as? Int64
+    }
+
+    /// Screen Time may report a change while MAMA is open; not guaranteed in the background.
+    private func watchAuthorization() {
+        guard authorizationWatch == nil else { return }
+        authorizationWatch = AuthorizationCenter.shared.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
+    }
+
+    /// Every Screen Time reading since the last check (the app's own now, the
+    /// monitor's at its callbacks), folded with the shared rules into a verdict.
+    /// `pending`: access reads "denied" but is not confirmed yet.
+    private func checkAccess() -> (verdict: String, pending: Bool) {
+        AccessLog.record()
+        var since = (MamaShared.defaults.object(forKey: deniedSinceKey) as? Int64).map { KotlinLong(value: $0) }
+        var verdict = "UNKNOWN"
+        for r in AccessLog.drain() {
+            let check = bridge.observeAccess(reading: r.reading, deniedSinceMs: since, nowMs: r.ms)
+            verdict = check.verdict
+            since = check.deniedSinceMs
+        }
+        if let since {
+            MamaShared.defaults.set(since.int64Value, forKey: deniedSinceKey)
+        } else {
+            MamaShared.defaults.removeObject(forKey: deniedSinceKey)
+        }
+        return (verdict, since != nil && verdict != "CONFIRMED_DENIED")
+    }
+
+    private func recheckSoon() {
+        guard !recheckScheduled else { return }
+        recheckScheduled = true
+        let delay = UInt64(bridge.accessConfirmAfterMs + 500) * 1_000_000
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            self?.recheckScheduled = false
+            self?.refresh()
+        }
+    }
+
+    /// During an ACTIVE series with access approved the schedule and, inside
+    /// the window, the shield must be on. If iOS dropped them (for example
+    /// after access was withdrawn and given back before MAMA was opened), put
+    /// them back and note it. That is not a failure: it cannot be proved.
+    private func keepProtected(_ verdict: String) {
+        guard verdict == "APPROVED", let v = series, v.status == "ACTIVE" else { return }
+        var restored = false
+        if !Schedule.isMonitoring {
+            protect()
+            restored = true
+        }
+        if let start = v.lockStartMs?.int64Value, let end = v.lockEndMs?.int64Value,
+           start <= MamaShared.nowMs, MamaShared.nowMs < end, !Shield.isOn {
+            Shield.on()
+            restored = true
+        }
+        if restored { MamaShared.defaults.set(MamaShared.nowMs, forKey: restoredKey) }
     }
 
     // MARK: - Draft

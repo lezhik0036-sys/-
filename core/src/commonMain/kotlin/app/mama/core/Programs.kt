@@ -199,6 +199,23 @@ class FlexEngine(private val engine: LockEngine, private val policy: CorePolicy 
 
     data class Update(val pkg: FlexPackage, val rewardEarnedNow: Boolean)
 
+    /** A FLEX period whose protection was deliberately switched off, and the package after it. */
+    data class Revoked(val pkg: FlexPackage, val session: Session)
+
+    /**
+     * The platform protection was deliberately switched off while a FLEX
+     * period was running: the period ends now and is burnt, as when left
+     * early (the ordinary FLEX rules; no 30-day wait). Null when no period of
+     * this package is running — a planned one that has not started, or one
+     * already over — so a repeated report changes nothing.
+     */
+    fun protectionRevoked(p: FlexPackage, session: Session?, now: Instant): Revoked? {
+        val running = session?.takeIf { it.id == p.currentSessionId }?.let { engine.advance(it, now) }
+        if (running == null || running.status != SessionStatus.ACTIVE) return null
+        val ended = engine.revoke(running, now)
+        return Revoked(afterSession(p, ended, now).pkg, ended)
+    }
+
     /**
      * Applies the current session to the package: consumed when it starts,
      * successful when completed, burnt when left early, freed when cancelled

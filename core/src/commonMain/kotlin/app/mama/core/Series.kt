@@ -229,6 +229,23 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
     }
 
     /**
+     * The platform protection was deliberately switched off while the series
+     * was ACTIVE (iPhone: Screen Time access confirmed withdrawn): the series
+     * fails at [now], exactly like leaving early, and the current or next lock
+     * ends. Only an ACTIVE series: before ACTIVE see [protectionFailed]; a
+     * finished series is not touched, so a repeated report changes nothing.
+     */
+    fun protectionRevoked(series: Series, session: Session?, nextSessionId: String, now: Instant): Update? {
+        if (series.status != SeriesStatus.ACTIVE) return null
+        val ended = session?.let { engine.revoke(it, now) }
+        if (ended != null && ended.finishReason == FinishReason.PROTECTION_REVOKED && ended.id != series.lastSessionId) {
+            return committed(series, ended, nextSessionId, now)
+        }
+        // No lock left to end (none planned): the series fails all the same.
+        return Update(series.copy(status = SeriesStatus.BROKEN, endedAt = now), ended ?: session)
+    }
+
+    /**
      * Before the first unlock after a reboot the guard cannot run yet; the
      * phone is held by the system lock screen meanwhile. The activation
      * timeout starts counting once the phone has been unlocked.
@@ -304,7 +321,7 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
                     Update(next, planNext(next, nextSessionId, now) ?: session)
                 }
             }
-            FinishReason.EXITED_WITH_CONTACT, FinishReason.CANCELLED_BEFORE_START, null ->
+            FinishReason.EXITED_WITH_CONTACT, FinishReason.CANCELLED_BEFORE_START, FinishReason.PROTECTION_REVOKED, null ->
                 Update(counted.copy(status = SeriesStatus.BROKEN, endedAt = endedAt), session)
         }
     }

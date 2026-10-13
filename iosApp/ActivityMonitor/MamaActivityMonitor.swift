@@ -7,6 +7,8 @@ import ManagedSettings
 final class MamaActivityMonitor: DeviceActivityMonitor {
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
+        // Evidence for the app: what Screen Time access looked like here.
+        AccessLog.record()
         if activity == .series {
             Shield.on()
         } else if activity == .test {
@@ -16,6 +18,7 @@ final class MamaActivityMonitor: DeviceActivityMonitor {
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
+        AccessLog.record()
         if activity == .series {
             Shield.off()
             // After the last lock of the series nothing is scheduled any more.
