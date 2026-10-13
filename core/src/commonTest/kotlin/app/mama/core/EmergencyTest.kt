@@ -17,7 +17,7 @@ class EmergencyTest {
     // ---------------- the list ----------------
 
     @Test
-    fun `russian SIM - 112, 101, 102, 103, 104 with their names, 112 first`() {
+    fun `russian SIM - 112 - 101 - 102 - 103 - 104 with their names - 112 first`() {
         val system = listOf(
             SystemEmergencyNumber("103", EmergencyCategory.AMBULANCE, db, "ru"),
             SystemEmergencyNumber("112", EmergencyCategory.UNSPECIFIED, def or db, "ru"),
@@ -35,7 +35,7 @@ class EmergencyTest {
     }
 
     @Test
-    fun `two-digit numbers of other countries stay - France 15, 17, 18`() {
+    fun `two-digit numbers of other countries stay - France 15 - 17 - 18`() {
         val system = listOf(
             SystemEmergencyNumber("15", EmergencyCategory.AMBULANCE, sim, "fr"),
             SystemEmergencyNumber("17", EmergencyCategory.POLICE, sim, "fr"),
@@ -56,7 +56,7 @@ class EmergencyTest {
     }
 
     @Test
-    fun `911 only when the system really recognises it here, not from the generic default list`() {
+    fun `911 only when the system really recognises it here - not from the generic default list`() {
         val russia = listOf(
             SystemEmergencyNumber("112", sources = def or db, countryIso = "ru"),
             SystemEmergencyNumber("911", sources = def, countryIso = "ru"),
@@ -77,7 +77,7 @@ class EmergencyTest {
     }
 
     @Test
-    fun `no system list - Russian pilot fallback in Russia or unknown country, only 112 elsewhere`() {
+    fun `no system list - Russian pilot fallback in Russia or unknown country - only 112 elsewhere`() {
         assertEquals(EmergencyNumberCatalog.RUSSIA_FALLBACK, EmergencyNumberCatalog.build(null, "ru"))
         assertEquals(EmergencyNumberCatalog.RUSSIA_FALLBACK, EmergencyNumberCatalog.build(emptyList(), null))
         assertEquals(listOf("112"), numbers(EmergencyNumberCatalog.build(null, "de")))
@@ -85,7 +85,7 @@ class EmergencyTest {
     }
 
     @Test
-    fun `only generic defaults (no SIM) - 112 is kept`() {
+    fun `only generic defaults with no SIM - 112 is kept`() {
         val noSim = listOf("112", "911", "000", "08", "110", "999", "118", "119").map { SystemEmergencyNumber(it, sources = def) }
         assertEquals(listOf("112"), numbers(EmergencyNumberCatalog.build(noSim, "")))
     }
@@ -111,7 +111,7 @@ class EmergencyTest {
     }
 
     @Test
-    fun `call started - kept for the whole call, even long after the grace period, and ends with the call`() {
+    fun `call started - kept for the whole call - even long after the grace period - and ends with the call`() {
         val calling = EmergencyCallPolicy.tick(opened, 10_000, CallObservation.ACTIVE, true)!!
         assertTrue(calling.callStarted)
         val muchLater = 1_000 + EmergencyCallPolicy.DIAL_GRACE_PERIOD.inWholeMilliseconds * 10
@@ -123,7 +123,7 @@ class EmergencyTest {
     }
 
     @Test
-    fun `back from the dialer without a call - session over, lock screen back`() {
+    fun `back from the dialer without a call - session over - lock screen back`() {
         assertNull(EmergencyCallPolicy.onFront(opened, FrontWindow.OTHER))
         // Or detected from the screen: no call window for 3 seconds (after the dialer had time to come up).
         val t0 = 1_000 + EmergencyCallPolicy.LAUNCH_SETTLE.inWholeMilliseconds
@@ -156,7 +156,7 @@ class EmergencyTest {
     }
 
     @Test
-    fun `call state unknown - the grace period never cuts a possible call, leaving still ends it`() {
+    fun `call state unknown - the grace period never cuts a possible call - leaving still ends it`() {
         val late = 1_000 + EmergencyCallPolicy.DIAL_GRACE_PERIOD.inWholeMilliseconds * 3
         assertNotNull(EmergencyCallPolicy.tick(opened, late, CallObservation.UNKNOWN, true))
         assertNotNull(EmergencyCallPolicy.tick(opened, late, CallObservation.UNKNOWN, null), "guard not running: kept")

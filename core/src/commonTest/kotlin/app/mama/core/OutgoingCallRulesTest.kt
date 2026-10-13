@@ -17,7 +17,7 @@ class OutgoingCallRulesTest {
     }
 
     @Test
-    fun `locked - any other number is cancelled, also the one typed after erasing 112 in the dialer`() {
+    fun `locked - any other number is cancelled - also the one typed after erasing 112 in the dialer`() {
         for (other in listOf("+79991112233", "89991112233", "9001234568", "1234", "*31#89001234567", "+19001234567")) {
             assertEquals(Decision.BLOCK, OutgoingCallRules.decide(locked = true, other, isEmergency = false, mom), other)
         }

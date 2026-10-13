@@ -47,7 +47,7 @@ class WalletTest {
     }
 
     @Test
-    fun `completed series releases the whole commitment, once`() {
+    fun `completed series releases the whole commitment - once`() {
         val reserved = ok(WalletEngine.reserve(funded(5_000), "s1", 5_000 * rub, t0))
         val done = series("s1").copy(status = SeriesStatus.COMPLETED, endedAt = t0 + 3.days)
         val w = WalletEngine.settle(reserved, done, t0 + 3.days)
@@ -59,7 +59,7 @@ class WalletTest {
     }
 
     @Test
-    fun `failed series forfeits the commitment and returns half after exactly 24 hours, once`() {
+    fun `failed series forfeits the commitment and returns half after exactly 24 hours - once`() {
         val reserved = ok(WalletEngine.reserve(funded(5_000), "s1", 5_000 * rub, t0))
         val failedAt = t0 + 30.hours
         val broken = series("s1").copy(status = SeriesStatus.BROKEN, endedAt = failedAt)
@@ -100,7 +100,7 @@ class WalletTest {
     }
 
     @Test
-    fun `restart costs the standard price, never the commitment`() {
+    fun `restart costs the standard price - never the commitment`() {
         // First free 3-day series with a 5 000 commitment fails; 2 500 comes back.
         val reserved = ok(WalletEngine.reserve(funded(5_000), "s1", 5_000 * rub, t0))
         val failed = WalletEngine.settle(reserved, series("s1").copy(status = SeriesStatus.BROKEN, endedAt = t0), t0)
@@ -145,7 +145,7 @@ class WalletTest {
     }
 
     @Test
-    fun `purchases use only the available balance, never the reserved one`() {
+    fun `purchases use only the available balance - never the reserved one`() {
         // Balance 10 000, "Цена слова" 5 000 reserved: only 5 000 can be spent.
         val reserved = ok(WalletEngine.reserve(funded(10_000), "s1", 5_000 * rub, t0))
         assertEquals(5_000 * rub, reserved.availableKop)
@@ -185,7 +185,7 @@ class WalletTest {
     }
 
     @Test
-    fun `return is due 24 hours after the moment of the exit, even if processed later`() {
+    fun `return is due 24 hours after the moment of the exit - even if processed later`() {
         val engine = engine()
         val seriesEngine = SeriesEngine(engine)
         val window = DailyWindow(LocalTime(23, 0), LocalTime(7, 0), MSK)

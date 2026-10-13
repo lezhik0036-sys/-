@@ -20,7 +20,7 @@ class AutoNowLaunchTest {
     private fun done(r: SeriesFlow.Result) = assertIs<SeriesFlow.Result.Done>(r).snapshot
 
     @Test
-    fun `1 - draft opened at 16_48, time untouched, confirmed at 16_53 - 16_53 to 00_53 right away, not tomorrow`() {
+    fun `1 - draft opened at 16_48 - time untouched - confirmed at 16_53 - 16_53 to 00_53 right away - not tomorrow`() {
         val confirmedAt = t("2026-10-12T13:53:20Z") // 16:53:20 Moscow; the preview said 16:48
         val s = done(flow.schedule(Snapshot(), "s1", "n1", SeriesKind.SEVEN, LaunchTime.AutoNow(eight, MSK), MOM, SessionMode.SLEEP, null, confirmedAt))
 
@@ -49,7 +49,7 @@ class AutoNowLaunchTest {
     }
 
     @Test
-    fun `2 - start set by hand to 18_00 - 02_00, confirmed at 16_53 - a fixed window, no shift`() {
+    fun `2 - start set by hand to 18_00 - 02_00 - confirmed at 16_53 - a fixed window - no shift`() {
         val confirmedAt = t("2026-10-12T13:53:00Z")
         val manual = DailyWindow(LocalTime(18, 0), LocalTime(2, 0), MSK)
         val s = done(flow.schedule(Snapshot(), "s1", "n1", SeriesKind.SEVEN, LaunchTime.Fixed(manual), MOM, SessionMode.SLEEP, null, confirmedAt))
@@ -60,7 +60,7 @@ class AutoNowLaunchTest {
     }
 
     @Test
-    fun `a manual start that has already passed today - the next 16_48, never moved to now`() {
+    fun `a manual start that has already passed today - the next 16_48 - never moved to now`() {
         val manual = DailyWindow(LocalTime(16, 48), LocalTime(0, 48), MSK)
         val s = done(flow.schedule(Snapshot(), "s1", "n1", SeriesKind.SEVEN, LaunchTime.Fixed(manual), MOM, SessionMode.SLEEP, null, t("2026-10-12T13:53:00Z")))
         assertEquals(manual, s.series!!.window)
@@ -69,7 +69,7 @@ class AutoNowLaunchTest {
     }
 
     @Test
-    fun `3 - Restart opened at 16_48, AUTO_NOW, confirmed at 16_52 - starts 16_52, not the failed 15_46 and not tomorrow`() {
+    fun `3 - Restart opened at 16_48 - AUTO_NOW - confirmed at 16_52 - starts 16_52 - not the failed 15_46 and not tomorrow`() {
         val failedAt = t("2026-10-10T21:00:00Z")
         val failed = Snapshot(
             series = Series(
@@ -100,7 +100,7 @@ class AutoNowLaunchTest {
     // ---------------- AUTO_NOW + NEEDS_ATTENTION: frozen only at ACTIVE ----------------
 
     @Test
-    fun `AUTO_NOW 18_00, protection did not come up, relaunched at 18_20 - 18_20 to 02_20, frozen at ACTIVE`() {
+    fun `AUTO_NOW 18_00 - protection did not come up - relaunched at 18_20 - 18_20 to 02_20 - frozen at ACTIVE`() {
         val at1800 = t("2026-10-12T15:00:00Z")
         val launched = done(flow.schedule(Snapshot(), "s1", "n1", SeriesKind.SEVEN, LaunchTime.AutoNow(eight, MSK), MOM, SessionMode.SLEEP, null, at1800))
         assertTrue(launched.series!!.autoNow)

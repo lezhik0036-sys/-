@@ -6,7 +6,7 @@ import kotlinx.datetime.LocalTime
 
 class SeriesDraftTest {
     @Test
-    fun `a new draft starts now, to the minute, in the chosen zone - not at the previous series' 23_00`() {
+    fun `a new draft starts now - to the minute - in the chosen zone - not at the previous series' 23_00`() {
         val now = t("2026-10-12T12:57:42Z") // 15:57:42 Moscow
         val (start, end) = SeriesDraft.freshTimes(now, MSK)
         assertEquals(LocalTime(15, 57), start)

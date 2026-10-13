@@ -33,12 +33,12 @@ class MamaBridgeTest {
     }
 
     @Test
-    fun `a new draft starts at the current minute, 8 hours long`() {
+    fun `a new draft starts at the current minute - 8 hours long`() {
         assertEquals(DraftTime(16 * 60 + 48, 48), bridge.freshDraft(ms("2026-10-12T13:48:30Z"), msk))
     }
 
     @Test
-    fun `AUTO_NOW confirmed at 16_53 - starts now for 8 hours, the last of 7 nights six days later`() {
+    fun `AUTO_NOW confirmed at 16_53 - starts now for 8 hours - the last of 7 nights six days later`() {
         val now = ms("2026-10-12T13:53:20Z")
         val launch = bridge.resolve(autoNow = true, startMinute = 16 * 60 + 48, endMinute = 48, zoneId = msk, days = 7, nowMs = now)!!
         assertEquals(16 * 60 + 53, launch.startMinute)
@@ -50,7 +50,7 @@ class MamaBridgeTest {
     }
 
     @Test
-    fun `MANUAL 18_00 confirmed at 16_53 - today 18_00, never moved`() {
+    fun `MANUAL 18_00 confirmed at 16_53 - today 18_00 - never moved`() {
         val launch = bridge.resolve(autoNow = false, startMinute = 18 * 60, endMinute = 2 * 60, zoneId = msk, days = 3, nowMs = ms("2026-10-12T13:53:00Z"))!!
         assertFalse(launch.startsNow)
         assertEquals(ms("2026-10-12T15:00:00Z"), launch.firstLockStartMs)
@@ -72,7 +72,7 @@ class MamaBridgeTest {
     }
 
     @Test
-    fun `MANUAL 23_00 - the monitor switched the shield on at 23_00, the app opened later - ACTIVE as of 23_00`() {
+    fun `MANUAL 23_00 - the monitor switched the shield on at 23_00 - the app opened later - ACTIVE as of 23_00`() {
         val state = scheduled(autoNow = false, start = 23 * 60, end = 7 * 60, nowIso = "2026-10-12T17:00:00Z")
         val v = bridge.view(state)!!
         assertEquals("SCHEDULED", v.status)
@@ -83,7 +83,7 @@ class MamaBridgeTest {
     }
 
     @Test
-    fun `lock started without the shield, or without Screen Time - the series did not begin`() {
+    fun `lock started without the shield - or without Screen Time - the series did not begin`() {
         val state = scheduled(autoNow = false, start = 23 * 60, end = 7 * 60, nowIso = "2026-10-12T17:00:00Z")
         val late = bridge.refresh(state, (t("2026-10-12T20:00:00Z") + 5.minutes).toEpochMilliseconds(), "n2", shieldOnTimesMs = emptyList(), authorized = true)
         assertEquals("NEEDS_ATTENTION", bridge.view(late.state!!)!!.status)
@@ -109,7 +109,7 @@ class MamaBridgeTest {
     }
 
     @Test
-    fun `busy, waiting after a failure, invalid input, cancel before the start`() {
+    fun `busy - waiting after a failure - invalid input - cancel before the start`() {
         val state = scheduled(autoNow = false, start = 23 * 60, end = 7 * 60, nowIso = "2026-10-12T17:00:00Z")
         assertEquals(MamaBridge.BUSY, bridge.schedule(state, 3, true, 0, 480, msk, "Мама", "+79001234567", ms("2026-10-12T17:01:00Z"), "s2", "n2").error)
         assertEquals(MamaBridge.INVALID, bridge.schedule(empty, 3, true, 0, 480, msk, "Мама", "12", 0, "s2", "n2").error)

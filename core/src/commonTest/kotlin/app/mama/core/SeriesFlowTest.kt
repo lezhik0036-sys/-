@@ -39,7 +39,7 @@ class SeriesFlowTest {
     private fun lockStarts(s: Snapshot) = flow.fold(s.copy(session = lock.advance(s.session!!, at23)), "n2", at23)
 
     @Test
-    fun `restart 299 - scheduled - cancelled before the first lock - everything back, no new wait, nothing failed`() {
+    fun `restart 299 - scheduled - cancelled before the first lock - everything back - no new wait - nothing failed`() {
         val r = restarted()
         assertEquals(SeriesStatus.SCHEDULED, r.series!!.status)
         assertEquals("old", r.series!!.restartOf)
@@ -69,7 +69,7 @@ class SeriesFlowTest {
     }
 
     @Test
-    fun `restart 299 - scheduled - strict protection ready - active, and only then the Restart is used`() {
+    fun `restart 299 - scheduled - strict protection ready - active - and only then the Restart is used`() {
         val activating = lockStarts(restarted())
         assertEquals(SeriesStatus.ACTIVATING, activating.series!!.status)
         assertEquals(299 * rub, activating.wallet.restartReservedKop, "still held while activating")
@@ -105,7 +105,7 @@ class SeriesFlowTest {
     }
 
     @Test
-    fun `a Restart keeps the length of the failed series and takes a newly chosen time, never the failed one`() {
+    fun `a Restart keeps the length of the failed series and takes a newly chosen time - never the failed one`() {
         // Failed series 15:46 -> 07:00; the Restart draft chose 16:20 -> 00:20.
         val failedAt1546 = afterFailure().let { it.copy(series = it.series!!.copy(window = DailyWindow(LocalTime(15, 46), LocalTime(7, 0), MSK))) }
         val chosen = DailyWindow(LocalTime(16, 20), LocalTime(0, 20), MSK)
@@ -116,7 +116,7 @@ class SeriesFlowTest {
     }
 
     @Test
-    fun `once confirmed, a Restart's time is fixed - contact and commitment can change before the start`() {
+    fun `once confirmed - a Restart's time is fixed - contact and commitment can change before the start`() {
         val r = restarted()
         assertEquals(SeriesKind.SEVEN, r.series!!.kind)
         assertEquals(window, r.series!!.window)
@@ -179,7 +179,7 @@ class SeriesFlowTest {
     }
 
     @Test
-    fun `failed 1 Oct, Restart 5 Oct, cancelled 6 Oct before the first lock - free series still from 31 Oct`() {
+    fun `failed 1 Oct - Restart 5 Oct - cancelled 6 Oct before the first lock - free series still from 31 Oct`() {
         val failedOn = t("2026-10-01T09:00:00Z")
         val failure = afterFailure().let {
             it.copy(series = it.series!!.copy(endedAt = failedOn), entitlements = Entitlements(standardFailedAt = failedOn))

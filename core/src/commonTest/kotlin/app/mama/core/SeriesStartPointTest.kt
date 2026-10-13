@@ -47,7 +47,7 @@ class SeriesStartPointTest {
     }
 
     @Test
-    fun `1 - created at 13, lock at 23, cancelled at 15 - cancelled before start with no consequences`() {
+    fun `1 - created at 13 - lock at 23 - cancelled at 15 - cancelled before start with no consequences`() {
         val u = scheduled()
         assertEquals(SeriesStatus.SCHEDULED, u.series.status, "pressing «Начать серию» does not start the series")
         assertEquals(at23, u.session!!.plan.start)
@@ -142,7 +142,7 @@ class SeriesStartPointTest {
     }
 
     @Test
-    fun `5 - start time reached and protection confirmed - scheduled, activating, active`() {
+    fun `5 - start time reached and protection confirmed - scheduled - activating - active`() {
         val u = scheduled()
         assertEquals(SeriesStatus.SCHEDULED, u.series.status)
         // 22:59: still scheduled.
@@ -205,7 +205,7 @@ class SeriesStartPointTest {
     }
 
     @Test
-    fun `8 - start time reached but protection not confirmed - not active, not failed, no financial consequences`() {
+    fun `8 - start time reached but protection not confirmed - not active - not failed - no financial consequences`() {
         val activating = begin(scheduled())
         assertEquals(SeriesStatus.ACTIVATING, activating.series.status)
         val wallet = ok(WalletEngine.reserve(funded(10_000), "s1", 5_000 * rub, at13))
@@ -235,7 +235,7 @@ class SeriesStartPointTest {
     }
 
     @Test
-    fun `a missing permission fails the activation at once, without waiting for the timeout`() {
+    fun `a missing permission fails the activation at once - without waiting for the timeout`() {
         val activating = begin(scheduled())
         val failed = series.protectionFailed(activating.series, activating.session, at23.plusSeconds(2))!!
         assertEquals(SeriesStatus.NEEDS_ATTENTION, failed.series.status)
@@ -245,7 +245,7 @@ class SeriesStartPointTest {
     }
 
     @Test
-    fun `a night that passed without the lock ever being confirmed needs attention, it is not moved on silently`() {
+    fun `a night that passed without the lock ever being confirmed needs attention - it is not moved on silently`() {
         val u = scheduled()
         // Phone off all night: the next reconcile sees the planned lock already over.
         val morning = t("2026-10-13T05:00:00Z")
@@ -309,7 +309,7 @@ class SeriesStartPointTest {
     }
 
     @Test
-    fun `confirmed at 23_10 for 23_00-07_00 - scheduled until 23_00 tomorrow, no shortened first period`() {
+    fun `confirmed at 23_10 for 23_00-07_00 - scheduled until 23_00 tomorrow - no shortened first period`() {
         val at2310 = t("2026-10-12T20:10:00Z") // 23:10 Moscow, tonight's window already running
         val u = series.start("s2", "m1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, at2310)
         assertEquals(SeriesStatus.SCHEDULED, u.series.status)
@@ -320,7 +320,7 @@ class SeriesStartPointTest {
     }
 
     @Test
-    fun `confirmed at 06_50 for 23_00-07_00 - scheduled until 23_00 today, not 06_50 to 07_00`() {
+    fun `confirmed at 06_50 for 23_00-07_00 - scheduled until 23_00 today - not 06_50 to 07_00`() {
         val at0650 = t("2026-10-12T03:50:00Z") // 06:50 Moscow, last minutes of last night's window
         val u = series.start("s2", "m1", SeriesKind.THREE, window, MOM, SessionMode.SLEEP, at0650)
         assertEquals(SeriesStatus.SCHEDULED, u.series.status)

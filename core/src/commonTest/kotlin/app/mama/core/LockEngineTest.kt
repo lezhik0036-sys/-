@@ -35,7 +35,7 @@ class LockEngineTest {
     }
 
     @Test
-    fun `too short, too long and past plans are rejected`() {
+    fun `too short - too long and past plans are rejected`() {
         val e = engine()
         val short = LockPlan(start, start + 10.minutes, MSK)
         assertEquals(LockEngine.CreateError.TOO_SHORT, (e.create("x", short, MOM, before) as LockEngine.CreateResult.Rejected).reason)

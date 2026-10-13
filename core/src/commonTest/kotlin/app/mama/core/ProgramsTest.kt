@@ -73,7 +73,7 @@ class ProgramsTest {
     }
 
     @Test
-    fun `flex start rule - past starts are rejected, never shortened`() {
+    fun `flex start rule - past starts are rejected - never shortened`() {
         val now = "2026-10-01T17:00"
         for ((s, e) in listOf(
             "2026-10-01T15:00" to "2026-10-01T20:00",
@@ -127,7 +127,7 @@ class ProgramsTest {
     }
 
     @Test
-    fun `crossing midnight up to 24 hours is valid, longer is not, no automatic next day`() {
+    fun `crossing midnight up to 24 hours is valid - longer is not - no automatic next day`() {
         val now = "2026-10-01T13:00"
         assertTrue(plan("2026-10-01T14:00", "2026-10-02T08:00", now) is FlexEngine.PlanResult.Planned)
         assertTrue(plan("2026-10-01T14:00", "2026-10-02T14:00", now) is FlexEngine.PlanResult.Planned)
@@ -218,7 +218,7 @@ class ProgramsTest {
     }
 
     @Test
-    fun `a period is consumed when it starts, not when planned`() {
+    fun `a period is consumed when it starts - not when planned`() {
         val p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, day0)
         val (planned, session) = startPeriod(p, day0)
         assertEquals(0, flex.afterSession(planned, session, day0).pkg.used)
@@ -238,7 +238,7 @@ class ProgramsTest {
     }
 
     @Test
-    fun `successful and failed days are counted, failure burns only that day`() {
+    fun `successful and failed days are counted - failure burns only that day`() {
         var p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, day0)
         p = night(p, day0)
         assertEquals(6, p.remaining)
