@@ -16,6 +16,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Core tests (shared logic, JVM)
         run: ./gradlew :core:jvmTest --console=plain
+      - name: Regression contract with the Android branch
+        run: |
+          git fetch --depth=1 origin claude/mama-phone-lock-app-vzccj7:refs/remotes/origin/claude/mama-phone-lock-app-vzccj7
+          python3 tools/kmp_test_contract.py
       - name: App startup tests (Robolectric)
         run: ./gradlew :app:testDebugUnitTest --console=plain
       - name: Build debug APK

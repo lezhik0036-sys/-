@@ -25,6 +25,37 @@
     закрытых приложениях;
   - `Shared/` — общее для приложения и расширений (App Group, щит, расписание).
 
+## Правила миграции (регрессионный контракт)
+
+iOS/KMP-миграция **не меняет продуктовую семантику Android MAMA**.
+
+- В `core` (shared) — только платформенно-независимая бизнес-логика.
+  Android-защита (Accessibility, оверлей, Device Admin, CallRedirection,
+  восстановление после перезагрузки и другие Android API) остаётся в `app/`;
+  iOS-защита (FamilyControls, ManagedSettings, DeviceActivity) и SwiftUI —
+  в `iosApp/`. Android-защиту ради KMP не переписываем.
+- Замена Java time API: существующие тесты — контракт. Они перенесены без
+  изменения входных данных и ожиданий; отличаются только записью типов
+  (`java.time` → `kotlinx-datetime` / `kotlin.time`). Это проверяет
+  `tools/kmp_test_contract.py`: каждый core-тест Android-ветки должен быть в
+  `core/src/commonTest` и отличаться только записью типов (CI, job `build`).
+- После каждого изменения shared core должны проходить все наборы:
+
+| Что | Наборы |
+|---|---|
+| Все Android core-тесты (143) | `core/src/commonTest` на JVM (`:core:jvmTest`) и в симуляторе iOS |
+| AUTO_NOW / MANUAL, ACTIVATING → ACTIVE (точка фиксации) | `AutoNowLaunchTest`, `SeriesDraftTest`, `SeriesStartPointTest` |
+| NEEDS_ATTENTION | `SeriesStartPointTest`, `AutoNowLaunchTest`, `SeriesTest` |
+| Restart = свежий черновик времени | `SeriesFlowTest` |
+| «Цена слова» / кошелёк | `WalletTest` |
+| 30 дней (cooldown) | `ProgramsTest`, `SeriesFlowTest` |
+| FLEX — независимые периоды | `ProgramsTest` |
+| Часовые пояса, окна через полночь, фиксированное окно 3/5/7 | `DailyWindowTest`, `SeriesStartPointTest`, `SeriesTest` |
+| Новые iOS/shared | `MamaBridgeTest`, `Sha256JvmTest` |
+| Android-приложение на shared core | Robolectric (`:app:testDebugUnitTest`), запуск на эмуляторе |
+
+- Стабильная Android-ветка не трогается; iOS-работа идёт только в `claude/mama-ios`.
+
 ## Решения владельца продукта
 
 1. Защита — Screen Time. Пользователь **не выбирает приложения**: MAMA
