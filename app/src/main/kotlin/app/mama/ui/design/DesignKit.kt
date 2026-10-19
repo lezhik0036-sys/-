@@ -96,15 +96,22 @@ class DesignKit(val context: Context) {
     fun pressable(content: Drawable, radiusDp: Int, ripple: Int = Palette.Ripple): Drawable =
         RippleDrawable(ColorStateList.valueOf(ripple), content, shape(Color.WHITE, radiusDp))
 
-    /** Soft warm shadow (emerald glow for the main button); tinted shadows need Android 9+. */
-    fun elevate(view: View, levelDp: Float, color: Int = Palette.Shadow) {
+    /**
+     * Very soft depth: a wide, faint, warm shadow and a halo (an emerald
+     * glow for the main button). Tinted shadows need Android 9+; older
+     * phones get a lower, plain elevation.
+     */
+    fun elevate(view: View, levelDp: Float, color: Int = Palette.Shadow, ambient: Int = Palette.ShadowAmbient) {
         val tinted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-        view.elevation = dpf(if (tinted) levelDp else levelDp * 0.5f)
+        view.elevation = dpf(if (tinted) levelDp * 2.2f else levelDp * 0.5f)
         if (tinted) {
-            view.outlineAmbientShadowColor = color
+            view.outlineAmbientShadowColor = ambient
             view.outlineSpotShadowColor = color
         }
     }
+
+    /** Card surface: opaque fill, large radius, a light rim instead of a border. */
+    fun surface(fill: Int = Palette.Card, radiusDp: Int = Radii.CARD): GradientDrawable = shape(fill, radiusDp, Palette.Rim, 1f)
 
     private fun clickable(view: View, onClick: () -> Unit) {
         view.isClickable = true
@@ -133,15 +140,18 @@ class DesignKit(val context: Context) {
         subtitle: CharSequence? = null,
         center: Boolean = false,
         narrow: Boolean = false,
-        /** A first line in ink above the muted subtitle (a fact: "2 из 7 ночей позади."). */
+        /** A first line in ink above the muted subtitle. */
         lead: CharSequence? = null,
+        /** A small neutral fact right under the title ("Серия завершилась раньше · 2 из 7"). */
+        caption: CharSequence? = null,
     ): LinearLayout = column().apply {
         addView(title(title, center), fill())
         fun line(view: TextView, top: Int) = addView(view.apply {
             if (narrow) maxWidth = (context.resources.displayMetrics.widthPixels * 0.66f).toInt()
         }, if (narrow) wrap().apply { topMargin = dp(top) } else gap(top))
-        lead?.let { line(text(it, Typo.SUBTITLE, Palette.Ink, center), 10) }
-        subtitle?.let { line(subtitle(it, center), if (lead != null) 8 else 10) }
+        caption?.let { line(text(it, Typo.LABEL, Palette.InkMuted, center), 10) }
+        lead?.let { line(text(it, Typo.SUBTITLE, Palette.Ink, center), if (caption != null) 12 else 10) }
+        subtitle?.let { line(subtitle(it, center), if (lead != null) 8 else if (caption != null) 12 else 10) }
     }
 
     /** "6 ч 12 мин": numbers large, units smaller (lock timer, home values). */
@@ -212,7 +222,7 @@ class DesignKit(val context: Context) {
         } else {
             setPadding(side, dp(14), side, dp(14))
         }
-        elevate(this, 7f, Palette.Glow)
+        elevate(this, 4f, Palette.Glow, Palette.GlowAmbient)
         clickable(this, onClick)
     }
 
@@ -225,7 +235,7 @@ class DesignKit(val context: Context) {
         minHeight = dp(Spacing.BUTTON)
         minimumHeight = dp(Spacing.BUTTON)
         setPadding(dp(20), dp(14), dp(20), dp(14))
-        background = pressable(shape(Palette.Card, Spacing.BUTTON, Palette.Line), Spacing.BUTTON)
+        background = pressable(shape(Palette.Card, Spacing.BUTTON, Color.argb(0xB3, 0xE6, 0xDF, 0xD0)), Spacing.BUTTON)
         icon?.let {
             val d = IconDrawable(it, Palette.EmeraldInk, 2.0f, solid = true).apply { setBounds(0, 0, dp(20), dp(20)) }
             setCompoundDrawables(d, null, null, null)
@@ -321,7 +331,7 @@ class DesignKit(val context: Context) {
         background = if (selected) {
             pressable(shape(Palette.MintSelected, Radii.CHIP, Palette.EmeraldBorder, 1.6f), Radii.CHIP)
         } else {
-            pressable(shape(Palette.Card, Radii.CHIP, Palette.Line, 1f), Radii.CHIP)
+            pressable(shape(Palette.Card, Radii.CHIP, Color.argb(0xB3, 0xE6, 0xDF, 0xD0), 1f), Radii.CHIP)
         }
         if (selected) elevate(this, 2f)
         isSelected = selected
@@ -367,23 +377,23 @@ class DesignKit(val context: Context) {
 
     /** White card with a soft warm shadow. */
     fun card(paddingDp: Int = Spacing.INNER, fill: Int = Palette.Card, radiusDp: Int = Radii.CARD): LinearLayout = column(paddingDp).apply {
-        background = shape(fill, radiusDp)
-        elevate(this, 3f)
+        background = surface(fill, radiusDp)
+        elevate(this, 2.5f)
     }
 
     /** Quiet card (quotes, secondary information): cream, almost no shadow. */
     fun quietCard(paddingDp: Int = Spacing.INNER): LinearLayout = column(paddingDp).apply {
-        background = shape(Palette.CardQuiet, Radii.CARD)
+        background = surface(Palette.CardQuiet)
         elevate(this, 1f)
     }
 
     /** Card-row action: icon circle, title, subtitle, "›" ("Вернуться на главную"). */
     fun actionRow(icon: Icon, title: String, subtitle: String? = null, style: CircleStyle = CircleStyle.MINT, onClick: (() -> Unit)?): View = row().apply {
-        setPadding(dp(14), dp(14), dp(14), dp(14))
-        minimumHeight = dp(76)
-        val base = shape(Palette.Card, Radii.CARD)
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        minimumHeight = dp(80)
+        val base = surface()
         background = if (onClick != null) pressable(base, Radii.CARD) else base
-        elevate(this, 3f)
+        elevate(this, 2.5f)
         addView(iconCircle(icon, 50, style))
         val texts = column()
         texts.addView(text(title, Typo.VALUE))
@@ -396,14 +406,17 @@ class DesignKit(val context: Context) {
     }
 
     /** Half-width action ("Экстренный вызов", "Доверенный контакт" on the lock screen). */
-    fun actionTile(icon: Icon, label: String, onClick: () -> Unit): View = row().apply {
-        setPadding(dp(12), dp(12), dp(8), dp(12))
-        minimumHeight = dp(66)
-        background = pressable(shape(Palette.Card, Radii.CARD), Radii.CARD)
-        elevate(this, 3f)
-        addView(iconCircle(icon, 38))
-        addView(text(label, Typo.LABEL, Palette.Ink).apply { textSize = 14.5f; maxLines = 2 }, weight().apply { leftMargin = dp(10); rightMargin = dp(2) })
-        addView(chevron(sizeDp = 16))
+    fun actionTile(icon: Icon, label: String, onClick: () -> Unit): View = column().apply {
+        setPadding(dp(14), dp(14), dp(12), dp(14))
+        minimumHeight = dp(104)
+        background = pressable(surface(), Radii.CARD)
+        elevate(this, 2.5f)
+        val top = row()
+        top.addView(iconCircle(icon, 40))
+        top.addView(View(context), weight())
+        top.addView(chevron(sizeDp = 18))
+        addView(top, fill())
+        addView(text(label, Typo.LABEL, Palette.Ink).apply { textSize = 15f; maxLines = 2 }, gap(10))
         contentDescription = label.replace('\n', ' ')
         clickable(this, onClick)
     }
@@ -465,7 +478,7 @@ class DesignKit(val context: Context) {
         background = RippleDrawable(ColorStateList.valueOf(Palette.Ripple), layers, shape(Color.WHITE, Radii.CARD))
         outlineProvider = roundOutline(radius)
         clipToOutline = false
-        elevate(this, if (selected) 5f else 3f)
+        elevate(this, if (selected) 3.5f else 2.5f)
         setPadding(dp(12), dp(14), dp(10), dp(14))
         val head = row().apply { gravity = Gravity.TOP }
         head.addView(iconCircle(icon, 42, if (selected) CircleStyle.FILLED else CircleStyle.MINT))
@@ -488,10 +501,10 @@ class DesignKit(val context: Context) {
      */
     fun offerCard(icon: Icon, title: String, line: String?, message: String, action: View, scenery: Scenery? = null): View = column().apply {
         val radius = dpf(Radii.CARD.toFloat())
-        background = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.Card, radius) } ?: shape(Palette.Card, Radii.CARD)
+        background = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.Card, radius) } ?: surface()
         outlineProvider = roundOutline(radius)
-        elevate(this, 4f)
-        setPadding(dp(16), dp(18), dp(16), dp(16))
+        elevate(this, 3f)
+        setPadding(dp(18), dp(20), dp(18), dp(18))
         val head = row().apply { gravity = Gravity.TOP }
         head.addView(iconCircle(icon, 62))
         val texts = column()
@@ -505,9 +518,9 @@ class DesignKit(val context: Context) {
 
     /** A real value on the home screen: icon circle, label, big number, optional note (never invented data). */
     fun valueCard(icon: Icon, label: String, value: CharSequence, note: View? = null): View = row().apply {
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-        background = shape(Palette.Card, Radii.CARD)
-        elevate(this, 3f)
+        setPadding(dp(18), dp(18), dp(18), dp(18))
+        background = surface()
+        elevate(this, 2.5f)
         addView(iconCircle(icon, 62))
         val texts = column()
         texts.addView(text(label, Typo.LABEL, Palette.InkMuted))
@@ -520,7 +533,7 @@ class DesignKit(val context: Context) {
     fun noteCard(message: CharSequence, title: String? = null, tone: NoteTone = NoteTone.INFO, icon: Icon = if (tone == NoteTone.CARE) Icon.HEART else Icon.SHIELD): View = row().apply {
         gravity = Gravity.TOP
         setPadding(dp(14), dp(14), dp(16), dp(14))
-        background = shape(if (tone == NoteTone.CARE) Palette.CardQuiet else Palette.Card, Radii.CARD_SMALL)
+        background = surface(if (tone == NoteTone.CARE) Palette.CardQuiet else Palette.Card, Radii.CARD_SMALL)
         elevate(this, if (tone == NoteTone.CARE) 1f else 2f)
         addView(iconCircle(icon, 38, if (tone == NoteTone.CARE) CircleStyle.SAND else CircleStyle.MINT))
         val texts = column()
@@ -548,7 +561,7 @@ class DesignKit(val context: Context) {
         background = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.CardQuiet, radius) } ?: shape(Palette.CardQuiet, Radii.CARD)
         outlineProvider = roundOutline(radius)
         elevate(this, 1.5f)
-        setPadding(dp(16), dp(16), dp(if (scenery != null) 120 else 18), dp(18))
+        setPadding(dp(18), dp(18), dp(if (scenery != null) 120 else 20), dp(20))
         val markColor = if (accent == QuoteAccent.SAND) Palette.Sand else Color.argb(0x99, 0x5A, 0x99, 0x74)
         if (markInCircle) {
             addView(FrameLayout(context).apply {

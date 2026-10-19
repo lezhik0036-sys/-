@@ -201,17 +201,21 @@ object DesignPreviews {
         return k.screen(Scenery.MORNING, SceneLayout.HERO, header, body, nav = k.bottomNav(0) {})
     }
 
-    /** Recovery card example (reference 20-failure): light, dawn, road; neutral fact; Restart as a chance. */
+    /**
+     * Recovery example (reference 20-failure): light, dawn, a road. The hero
+     * line supports; the fact is small and neutral; Restart is a chance.
+     */
     private fun recovery(k: DesignKit): View {
         val body = k.body(18)
-        body.addView(k.titleBlock("Срыв —\nэто часть пути", "Сегодня получилось не всё.\nНо решение всё ещё твоё.", narrow = true, lead = "2 из 7 ночей позади."))
+        body.addView(k.titleBlock("Этот путь продолжается", narrow = true, caption = "Серия завершилась раньше · 2 из 7"))
         body.addView(k.offerCard(
             Icon.REFRESH, "Попробовать снова", "Restart · 299 ₽",
             "Ты можешь начать снова. Время выберешь заново.",
             k.primaryButton("Начать заново") {}, Scenery.RECOVERY,
         ), k.gap(Spacing.SECTION))
         body.addView(k.actionRow(Icon.HOME, "Вернуться на главную", "Продолжить, когда почувствуешь готовность.") {}, k.gap(Spacing.GUTTER))
-        body.addView(k.quoteCard(MotivationCatalog.pick(Placement.RECOVERY, "preview").text, accent = QuoteAccent.SAND, signature = "MAMA", markInCircle = true, italic = true, scenery = Scenery.RECOVERY), k.gap(Spacing.GUTTER))
+        val phrase = MotivationCatalog.byId("recovery-02")?.text ?: MotivationCatalog.pick(Placement.RECOVERY, "preview").text
+        body.addView(k.quoteCard(phrase, accent = QuoteAccent.SAND, signature = "MAMA", markInCircle = true, italic = true, scenery = Scenery.RECOVERY), k.gap(Spacing.GUTTER))
         body.addView(k.noteCard("Один сложный день не стирает твой прогресс.", "Твоя цель всё ещё с тобой.", icon = Icon.HEART), k.gap(Spacing.GUTTER))
         return k.screen(Scenery.RECOVERY, SceneLayout.HEADER, k.topBar({}), body)
     }
@@ -229,8 +233,8 @@ object DesignPreviews {
         body.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = k.dp(22) })
         body.addView(k.badge("Я держу курс", Icon.SPROUT), k.centered(16))
         val actions = k.row()
-        actions.addView(k.actionTile(Icon.PHONE, "Экстренный\nвызов") {}, k.weight())
-        actions.addView(k.actionTile(Icon.PEOPLE, "Доверенный\nконтакт") {}, k.weight().apply { leftMargin = k.dp(12) })
+        actions.addView(k.actionTile(Icon.PHONE, "Экстренный звонок") {}, k.weight())
+        actions.addView(k.actionTile(Icon.PEOPLE, "Мне действительно нужно выйти") {}, k.weight().apply { leftMargin = k.dp(12) })
         body.addView(actions, k.gap(22))
         body.addView(k.quoteCard(MotivationCatalog.pick(Placement.LOCK_NIGHT, "preview").text, scenery = Scenery.DAWN), k.gap(Spacing.GUTTER))
         return k.screen(Scenery.DAWN, SceneLayout.FULL, header, body)

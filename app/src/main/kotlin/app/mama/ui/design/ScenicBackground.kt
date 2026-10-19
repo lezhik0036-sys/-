@@ -155,66 +155,84 @@ internal object SceneCache {
 }
 
 /**
- * Paints a light landscape. Geometry is relative to the landscape box
- * (width [w], height H); see the prototype notes in DESIGN_SYSTEM_V1 §7.
- * Only gradients, filled paths and soft (blurred) shapes.
+ * Paints a light sunrise landscape in code (DESIGN_SYSTEM_V1 §7): warm sky
+ * with a sunrise glow and soft rays, layered hazy ranges with fog between
+ * them, a golden lake with the sun's reflection, sunlit slopes with
+ * irregular two-tone conifers, a meadow full of daisies and a light grain.
+ * Brush-like soft dabs give the hills and meadow a painted texture.
+ * Geometry is relative to the landscape box (width w, height H). Only
+ * gradients, filled paths and soft (blurred) shapes, so it renders the same
+ * everywhere.
  */
 internal object ScenePainter {
 
     private class Look(
+        /** Sky from the zenith to the horizon (5 stops). */
         val sky: IntArray,
         val sunX: Float,
         val sunY: Float,
-        val glow: Int,
+        val bloom: Int,
+        val core: Int,
         val far: Int,
         val far2: Int,
-        val haze: Int,
+        val range3: Int,
+        val fog: Int,
         val mid: Int,
         val midTree: Int,
-        val lake: Int,
+        val lake: IntArray,
         val hill: Int,
         val hill2: Int,
+        /** Warm sunlight on ridges, slopes and grass. */
+        val lit: Int,
         val tree: Int,
-        val tree2: Int,
+        val treeLit: Int,
+        val meadow: IntArray,
         val clouds: Int,
         val moon: Boolean = false,
         val road: Boolean = false,
-        /** Sky, a far ridge and leaves only. */
+        /** Sky and far ranges only (settings, statistics, long lists). */
         val quiet: Boolean = false,
     )
 
     private fun c(hex: Int) = Color.rgb(hex shr 16 and 0xFF, hex shr 8 and 0xFF, hex and 0xFF)
+    private fun cs(vararg hex: Int) = IntArray(hex.size) { c(hex[it]) }
 
     private fun look(s: Scenery): Look = when (s) {
         Scenery.DAWN -> Look(
-            sky = intArrayOf(c(0xF3F5F0), c(0xFBF4E6), c(0xFCE8C6), c(0xF8DDB4)), sunX = 0.80f, sunY = 0.34f, glow = c(0xFFE2A6),
-            far = c(0xC9BFD3), far2 = c(0xB7B1C9), haze = c(0xF6EDE6), mid = c(0xAEBBB0), midTree = c(0x94A799), lake = c(0xF7E8CA),
-            hill = c(0xA9C083), hill2 = c(0x86A56D), tree = c(0x68885C), tree2 = c(0x7F9B6B), clouds = c(0xF7D8CF),
+            sky = cs(0xEAF0EE, 0xF6F0E4, 0xFBE3C2, 0xF8D3A1, 0xF5C792), sunX = 0.80f, sunY = 0.34f, bloom = c(0xFFD99A), core = c(0xFFFBEA),
+            far = c(0xD5BCCD), far2 = c(0xBFA9C6), range3 = c(0xA6A6BD), fog = c(0xF8E8DF), mid = c(0x8FA19A), midTree = c(0x6F8A7C),
+            lake = cs(0xF9D9A6, 0xEEDCC2), hill = c(0x93B464), hill2 = c(0x567D45), lit = c(0xEDE29A), tree = c(0x3D6140), treeLit = c(0x5F8550),
+            meadow = cs(0xA9C46A, 0x7EA453), clouds = c(0xF5D2C6),
         )
         Scenery.MORNING -> Look(
-            sky = intArrayOf(c(0xEEF5F5), c(0xF8F6EC), c(0xFBECCB), c(0xF8E2BA)), sunX = 0.78f, sunY = 0.40f, glow = c(0xFFEAB4),
-            far = c(0xC3C3D6), far2 = c(0xB0B4CA), haze = c(0xF3F0EA), mid = c(0xA9BCB2), midTree = c(0x8EA598), lake = c(0xF3EBD3),
-            hill = c(0xA6C285), hill2 = c(0x84A76D), tree = c(0x62855A), tree2 = c(0x7C9C6A), clouds = c(0xF4DDD6),
+            sky = cs(0xE4EEF0, 0xF3F2EA, 0xFAE8C9, 0xF8DAAA, 0xF5CF9C), sunX = 0.78f, sunY = 0.40f, bloom = c(0xFFE2A6), core = c(0xFFFCEE),
+            far = c(0xCFBFD3), far2 = c(0xB9AECB), range3 = c(0xA2A8BE), fog = c(0xF6ECE4), mid = c(0x8DA39D), midTree = c(0x6D8A7E),
+            lake = cs(0xF7DEAE, 0xECE0CB), hill = c(0x93B667), hill2 = c(0x567F47), lit = c(0xEDE6A0), tree = c(0x3B6141), treeLit = c(0x5D8652),
+            meadow = cs(0xA8C66C, 0x7DA655), clouds = c(0xF3D7CF),
         )
         Scenery.DAY -> Look(
-            sky = intArrayOf(c(0xF4F7F3), c(0xFAF7EE), c(0xFBF1DE), c(0xFAEBD2)), sunX = 0.82f, sunY = 0.30f, glow = c(0xFFEFC8),
-            far = c(0xD9D3DE), far2 = c(0xCDC9D8), haze = c(0xF8F2EC), mid = c(0xC3CDC3), midTree = c(0xAFBDB1), lake = c(0xF8EEDA),
-            hill = c(0xBCCDA0), hill2 = c(0xA3BB8C), tree = c(0x86A07A), tree2 = c(0x97AE87), clouds = c(0xF7E4DC), quiet = true,
+            sky = cs(0xEEF2EF, 0xF7F3EA, 0xFAEBD3, 0xF8E2C2, 0xF6DAB4), sunX = 0.82f, sunY = 0.30f, bloom = c(0xFFE6B8), core = c(0xFFFCF0),
+            far = c(0xDCCFDA), far2 = c(0xCFC5D6), range3 = c(0xC2C3CF), fog = c(0xF9F1EA), mid = c(0x8FA19A), midTree = c(0x6F8A7C),
+            lake = cs(0xF9E6C6, 0xF2E7D6), hill = c(0x93B464), hill2 = c(0x567D45), lit = c(0xEDE29A), tree = c(0x3D6140), treeLit = c(0x5F8550),
+            meadow = cs(0xA9C46A, 0x7EA453), clouds = c(0xF5DCD2), quiet = true,
         )
         Scenery.EVENING -> Look(
-            sky = intArrayOf(c(0xE5E7F1), c(0xEEE5EC), c(0xF6DDD3), c(0xF3D3C2)), sunX = 0.24f, sunY = 0.42f, glow = c(0xF8D4BA),
-            far = c(0xB7B2CD), far2 = c(0xA6A5C1), haze = c(0xEFE6EA), mid = c(0xA0AAB6), midTree = c(0x8796A2), lake = c(0xEEDFDC),
-            hill = c(0x96AC90), hill2 = c(0x7A9379), tree = c(0x5E7863), tree2 = c(0x71897A), clouds = c(0xEED3D8), moon = true,
+            sky = cs(0xE1E4EF, 0xECE4EC, 0xF5D9D2, 0xF4CDB9, 0xF1C3AB), sunX = 0.24f, sunY = 0.42f, bloom = c(0xF9CDAF), core = c(0xFFF7EE),
+            far = c(0xBCAFCB), far2 = c(0xA79FC0), range3 = c(0x9599B4), fog = c(0xF0E2E5), mid = c(0x8B97A3), midTree = c(0x73828F),
+            lake = cs(0xF3D2C2, 0xE5DAD7), hill = c(0x86A47C), hill2 = c(0x557259), lit = c(0xEBD7B4), tree = c(0x3E5949), treeLit = c(0x5B7562),
+            meadow = cs(0x9DB47F, 0x78966A), clouds = c(0xEECFD3), moon = true,
         )
         Scenery.RECOVERY -> Look(
-            sky = intArrayOf(c(0xF7F4EB), c(0xFBF1DC), c(0xFCE5B4), c(0xF8D9A2)), sunX = 0.80f, sunY = 0.44f, glow = c(0xFFE09A),
-            far = c(0xD3C6CE), far2 = c(0xC4B7C1), haze = c(0xF8EEE2), mid = c(0xB9C0A8), midTree = c(0x9DAA8F), lake = c(0xF8E9C6),
-            hill = c(0xBAC685), hill2 = c(0x98AB6B), tree = c(0x71895A), tree2 = c(0x8A9E6A), clouds = c(0xF8DCC9), road = true,
+            sky = cs(0xF2F2EA, 0xF9F1DF, 0xFCE5B8, 0xF9D49C, 0xF6C88A), sunX = 0.80f, sunY = 0.42f, bloom = c(0xFFD893), core = c(0xFFFBE8),
+            far = c(0xDAC2C8), far2 = c(0xC8B1BE), range3 = c(0xAFAAB8), fog = c(0xFAEADA), mid = c(0x9CA88F), midTree = c(0x7F8F74),
+            lake = cs(0xFAD9A0, 0xF0DFC2), hill = c(0xA5BC6A), hill2 = c(0x6A8A4A), lit = c(0xF3E39A), tree = c(0x46613F), treeLit = c(0x6C8A4E),
+            meadow = cs(0xB3C870, 0x8BA859), clouds = c(0xF7D9C2), road = true,
         )
     }
 
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
+    private val bounds = RectF()
 
     private fun alpha(color: Int, a: Int) = Color.argb(a.coerceIn(0, 255), Color.red(color), Color.green(color), Color.blue(color))
 
@@ -227,6 +245,7 @@ internal object ScenePainter {
         p.maskFilter = null
         p.xfermode = null
         p.style = Paint.Style.FILL
+        p.strokeCap = Paint.Cap.BUTT
         p.alpha = 255
     }
 
@@ -236,34 +255,28 @@ internal object ScenePainter {
         val l = look(scenery)
         when (layout) {
             SceneLayout.HEADER, SceneLayout.HERO -> {
-                val H = w * if (layout == SceneLayout.HERO) 1.20f else 0.95f
-                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, H) else landscape(canvas, w, H, l)
-                // Fade into the page, then the page itself.
-                fadeDown(canvas, 0f, H * 0.66f, w, H, base)
+                val hero = layout == SceneLayout.HERO
+                val H = w * if (hero) 1.22f else 1.0f
+                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, H) else landscape(canvas, w, H, l, H)
+                // Fade into the page under the cards, then the page itself.
+                gradientRect(canvas, 0f, H * (if (hero) 0.84f else 0.76f), w, H, alpha(base, 0), base, mid = alpha(base, 170), midAt = 0.5f)
                 p.color = base
                 canvas.drawRect(0f, H, w, h, p)
-                titleVeil(canvas, w, H * if (layout == SceneLayout.HERO) 0.55f else 0.85f, base)
+                titleVeil(canvas, w, H * if (hero) 0.50f else 0.82f, base)
                 if (photo == null) {
+                    grain(canvas, w, h)
                     leaves(canvas, w, H * 0.34f)
                     bokeh(canvas, w, h)
                 }
             }
             SceneLayout.FULL -> {
-                val H = h * 0.80f
-                if (photo != null) {
-                    drawPhoto(canvas, photo, 0f, 0f, w, h)
-                } else {
-                    landscape(canvas, w, H, l)
-                    // The meadow goes on to the bottom.
-                    p.shader = LinearGradient(0f, H * 0.95f, 0f, h, l.hill2, c(0xDCE5C8), Shader.TileMode.CLAMP)
-                    canvas.drawRect(0f, H * 0.95f, w, h, p)
-                    p.shader = null
-                    flowers(canvas, w, H * 0.95f, h, 120, 9)
-                }
-                // Light veils: the top (title) and the lower half (cards) stay readable.
+                val H = h * 0.86f
+                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, h) else landscape(canvas, w, H, l, h)
+                // Light veils: the title at the top and the cards below stay readable.
                 gradientRect(canvas, 0f, 0f, w, H * 0.40f, alpha(base, 150), alpha(base, 0))
-                gradientRect(canvas, 0f, H * 0.66f, w, h, alpha(base, 0), alpha(base, 245), mid = alpha(base, 185), midAt = 0.35f)
+                gradientRect(canvas, 0f, H * 0.70f, w, h, alpha(base, 0), alpha(base, 200), mid = alpha(base, 120), midAt = 0.5f)
                 if (photo == null) {
+                    grain(canvas, w, h)
                     leaves(canvas, w, h * 0.22f)
                     bokeh(canvas, w, h)
                 }
@@ -274,7 +287,7 @@ internal object ScenePainter {
                 val H = band * 1.9f
                 canvas.save()
                 canvas.translate(0f, h + band * 0.1f - H)
-                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, H) else landscape(canvas, w, H, l)
+                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, H) else landscape(canvas, w, H, l, H)
                 canvas.restore()
                 p.color = base
                 canvas.drawRect(0f, 0f, w, h - band, p)
@@ -286,7 +299,7 @@ internal object ScenePainter {
                 val H = max(h * 1.5f, bw * 0.95f)
                 canvas.save()
                 canvas.translate(w - bw, h * 1.12f - H)
-                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, bw, H) else landscape(canvas, bw, H, l)
+                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, bw, H) else landscape(canvas, bw, H, l, H)
                 canvas.restore()
                 p.color = base
                 canvas.drawRect(0f, 0f, w - bw, h, p)
@@ -301,204 +314,335 @@ internal object ScenePainter {
 
     // ---------------- landscape ----------------
 
-    private fun landscape(c: Canvas, w: Float, H: Float, l: Look) {
+    private data class Range(val base: Float, val amp: Float, val seed: Float, val color: Int, val alpha: Int, val rough: Float)
+
+    /** [ground]: where the meadow ends (the box bottom, or lower for full-screen scenes). */
+    private fun landscape(c: Canvas, w: Float, H: Float, l: Look, ground: Float) {
         val horizon = H * 0.60f
-        // Sky.
-        p.shader = LinearGradient(0f, 0f, 0f, horizon, l.sky, floatArrayOf(0f, 0.45f, 0.8f, 1f), Shader.TileMode.CLAMP)
+        p.shader = LinearGradient(0f, 0f, 0f, horizon, l.sky, floatArrayOf(0f, 0.35f, 0.62f, 0.85f, 1f), Shader.TileMode.CLAMP)
         c.drawRect(0f, 0f, w, horizon + 2f, p)
         p.shader = null
-        // Sun (or moon) with its glow.
         val sx = l.sunX * w
         val sy = l.sunY * H
-        glow(c, sx, sy, w * 0.75f, alpha(l.glow, 170), 1.8f)
-        glow(c, sx, sy, w * 0.28f, alpha(c(0xFFF5D6), 210), 1.3f)
-        if (l.moon) {
-            soft(w * 0.003f); p.color = alpha(c(0xFFFDF6), 240)
-            c.drawCircle(sx, sy, w * 0.03f, p)
-        } else {
-            soft(w * 0.006f); p.color = alpha(c(0xFFFBEC), 250)
-            c.drawCircle(sx, sy, w * 0.065f, p)
-        }
-        // Long soft clouds.
+        // Sunrise glow: a wide bloom, a warm halo and a bright core.
+        glow(c, sx, sy, w * 1.0f, alpha(l.bloom, 170), 1.4f)
+        glow(c, sx, sy, w * 0.40f, alpha(c(0xFFF2CC), 240), 1.3f)
+        glow(c, sx, sy, w * 0.16f, alpha(c(0xFFFBEA), 245), 1.1f)
+        if (!l.moon && !l.quiet) rays(c, w, sx, sy)
         listOf(
-            floatArrayOf(0.22f, 0.16f, 0.32f, 0.03f, 120f), floatArrayOf(0.60f, 0.10f, 0.26f, 0.022f, 100f),
-            floatArrayOf(0.92f, 0.22f, 0.24f, 0.028f, 90f), floatArrayOf(0.50f, 0.27f, 0.30f, 0.018f, 80f),
+            floatArrayOf(0.20f, 0.14f, 0.30f, 0.022f, 130f), floatArrayOf(0.55f, 0.08f, 0.24f, 0.016f, 100f),
+            floatArrayOf(0.92f, 0.20f, 0.22f, 0.02f, 110f), floatArrayOf(0.40f, 0.25f, 0.32f, 0.014f, 100f),
+            floatArrayOf(0.66f, 0.29f, 0.20f, 0.012f, 90f),
         ).forEach { (cx, cy, rw, rh, a) ->
-            soft(w * 0.03f); p.color = alpha(l.clouds, a.toInt())
+            soft(w * 0.018f); p.color = alpha(l.clouds, a.toInt())
             c.drawOval(w * (cx - rw), H * cy - w * rh, w * (cx + rw), H * cy + w * rh, p)
         }
-        p.maskFilter = null
-        // Far ranges with haze at their feet.
-        for ((base, amp, seed, color, a) in listOf(
-            Ridge(0.47f, 0.14f, 1.3f, l.far, 210), Ridge(0.53f, 0.11f, 4.2f, l.far2, 225),
-        )) {
-            ridgePath(w, H, base, amp, seed, if (seed < 2f) 0.8f else 0.7f)
-            soft(w * 0.004f)
-            p.shader = LinearGradient(0f, H * (base - amp), 0f, H * (base + 0.07f), alpha(color, a), alpha(l.haze, 160), Shader.TileMode.CLAMP)
+        soft(w * 0.004f)
+        p.color = alpha(l.core, 253)
+        c.drawCircle(sx, sy, w * if (l.moon) 0.03f else 0.065f, p)
+        // Ranges, far to near: lavender, violet-grey, blue-grey; sunlit towards the sun; fog at their feet.
+        val ranges = listOf(
+            Range(0.455f, 0.12f, 1.3f, l.far, 225, 1.7f),
+            Range(0.495f, 0.10f, 4.2f, l.far2, 238, 1.5f),
+            Range(0.530f, 0.075f, 6.1f, l.range3, 245, 1.3f),
+        )
+        ranges.forEachIndexed { i, r ->
+            if (l.quiet && i == 2) return@forEachIndexed
+            ridgePath(path, w, H, r.base, r.amp, r.seed, r.rough)
+            soft(w * 0.0018f)
+            p.shader = LinearGradient(0f, H * (r.base - r.amp), 0f, H * (r.base + 0.05f), alpha(r.color, r.alpha), alpha(l.fog, 215), Shader.TileMode.CLAMP)
             c.drawPath(path, p)
             p.shader = null
-            band(c, w, H * (base + 0.01f), H * (base + 0.06f), alpha(l.haze, 150), H * 0.025f)
+            sunlit(c, path, l.lit, sx, sy, w * 0.6f, 0.5f - 0.1f * i, 1.4f)
+            band(c, w, H * (r.base + 0.004f), H * (r.base + 0.045f), alpha(l.fog, 175), H * 0.016f)
         }
         if (l.quiet) {
             p.maskFilter = null
             return
         }
-        // Middle ridge with a soft tree line.
-        val mBase = 0.585f
+        // Forested near range.
+        val mBase = 0.565f
         val mAmp = 0.045f
         val mSeed = 7.9f
-        ridgePath(w, H, mBase, mAmp, mSeed, 0.3f)
-        soft(w * 0.002f)
-        p.shader = LinearGradient(0f, H * (mBase - mAmp), 0f, H * mBase, alpha(l.mid, 235), alpha(l.mid, 210), Shader.TileMode.CLAMP)
+        ridgePath(path, w, H, mBase, mAmp, mSeed, 0.5f)
+        soft(w * 0.0015f)
+        p.shader = LinearGradient(0f, H * (mBase - mAmp), 0f, H * mBase, alpha(l.mid, 245), alpha(l.mid, 230), Shader.TileMode.CLAMP)
         c.drawPath(path, p)
         p.shader = null
-        val r = Rnd(42)
-        soft(w * 0.0025f)
-        p.color = alpha(l.midTree, 230)
-        for (i in 0 until 70) {
-            val t = (i + r.next() * 0.8f) / 70f
-            val size = H * (0.025f + 0.03f * r.next())
-            if (t < 0.55f) continue
-            val g = H * (mBase - mAmp * noise(t, mSeed, 0.3f))
-            tree(c, w * t, g + H * 0.008f, size)
-        }
-        band(c, w, H * 0.575f, H * 0.62f, alpha(l.haze, 140), H * 0.018f)
-        // Lake with the sun's reflection.
-        val lt = H * 0.605f
+        forest(c, w, H, { t -> H * (mBase - mAmp * noise(t, mSeed, 0.5f)) + H * 0.004f }, 0f, 1f, 150, 0.014f, 0.035f, l.midTree, null, 42, 230, w * 0.002f)
+        band(c, w, H * 0.568f, H * 0.60f, alpha(l.fog, 160), H * 0.012f)
+        // Golden lake with the sun's reflection.
+        val lt = H * 0.592f
         p.maskFilter = null
-        p.shader = LinearGradient(0f, lt, 0f, H * 0.7f, alpha(l.lake, 240), alpha(l.lake, 225), Shader.TileMode.CLAMP)
-        c.drawRect(0f, lt, w, H * 0.84f, p)
+        p.shader = LinearGradient(0f, lt, 0f, H * 0.70f, alpha(l.lake[0], 252), alpha(l.lake[1], 252), Shader.TileMode.CLAMP)
+        c.drawRect(0f, lt, w, H * 0.86f, p)
         p.shader = null
-        soft(w * 0.004f)
-        p.color = alpha(c(0xFFF7DF), 190)
-        for (i in 0 until 7) {
-            val y = lt + H * 0.008f + i * H * 0.011f
-            val half = w * (0.12f - i * 0.014f)
-            c.drawOval(sx - half, y, sx + half, y + H * 0.004f, p)
-        }
-        // Near hills: a smooth slope on the right; on the left only a low, hazy shore.
-        path.reset()
-        for (i in 0..60) {
-            val t = i / 60f
-            val sm = t * t * (3 - 2 * t)
-            val x = w * (0.36f + 0.64f * t)
-            val y = H * (0.81f - 0.21f * sm - 0.006f * sin(t * 23f))
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        path.lineTo(w, H); path.lineTo(w * 0.36f, H); path.close()
+        soft(w * 0.018f)
+        p.color = alpha(c(0xFFF8E0), 225)
+        c.drawOval(sx - w * 0.05f, lt - H * 0.01f, sx + w * 0.05f, lt + H * 0.17f, p)
         soft(w * 0.002f)
-        p.shader = LinearGradient(0f, H * 0.6f, 0f, H * 0.9f, alpha(l.hill, 252), alpha(l.hill2, 252), Shader.TileMode.CLAMP)
-        c.drawPath(path, p)
-        path.reset()
-        path.moveTo(0f, H * 0.80f)
-        for (i in 0..40) {
-            val t = i / 40f
-            path.lineTo(w * 0.6f * t, H * (0.80f + 0.04f * t.pow(1.6f) - 0.008f * sin(i * 0.6f)))
+        p.color = alpha(c(0xFFFCEB), 210)
+        val shimmer = Rnd(9)
+        for (i in 0 until 18) {
+            val y = lt + H * 0.005f + i * H * 0.0065f
+            val half = w * (0.10f - i * 0.004f) * (0.5f + 0.7f * shimmer.next())
+            c.drawRect(sx - half, y, sx + half, y + H * 0.002f, p)
         }
-        path.lineTo(w * 0.6f, H); path.lineTo(0f, H); path.close()
-        soft(w * 0.004f)
-        p.shader = LinearGradient(0f, H * 0.78f, 0f, H * 0.95f, alpha(l.hill, 200), alpha(l.hill2, 220), Shader.TileMode.CLAMP)
-        c.drawPath(path, p)
+        // Left slope.
+        val left = Path().apply {
+            moveTo(0f, H * 0.60f)
+            for (i in 0..40) {
+                val t = i / 40f
+                lineTo(w * 0.5f * t, H * (0.60f + 0.20f * t.pow(1.3f) - 0.01f * sin(i * 0.8f)))
+            }
+            lineTo(w * 0.5f, H); lineTo(0f, H); close()
+        }
+        slope(c, left, H * 0.58f, H * 0.92f, l)
+        dabs(c, left, intArrayOf(l.hill, l.hill2, l.lit, l.treeLit), 200, w * 0.028f, 78, 95, w * 0.005f)
+        forest(c, w, H, { t -> H * (0.60f + 0.20f * (t / 0.5f).pow(1.3f)) }, 0f, 0.32f, 26, 0.04f, 0.13f, l.tree, l.treeLit, 61, 240, w * 0.0015f)
+        // Right slope with a sunlit crest.
+        val right = Path().apply {
+            for (i in 0..60) {
+                val t = i / 60f
+                val x = w * (0.42f + 0.58f * t)
+                val y = H * (0.80f - 0.24f * smooth(t) - 0.006f * sin(t * 23f))
+                if (i == 0) moveTo(x, y) else lineTo(x, y)
+            }
+            lineTo(w, H); lineTo(w * 0.42f, H); close()
+        }
+        slope(c, right, H * 0.55f, H * 0.95f, l)
+        sunlit(c, right, l.lit, w * 0.74f, H * 0.60f, w * 0.42f, 0.55f, 1.7f)
+        dabs(c, right, intArrayOf(l.hill, l.hill2, l.lit, l.treeLit), 260, w * 0.028f, 77, 95, w * 0.005f)
+        forest(c, w, H, { t -> H * (0.80f - 0.24f * smooth((t - 0.42f) / 0.58f)) }, 0.52f, 1f, 60, 0.035f, 0.13f, l.tree, l.treeLit, 7, 240, w * 0.0015f)
+        // Meadow in front, full width.
+        val meadow = Path().apply {
+            moveTo(0f, H * 0.86f)
+            for (i in 0..40) {
+                val t = i / 40f
+                lineTo(w * t, H * (0.86f - 0.05f * sin(t * PI.toFloat() * 0.9f) - 0.006f * sin(i * 1.3f)))
+            }
+            lineTo(w, ground); lineTo(0f, ground); close()
+        }
+        soft(w * 0.003f)
+        p.shader = LinearGradient(0f, H * 0.80f, 0f, ground, alpha(l.meadow[0], 245), alpha(l.meadow[1], 255), Shader.TileMode.CLAMP)
+        c.drawPath(meadow, p)
         p.shader = null
-        // Conifers on the right slope.
-        val r2 = Rnd(7)
-        soft(w * 0.0025f)
-        for (i in 0 until 26) {
-            val t = 0.58f + 0.42f * r2.next()
-            val u = (t - 0.36f) / 0.64f
-            val sm = u * u * (3 - 2 * u)
-            val y = H * (0.81f - 0.21f * sm) + H * 0.03f * r2.next()
-            val size = H * (0.035f + 0.06f * r2.next())
-            p.color = alpha(if (r2.next() > 0.4f) l.tree else l.tree2, 245)
-            tree(c, w * t, y + H * 0.012f, size)
-        }
-        // Aerial haze over the near land: soft, low contrast.
-        p.maskFilter = null
-        p.color = alpha(l.haze, 35)
-        c.drawRect(0f, H * 0.55f, w, H, p)
+        dabs(c, meadow, intArrayOf(l.meadow[0], l.meadow[1], l.lit, l.hill2), 320, w * 0.026f, 55, 95, w * 0.004f)
         if (l.road) road(c, w, H)
-        flowers(c, w, H * 0.74f, H, 180, 3)
+        grass(c, w, H, ground, l)
+        flowers(c, w, H * 0.80f, ground, 320, 3)
         p.maskFilter = null
     }
 
-    private data class Ridge(val base: Float, val amp: Float, val seed: Float, val color: Int, val alpha: Int)
+    private fun smooth(t: Float): Float {
+        val x = t.coerceIn(0f, 1f)
+        return x * x * (3 - 2 * x)
+    }
+
+    private fun slope(c: Canvas, area: Path, top: Float, bottom: Float, l: Look) {
+        soft(0f)
+        p.shader = LinearGradient(0f, top, 0f, bottom, l.hill, l.hill2, Shader.TileMode.CLAMP)
+        c.drawPath(area, p)
+        p.shader = null
+    }
 
     private fun noise(t: Float, seed: Float, rough: Float): Float =
         0.5f * sin(t * 5.1f + seed) + 0.28f * sin(t * 11.7f + seed * 1.9f) +
             rough * (0.12f * sin(t * 23.3f + seed * 2.7f) + 0.07f * abs(sin(t * 41f + seed)) + 0.03f * sin(t * 83f + seed * 3.1f))
 
-    private fun ridgePath(w: Float, H: Float, base: Float, amp: Float, seed: Float, rough: Float) {
-        path.reset()
-        path.moveTo(0f, H)
+    private fun ridgePath(into: Path, w: Float, H: Float, base: Float, amp: Float, seed: Float, rough: Float) {
+        into.reset()
+        into.moveTo(0f, H)
         for (i in 0..160) {
             val t = i / 160f
-            path.lineTo(w * t, H * (base - amp * noise(t, seed, rough)))
+            into.lineTo(w * t, H * (base - amp * noise(t, seed, rough)))
         }
-        path.lineTo(w, H)
-        path.close()
+        into.lineTo(w, H)
+        into.close()
     }
 
-    private fun tree(c: Canvas, x: Float, ground: Float, height: Float) {
-        val hw = height * 0.19f
-        path.reset()
-        path.moveTo(x, ground - height)
-        path.lineTo(x + hw * 0.5f, ground - height * 0.66f)
-        path.lineTo(x + hw * 0.32f, ground - height * 0.64f)
-        path.lineTo(x + hw * 0.8f, ground - height * 0.34f)
-        path.lineTo(x + hw * 0.5f, ground - height * 0.33f)
-        path.lineTo(x + hw, ground - height * 0.04f)
-        path.lineTo(x - hw, ground - height * 0.04f)
-        path.lineTo(x - hw * 0.5f, ground - height * 0.33f)
-        path.lineTo(x - hw * 0.8f, ground - height * 0.34f)
-        path.lineTo(x - hw * 0.32f, ground - height * 0.64f)
-        path.lineTo(x - hw * 0.5f, ground - height * 0.66f)
-        path.close()
-        c.drawPath(path, p)
-    }
-
-    /** A sandy road winding up the near hill (recovery: "the path goes on"). */
-    private fun road(c: Canvas, w: Float, H: Float) {
-        val n = 40
-        val left = ArrayList<Pair<Float, Float>>()
-        val right = ArrayList<Pair<Float, Float>>()
-        for (i in 0..n) {
-            val t = i / n.toFloat()
-            val x = w * (0.93f - 0.33f * t + 0.07f * sin(t * 4.5f))
-            val y = H * (1.0f - 0.36f * t)
-            val half = w * (0.075f * (1 - t).pow(1.2f) + 0.006f)
-            left += (x - half) to y
-            right += (x + half) to y
-        }
-        path.reset()
-        path.moveTo(left[0].first, left[0].second)
-        left.drop(1).forEach { path.lineTo(it.first, it.second) }
-        right.reversed().forEach { path.lineTo(it.first, it.second) }
-        path.close()
-        soft(w * 0.002f)
-        p.shader = LinearGradient(0f, H * 0.64f, 0f, H, c(0xEEDFC0), c(0xE6D3AE), Shader.TileMode.CLAMP)
-        c.drawPath(path, p)
+    /** Soft sunlight over [area]: a radial warm light around (cx, cy), flattened vertically by [squash]. */
+    private fun sunlit(c: Canvas, area: Path, color: Int, cx: Float, cy: Float, radius: Float, strength: Float, squash: Float) {
+        val stops = floatArrayOf(0f, 0.25f, 0.5f, 0.75f, 1f)
+        val colors = IntArray(stops.size) { alpha(color, (255 * strength * (1 - stops[it]).pow(1.4f)).roundToInt()) }
+        val gradient = RadialGradient(cx, cy, radius, colors, stops, Shader.TileMode.CLAMP)
+        gradient.setLocalMatrix(Matrix().apply { setScale(1f, 1f / squash, cx, cy) })
+        p.maskFilter = null
+        p.shader = gradient
+        c.drawPath(area, p)
         p.shader = null
     }
 
-    /** White daisies with warm centres, denser near the bottom. */
-    private fun flowers(c: Canvas, w: Float, top: Float, bottom: Float, count: Int, seed: Int) {
+    /** Soft light rays fanning out from the sun. */
+    private fun rays(c: Canvas, w: Float, sx: Float, sy: Float) {
+        val r = Rnd(17)
+        path.reset()
+        for (i in 0 until 14) {
+            val a = Math.toRadians(-10.0 + 200.0 * i / 13 + 8 * r.next())
+            val spread = Math.toRadians(1.2 + 1.8 * r.next())
+            val len = w * (0.6f + 0.5f * r.next())
+            path.moveTo(sx, sy)
+            path.lineTo(sx + cos(a - spread).toFloat() * len, sy - sin(a - spread).toFloat() * len)
+            path.lineTo(sx + cos(a + spread).toFloat() * len, sy - sin(a + spread).toFloat() * len)
+            path.close()
+        }
+        val stops = floatArrayOf(0f, 0.25f, 0.5f, 0.75f, 1f)
+        val colors = IntArray(stops.size) { alpha(Color.WHITE, (150 * (1 - stops[it]).pow(1.3f)).roundToInt()) }
+        soft(w * 0.004f)
+        p.shader = RadialGradient(sx, sy, w * 0.55f, colors, stops, Shader.TileMode.CLAMP)
+        c.drawPath(path, p)
+        p.shader = null
+        p.maskFilter = null
+    }
+
+    /**
+     * A row of irregular spruces along y = [ground](t), t in [t0, t1]: far
+     * ones small and light, near ones large; with [lit], the sun-side half
+     * of each tree is lighter.
+     */
+    private fun forest(
+        c: Canvas, w: Float, H: Float, ground: (Float) -> Float, t0: Float, t1: Float, n: Int,
+        hMin: Float, hMax: Float, body: Int, lit: Int?, seed: Int, a: Int, blur: Float,
+    ) {
         val r = Rnd(seed)
-        soft(w * 0.0015f)
-        for (i in 0 until count) {
-            val x = w * r.next()
-            val v = r.next()
-            val y = top + (bottom - top) * v
-            val rr = w * (0.0035f + 0.006f * v * r.next() + 0.002f)
-            if (x < w * 0.5f && y < top + (bottom - top) * 0.46f) continue
-            p.color = alpha(c(0xFFFDF6), 235)
-            c.drawOval(x - rr, y - rr * 0.8f, x + rr, y + rr * 0.8f, p)
-            p.color = alpha(c(0xEDC25E), 235)
-            c.drawOval(x - rr * 0.32f, y - rr * 0.3f, x + rr * 0.32f, y + rr * 0.3f, p)
+        val trees = (0 until n).map {
+            val t = t0 + (t1 - t0) * r.next()
+            val depth = r.next()
+            val size = H * (hMin + (hMax - hMin) * depth * depth * (0.7f + 0.3f * r.next()))
+            floatArrayOf(ground(t) + H * 0.035f * depth, w * t, size)
+        }.sortedBy { it[0] }
+        soft(blur)
+        for ((y, x, size) in trees) {
+            val (whole, half) = spruce(x, y, size, r)
+            p.color = alpha(body, a)
+            c.drawPath(whole, p)
+            if (lit != null) {
+                p.color = alpha(lit, (a * 0.85f).toInt())
+                c.drawPath(half, p)
+            }
         }
         p.maskFilter = null
     }
 
-    // ---------------- foliage frame ----------------
+    /** A spruce silhouette with jittered branch tiers, and its sun-side half. */
+    private fun spruce(x: Float, ground: Float, height: Float, r: Rnd): Pair<Path, Path> {
+        val top = ground - height
+        val right = ArrayList<Pair<Float, Float>>()
+        val left = ArrayList<Pair<Float, Float>>()
+        for (k in 1..6) {
+            val f = k / 6f
+            val y = top + height * (0.12f + 0.8f * f)
+            val wr = height * (0.06f + 0.17f * f) * (0.8f + 0.4f * r.next())
+            val wl = height * (0.06f + 0.17f * f) * (0.8f + 0.4f * r.next())
+            right += (x + wr) to (y + height * 0.02f)
+            right += (x + wr * 0.38f) to (y - height * 0.035f)
+            left += (x - wl) to (y + height * 0.02f)
+            left += (x - wl * 0.38f) to (y - height * 0.035f)
+        }
+        val whole = Path().apply {
+            moveTo(x, top)
+            right.forEach { lineTo(it.first, it.second) }
+            lineTo(x + height * 0.03f, ground)
+            lineTo(x - height * 0.03f, ground)
+            left.asReversed().forEach { lineTo(it.first, it.second) }
+            close()
+        }
+        val half = Path().apply {
+            moveTo(x, top)
+            right.forEach { lineTo(it.first, it.second) }
+            lineTo(x + height * 0.03f, ground)
+            lineTo(x, ground)
+            close()
+        }
+        return whole to half
+    }
+
+    /** Brush texture: soft ovals of the given colours inside [area]. */
+    private fun dabs(c: Canvas, area: Path, colors: IntArray, n: Int, size: Float, seed: Int, a: Int, blur: Float) {
+        area.computeBounds(bounds, true)
+        val r = Rnd(seed)
+        c.save()
+        c.clipPath(area)
+        soft(blur)
+        for (i in 0 until n) {
+            val x = bounds.left + bounds.width() * r.next()
+            val y = bounds.top + bounds.height() * r.next()
+            val rw = size * (0.5f + r.next())
+            val rh = rw * (0.35f + 0.3f * r.next())
+            p.color = alpha(colors[(r.next() * colors.size).toInt() % colors.size], a)
+            c.drawOval(x - rw, y - rh, x + rw, y + rh, p)
+        }
+        p.maskFilter = null
+        c.restore()
+    }
+
+    /** A sandy road winding up the near hill (recovery: "the path goes on"). */
+    private fun road(c: Canvas, w: Float, H: Float) {
+        fun edge(width: Float, sign: Float) = (0..40).map { i ->
+            val t = i / 40f
+            val x = w * (0.90f - 0.30f * t + 0.06f * sin(t * 4.5f))
+            val y = H * (1.02f - 0.42f * t)
+            (x + sign * w * (width * (1 - t).pow(1.3f) + if (width > 0.05f) 0.005f else 0f)) to y
+        }
+        for ((width, colors) in listOf(0.085f to intArrayOf(c(0xE3CFA6), c(0xECDBB8)), 0.045f to intArrayOf(alpha(c(0xF4E9D1), 200), alpha(c(0xF6ECD6), 200)))) {
+            val l = edge(width, -1f)
+            val rr = edge(width, 1f)
+            path.reset()
+            path.moveTo(l[0].first, l[0].second)
+            l.drop(1).forEach { path.lineTo(it.first, it.second) }
+            rr.asReversed().forEach { path.lineTo(it.first, it.second) }
+            path.close()
+            soft(w * if (width > 0.05f) 0.0025f else 0.004f)
+            p.shader = LinearGradient(0f, H * 0.6f, 0f, H, colors[0], colors[1], Shader.TileMode.CLAMP)
+            c.drawPath(path, p)
+            p.shader = null
+        }
+        p.maskFilter = null
+    }
+
+    /** Grass strokes over the meadow, longer in front. */
+    private fun grass(c: Canvas, w: Float, H: Float, ground: Float, l: Look) {
+        val r = Rnd(31)
+        p.style = Paint.Style.STROKE
+        p.strokeCap = Paint.Cap.ROUND
+        p.maskFilter = null
+        val top = H * 0.82f
+        for (i in 0 until 520) {
+            val x = w * r.next()
+            val v = r.next()
+            val y = top + (ground - top) * v
+            val len = H * (0.008f + 0.024f * v)
+            p.color = alpha(if (r.next() > 0.45f) l.hill2 else l.lit, 160)
+            p.strokeWidth = max(1f, w * 0.0025f * (0.5f + v))
+            c.drawLine(x, y, x + w * 0.006f * (r.next() - 0.5f), y - len, p)
+        }
+        p.style = Paint.Style.FILL
+        p.strokeCap = Paint.Cap.BUTT
+    }
+
+    /** White daisies with warm centres and a few buttercups, larger in front. */
+    private fun flowers(c: Canvas, w: Float, top: Float, bottom: Float, count: Int, seed: Int) {
+        val r = Rnd(seed)
+        soft(w * 0.0012f)
+        for (i in 0 until count) {
+            val x = w * r.next()
+            val v = r.next().pow(0.7f)
+            val y = top + (bottom - top) * v
+            val rr = w * (0.003f + 0.014f * v * v) * (0.7f + 0.6f * r.next())
+            if (r.next() > 0.86f) {
+                p.color = alpha(c(0xF2CF5E), 245)
+                c.drawCircle(x, y, rr * 0.7f, p)
+            } else {
+                p.color = alpha(c(0xFFFDF7), 248)
+                c.drawOval(x - rr, y - rr * 0.72f, x + rr, y + rr * 0.72f, p)
+                p.color = alpha(c(0xE9B946), 252)
+                c.drawOval(x - rr * 0.34f, y - rr * 0.3f, x + rr * 0.34f, y + rr * 0.3f, p)
+            }
+        }
+        p.maskFilter = null
+    }
+
+    // ---------------- foliage frame, grain ----------------
 
     /** Leafy branches entering from the top-right corner; [lowY] places the small lower twig. */
     private fun leaves(c: Canvas, w: Float, lowY: Float) {
@@ -579,6 +723,26 @@ internal object ScenePainter {
         p.maskFilter = null
     }
 
+    /** A fine, even grain over the whole scene: it takes the flat "vector" look off the gradients. */
+    private fun grain(c: Canvas, w: Float, h: Float) {
+        val tile = grainTile
+        p.maskFilter = null
+        p.shader = BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        c.drawRect(0f, 0f, w, h, p)
+        p.shader = null
+    }
+
+    private val grainTile: Bitmap by lazy {
+        val size = 64
+        val r = java.util.Random(7)
+        val pixels = IntArray(size * size) {
+            val n = (r.nextFloat() + r.nextFloat() + r.nextFloat()) / 3f - 0.5f
+            val a = (kotlin.math.abs(n) * 2f * 16f).roundToInt().coerceIn(0, 255)
+            if (n > 0) Color.argb(a, 255, 255, 255) else Color.argb(a, 0, 0, 0)
+        }
+        Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
+    }
+
     // ---------------- helpers ----------------
 
     /** Radial glow fading as (1 − d)^power. */
@@ -592,7 +756,7 @@ internal object ScenePainter {
         p.shader = null
     }
 
-    /** A soft horizontal band (mist). */
+    /** A soft horizontal band (fog). */
     private fun band(c: Canvas, w: Float, top: Float, bottom: Float, color: Int, blur: Float) {
         soft(blur)
         p.color = color
@@ -610,9 +774,6 @@ internal object ScenePainter {
         c.drawRect(l, t, r, b, p)
         p.shader = null
     }
-
-    private fun fadeDown(c: Canvas, l: Float, t: Float, r: Float, b: Float, base: Int) =
-        gradientRect(c, l, t, r, b, alpha(base, 0), base, mid = alpha(base, 180), midAt = 0.55f)
 
     /** The left part of the sky is veiled down to [bottom], so the title on it reads well. */
     private fun titleVeil(c: Canvas, w: Float, bottom: Float, base: Int) {

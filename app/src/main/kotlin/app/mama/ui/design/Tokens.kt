@@ -65,9 +65,20 @@ object Palette {
     val Line = Color.rgb(0xEC, 0xE7, 0xDC)
     val OnEmerald = Color.WHITE
 
-    /** Soft warm card shadow and the emerald glow under the main button (Android 9+). */
-    val Shadow = Color.argb(0x40, 0x5A, 0x48, 0x2A)
-    val Glow = Color.argb(0x90, 0x1F, 0x6B, 0x55)
+    /**
+     * Depth (Android 9+): a faint, wide, warm directional shadow and a warm
+     * halo all around — soft depth instead of a Material edge. The system
+     * scales these alphas down (spot ≈ 0.19×, ambient ≈ 0.04×).
+     */
+    val Shadow = Color.argb(0x52, 0x6B, 0x55, 0x2E)
+    val ShadowAmbient = Color.argb(0xFF, 0x7A, 0x66, 0x40)
+
+    /** Emerald glow under the main button. */
+    val Glow = Color.argb(0xB0, 0x1F, 0x6B, 0x55)
+    val GlowAmbient = Color.argb(0xFF, 0x2E, 0x7A, 0x60)
+
+    /** Light rim on card edges (reads as soft glass over a landscape). */
+    val Rim = Color.argb(0xB3, 0xFF, 0xFF, 0xFF)
 
     /** Behind dialogs and sheets. */
     val Scrim = Color.argb(0x73, 0x1C, 0x26, 0x22)
@@ -173,13 +184,13 @@ object Spacing {
     const val SCREEN = 18
 
     /** Between cards. */
-    const val GUTTER = 12
+    const val GUTTER = 14
 
     /** Between blocks (title → first card). */
-    const val SECTION = 24
+    const val SECTION = 28
 
     /** Inside a card. */
-    const val INNER = 16
+    const val INNER = 18
     const val TIGHT = 8
     const val TOP_BAR = 52
     const val BUTTON = 52
@@ -187,9 +198,9 @@ object Spacing {
 
 /** Corner radii in dp. */
 object Radii {
-    const val CARD = 16
-    const val CARD_SMALL = 14
-    const val CHIP = 12
+    const val CARD = 20
+    const val CARD_SMALL = 16
+    const val CHIP = 14
     const val TAG = 8
     const val CHECK = 7
     const val SHEET = 26
