@@ -443,8 +443,8 @@ class DesignKit(val context: Context) {
     }
 
     fun summaryRow(item: SummaryItem): View = row().apply {
-        setPadding(dp(16), dp(9), dp(14), dp(9))
-        minimumHeight = dp(60)
+        setPadding(dp(16), dp(8), dp(14), dp(8))
+        minimumHeight = dp(58)
         addView(iconCircle(item.icon, 40))
         val texts = column()
         texts.addView(text(item.label, Typo.LABEL, Palette.InkMuted))
@@ -510,7 +510,7 @@ class DesignKit(val context: Context) {
         val texts = column()
         texts.addView(text(title, Typo.HEADLINE).apply { maxLines = 1 })
         line?.let { texts.addView(text(it, Typo.VALUE), gap(6)) }
-        texts.addView(text(message, Typo.LABEL, Palette.InkMuted), gap(8).apply { rightMargin = dp(if (scenery != null) 96 else 0) })
+        texts.addView(text(message, Typo.LABEL, Palette.InkMuted), gap(8).apply { rightMargin = dp(if (scenery != null) 104 else 0) })
         head.addView(texts, weight().apply { leftMargin = dp(14) })
         addView(head)
         addView(action, gap(18))
@@ -558,10 +558,10 @@ class DesignKit(val context: Context) {
     ): View = row().apply {
         gravity = Gravity.TOP
         val radius = dpf(Radii.CARD.toFloat())
-        background = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.CardQuiet, radius, vignette = 0.40f) } ?: shape(Palette.CardQuiet, Radii.CARD)
+        background = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.CardQuiet, radius, vignette = 0.36f) } ?: shape(Palette.CardQuiet, Radii.CARD)
         outlineProvider = roundOutline(radius)
         elevate(this, 1.5f)
-        setPadding(dp(18), dp(18), dp(if (scenery != null) 132 else 20), dp(20))
+        setPadding(dp(18), dp(18), dp(if (scenery != null) 112 else 20), dp(20))
         val markColor = if (accent == QuoteAccent.SAND) Palette.Sand else Color.argb(0x99, 0x5A, 0x99, 0x74)
         if (markInCircle) {
             addView(FrameLayout(context).apply {
