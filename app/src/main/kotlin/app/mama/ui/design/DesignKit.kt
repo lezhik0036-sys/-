@@ -256,6 +256,7 @@ class DesignKit(val context: Context) {
             counter != null -> addView(text(counter, Typo.STEP, Palette.InkMuted).apply { setPadding(0, 0, dp(4), 0) }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END or Gravity.CENTER_VERTICAL))
         }
         setPadding(dp(8), 0, dp(14), 0)
+        minimumHeight = dp(Spacing.TOP_BAR)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(Spacing.TOP_BAR))
     }
 
