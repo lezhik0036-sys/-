@@ -110,7 +110,7 @@ enum class Typo(
     VALUE(17f, 700, tracking = -0.005f, leading = 1.2f),
 
     /** Two lines under the title. */
-    SUBTITLE(16f, 500, leading = 1.3f),
+    SUBTITLE(17f, 500, leading = 1.3f),
     BODY(15f, 500, leading = 1.38f),
 
     /** Field label: "Длительность", "Доверенный контакт". */
@@ -131,7 +131,7 @@ enum class Typo(
     AMOUNT(40f, 800, tracking = -0.02f, tabular = true),
 
     /** Big numbers: lock timer, values on the home screen. */
-    NUMBER(30f, 800, tracking = -0.02f, tabular = true),
+    NUMBER(32f, 800, tracking = -0.02f, tabular = true),
 
     /** Serif quote: lock screen, quote cards. */
     QUOTE(21f, 500, leading = 1.18f, serif = true),

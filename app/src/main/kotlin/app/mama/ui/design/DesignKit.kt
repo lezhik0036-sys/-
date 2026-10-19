@@ -128,13 +128,20 @@ class DesignKit(val context: Context) {
      * Screen title and the two lines under it. [narrow]: the subtitle keeps to
      * the left part of the screen, where the landscape is veiled (as on the references).
      */
-    fun titleBlock(title: CharSequence, subtitle: CharSequence? = null, center: Boolean = false, narrow: Boolean = false): LinearLayout = column().apply {
+    fun titleBlock(
+        title: CharSequence,
+        subtitle: CharSequence? = null,
+        center: Boolean = false,
+        narrow: Boolean = false,
+        /** A first line in ink above the muted subtitle (a fact: "2 из 7 ночей позади."). */
+        lead: CharSequence? = null,
+    ): LinearLayout = column().apply {
         addView(title(title, center), fill())
-        subtitle?.let {
-            addView(subtitle(it, center).apply {
-                if (narrow) maxWidth = (context.resources.displayMetrics.widthPixels * 0.66f).toInt()
-            }, if (narrow) wrap().apply { topMargin = dp(10) } else gap(10))
-        }
+        fun line(view: TextView, top: Int) = addView(view.apply {
+            if (narrow) maxWidth = (context.resources.displayMetrics.widthPixels * 0.66f).toInt()
+        }, if (narrow) wrap().apply { topMargin = dp(top) } else gap(top))
+        lead?.let { line(text(it, Typo.SUBTITLE, Palette.Ink, center), 10) }
+        subtitle?.let { line(subtitle(it, center), if (lead != null) 8 else 10) }
     }
 
     /** "6 ч 12 мин": numbers large, units smaller (lock timer, home values). */
@@ -169,12 +176,12 @@ class DesignKit(val context: Context) {
             CircleStyle.TEST -> Palette.TestFill to Palette.TestInk
         }
         background = oval(fill)
-        val inner = (sizeDp * 0.48f).toInt()
-        addView(ImageView(context).apply { setImageDrawable(IconDrawable(icon, tint, 2.0f, solid = true)) }, FrameLayout.LayoutParams(dp(inner), dp(inner), Gravity.CENTER))
+        val inner = (sizeDp * 0.52f).toInt()
+        addView(ImageView(context).apply { setImageDrawable(IconDrawable(icon, tint, 2.3f, solid = true)) }, FrameLayout.LayoutParams(dp(inner), dp(inner), Gravity.CENTER))
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
 
-    private fun chevron(color: Int = Palette.InkSoft, sizeDp: Int = 20) = icon(Icon.CHEVRON_RIGHT, color, sizeDp, solid = false)
+    private fun chevron(color: Int = Palette.InkMuted, sizeDp: Int = 22) = icon(Icon.CHEVRON_RIGHT, color, sizeDp, solid = false)
 
     // ---------------- buttons ----------------
 
@@ -395,15 +402,26 @@ class DesignKit(val context: Context) {
         background = pressable(shape(Palette.Card, Radii.CARD), Radii.CARD)
         elevate(this, 3f)
         addView(iconCircle(icon, 38))
-        addView(text(label, Typo.LABEL, Palette.Ink).apply { typeface = MamaFonts.ui(context, 600); textSize = 14f; maxLines = 2 }, weight().apply { leftMargin = dp(10); rightMargin = dp(2) })
+        addView(text(label, Typo.LABEL, Palette.Ink).apply { textSize = 14.5f; maxLines = 2 }, weight().apply { leftMargin = dp(10); rightMargin = dp(2) })
         addView(chevron(sizeDp = 16))
         contentDescription = label.replace('\n', ' ')
         clickable(this, onClick)
     }
 
-    /** "Твой план": rows with icon circle, label, value, "›". */
-    fun summaryCard(title: String?, items: List<SummaryItem>): View = card(paddingDp = 0).apply {
-        title?.let { addView(text(it, Typo.VALUE).apply { setPadding(dp(18), dp(16), dp(18), dp(4)) }) }
+    /** "Твой план": rows with icon circle, label, value, "›"; with a [title], inside a light frame that carries it. */
+    fun summaryCard(title: String?, items: List<SummaryItem>): View {
+        val inner = summaryRows(items)
+        if (title == null) return inner
+        return column().apply {
+            background = shape(Color.argb(0xE6, 0xFE, 0xFD, 0xF9), Radii.CARD + 2)
+            elevate(this, 2f)
+            setPadding(0, 0, 0, 0)
+            addView(text(title, Typo.VALUE).apply { setPadding(dp(18), dp(16), dp(18), dp(8)) })
+            addView(inner, fill())
+        }
+    }
+
+    private fun summaryRows(items: List<SummaryItem>): LinearLayout = card(paddingDp = 0).apply {
         items.forEachIndexed { i, item ->
             if (i > 0) addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply { leftMargin = dp(16 + 40 + 14); rightMargin = dp(16) })
             addView(summaryRow(item))
@@ -458,7 +476,7 @@ class DesignKit(val context: Context) {
         head.addView(texts, weight().apply { leftMargin = dp(10) })
         addView(head)
         // Room for the landscape.
-        if (scenery != null) addView(View(context), LinearLayout.LayoutParams(1, dp(58)))
+        if (scenery != null) addView(View(context), LinearLayout.LayoutParams(1, dp(72)))
         isSelected = selected
         clickable(this, onClick)
     }
@@ -477,10 +495,10 @@ class DesignKit(val context: Context) {
         val head = row().apply { gravity = Gravity.TOP }
         head.addView(iconCircle(icon, 62))
         val texts = column()
-        texts.addView(text(title, Typo.HEADLINE))
+        texts.addView(text(title, Typo.HEADLINE).apply { maxLines = 1 })
         line?.let { texts.addView(text(it, Typo.VALUE), gap(6)) }
-        texts.addView(text(message, Typo.LABEL, Palette.InkMuted), gap(8))
-        head.addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(if (scenery != null) 72 else 0) })
+        texts.addView(text(message, Typo.LABEL, Palette.InkMuted), gap(8).apply { rightMargin = dp(if (scenery != null) 72 else 0) })
+        head.addView(texts, weight().apply { leftMargin = dp(14) })
         addView(head)
         addView(action, gap(18))
     }
@@ -609,7 +627,7 @@ class DesignKit(val context: Context) {
         inner.addView(caption, centered(8))
         val value = text("", Typo.NUMBER, Palette.Ink, center = true)
         inner.addView(value, centered(6))
-        val day = text("", Typo.LABEL, Palette.Ink, center = true).apply { typeface = MamaFonts.ui(context, 600) }
+        val day = text("", Typo.LABEL, Palette.Ink, center = true).apply { textSize = 14.5f }
         inner.addView(day, centered(8))
         root.addView(inner, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         root.layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply { gravity = Gravity.CENTER_HORIZONTAL }

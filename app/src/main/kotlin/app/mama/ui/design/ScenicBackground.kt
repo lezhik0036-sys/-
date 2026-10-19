@@ -242,7 +242,7 @@ internal object ScenePainter {
                 fadeDown(canvas, 0f, H * 0.66f, w, H, base)
                 p.color = base
                 canvas.drawRect(0f, H, w, h, p)
-                titleVeil(canvas, w, H, base)
+                titleVeil(canvas, w, H * if (layout == SceneLayout.HERO) 0.55f else 0.85f, base)
                 if (photo == null) {
                     leaves(canvas, w, H * 0.34f)
                     bokeh(canvas, w, h)
@@ -262,7 +262,7 @@ internal object ScenePainter {
                 }
                 // Light veils: the top (title) and the lower half (cards) stay readable.
                 gradientRect(canvas, 0f, 0f, w, H * 0.40f, alpha(base, 150), alpha(base, 0))
-                gradientRect(canvas, 0f, H * 0.72f, w, h, alpha(base, 0), alpha(base, 225), mid = alpha(base, 150), midAt = 0.4f)
+                gradientRect(canvas, 0f, H * 0.66f, w, h, alpha(base, 0), alpha(base, 245), mid = alpha(base, 185), midAt = 0.35f)
                 if (photo == null) {
                     leaves(canvas, w, h * 0.22f)
                     bokeh(canvas, w, h)
@@ -270,15 +270,15 @@ internal object ScenePainter {
             }
             SceneLayout.CARD_BOTTOM -> {
                 // A band of landscape along the bottom, its height set by the card width, so taller text never runs into it.
-                val band = min(h * 0.55f, w * 0.40f)
-                val H = band * 2.2f
+                val band = min(h * 0.6f, w * 0.50f)
+                val H = band * 1.9f
                 canvas.save()
-                canvas.translate(0f, h + band * 0.15f - H)
+                canvas.translate(0f, h + band * 0.1f - H)
                 if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, H) else landscape(canvas, w, H, l)
                 canvas.restore()
                 p.color = base
                 canvas.drawRect(0f, 0f, w, h - band, p)
-                gradientRect(canvas, 0f, h - band - 1f, w, h - band * 0.35f, base, alpha(base, 0), mid = alpha(base, 200), midAt = 0.4f)
+                gradientRect(canvas, 0f, h - band - 1f, w, h - band * 0.55f, base, alpha(base, 0), mid = alpha(base, 150), midAt = 0.45f)
             }
             SceneLayout.CARD_RIGHT -> {
                 // Landscape on the right ~45 % of the card; the text side stays the card colour.
@@ -414,7 +414,7 @@ internal object ScenePainter {
         }
         // Aerial haze over the near land: soft, low contrast.
         p.maskFilter = null
-        p.color = alpha(l.haze, 60)
+        p.color = alpha(l.haze, 35)
         c.drawRect(0f, H * 0.55f, w, H, p)
         if (l.road) road(c, w, H)
         flowers(c, w, H * 0.74f, H, 180, 3)
@@ -614,9 +614,8 @@ internal object ScenePainter {
     private fun fadeDown(c: Canvas, l: Float, t: Float, r: Float, b: Float, base: Int) =
         gradientRect(c, l, t, r, b, alpha(base, 0), base, mid = alpha(base, 180), midAt = 0.55f)
 
-    /** The left part of the sky is veiled, so the title on it reads well. */
-    private fun titleVeil(c: Canvas, w: Float, H: Float, base: Int) {
-        val bottom = H * 0.8f
+    /** The left part of the sky is veiled down to [bottom], so the title on it reads well. */
+    private fun titleVeil(c: Canvas, w: Float, bottom: Float, base: Int) {
         val layer = c.saveLayer(0f, 0f, w, bottom, null)
         p.maskFilter = null
         p.shader = LinearGradient(0f, 0f, w * 0.62f, 0f, intArrayOf(alpha(base, 205), alpha(base, 95), alpha(base, 0)), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)

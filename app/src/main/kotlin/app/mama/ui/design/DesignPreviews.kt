@@ -204,14 +204,15 @@ object DesignPreviews {
     /** Recovery card example (reference 20-failure): light, dawn, road; neutral fact; Restart as a chance. */
     private fun recovery(k: DesignKit): View {
         val body = k.body(18)
-        body.addView(k.titleBlock("Срыв —\nэто часть пути", "2 из 7 ночей позади. Сегодня получилось не всё. Но решение всё ещё твоё.", narrow = true))
+        body.addView(k.titleBlock("Срыв —\nэто часть пути", "Сегодня получилось не всё.\nНо решение всё ещё твоё.", narrow = true, lead = "2 из 7 ночей позади."))
         body.addView(k.offerCard(
             Icon.REFRESH, "Попробовать снова", "Restart · 299 ₽",
             "Ты можешь начать снова. Время выберешь заново.",
             k.primaryButton("Начать заново") {}, Scenery.RECOVERY,
         ), k.gap(Spacing.SECTION))
         body.addView(k.actionRow(Icon.HOME, "Вернуться на главную", "Продолжить, когда почувствуешь готовность.") {}, k.gap(Spacing.GUTTER))
-        body.addView(k.quoteCard(MotivationCatalog.pick(Placement.RECOVERY, "preview").text, accent = QuoteAccent.SAND, signature = "MAMA", markInCircle = true, italic = true), k.gap(Spacing.GUTTER))
+        body.addView(k.quoteCard(MotivationCatalog.pick(Placement.RECOVERY, "preview").text, accent = QuoteAccent.SAND, signature = "MAMA", markInCircle = true, italic = true, scenery = Scenery.RECOVERY), k.gap(Spacing.GUTTER))
+        body.addView(k.noteCard("Один сложный день не стирает твой прогресс.", "Твоя цель всё ещё с тобой.", icon = Icon.HEART), k.gap(Spacing.GUTTER))
         return k.screen(Scenery.RECOVERY, SceneLayout.HEADER, k.topBar({}), body)
     }
 
@@ -231,8 +232,8 @@ object DesignPreviews {
         actions.addView(k.actionTile(Icon.PHONE, "Экстренный\nвызов") {}, k.weight())
         actions.addView(k.actionTile(Icon.PEOPLE, "Доверенный\nконтакт") {}, k.weight().apply { leftMargin = k.dp(12) })
         body.addView(actions, k.gap(22))
-        body.addView(k.quoteCard(MotivationCatalog.pick(Placement.LOCK_NIGHT, "preview").text, scenery = Scenery.EVENING), k.gap(Spacing.GUTTER))
-        return k.screen(Scenery.EVENING, SceneLayout.FULL, header, body)
+        body.addView(k.quoteCard(MotivationCatalog.pick(Placement.LOCK_NIGHT, "preview").text, scenery = Scenery.DAWN), k.gap(Spacing.GUTTER))
+        return k.screen(Scenery.DAWN, SceneLayout.FULL, header, body)
     }
 
     // ---------------- dialogs ----------------
