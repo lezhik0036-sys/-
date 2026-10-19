@@ -85,6 +85,8 @@ class ScenicBackground(
     private val base: Int = Palette.Bg,
     /** Rounded corners in px (cards); the outline follows them, so the view casts a matching shadow. */
     private val cornerRadius: Float = 0f,
+    /** [SceneLayout.CARD_RIGHT]: share of the card width the landscape takes. */
+    private val vignette: Float = 0.42f,
 ) : Drawable() {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val matrix = Matrix()
@@ -93,7 +95,7 @@ class ScenicBackground(
     override fun draw(canvas: Canvas) {
         val b = bounds
         if (b.width() <= 0 || b.height() <= 0) return
-        val bitmap = SceneCache.get(context, scenery, layout, base, b.width(), b.height()) ?: run {
+        val bitmap = SceneCache.get(context, scenery, layout, base, b.width(), b.height(), vignette) ?: run {
             paint.shader = null
             paint.color = base
             box.set(b)
@@ -129,16 +131,16 @@ internal object SceneCache {
     private val photos = HashMap<Scenery, Bitmap?>()
 
     @Synchronized
-    fun get(context: Context, scenery: Scenery, layout: SceneLayout, base: Int, w: Int, h: Int): Bitmap? {
+    fun get(context: Context, scenery: Scenery, layout: SceneLayout, base: Int, w: Int, h: Int, vignette: Float = 0.42f): Bitmap? {
         // Screen backgrounds are soft: half resolution is enough. Cards are small: full.
         val q = if (layout == SceneLayout.CARD_BOTTOM || layout == SceneLayout.CARD_RIGHT) 1f else 0.5f
         val bw = max(1, (w * q).roundToInt())
         val bh = max(1, (h * q).roundToInt())
-        val key = "$scenery/$layout/$base/$bw x $bh"
+        val key = "$scenery/$layout/$base/$vignette/$bw x $bh"
         cache.get(key)?.let { return it }
         val bitmap = runCatching {
             Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also {
-                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery))
+                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette)
             }
         }.getOrNull() ?: return null
         cache.put(key, bitmap)
@@ -249,7 +251,7 @@ internal object ScenePainter {
         p.alpha = 255
     }
 
-    fun paint(canvas: Canvas, w: Float, h: Float, scenery: Scenery, layout: SceneLayout, base: Int, photo: Bitmap?) {
+    fun paint(canvas: Canvas, w: Float, h: Float, scenery: Scenery, layout: SceneLayout, base: Int, photo: Bitmap?, vignette: Float = 0.42f) {
         reset()
         canvas.drawColor(base)
         val l = look(scenery)
@@ -262,7 +264,7 @@ internal object ScenePainter {
                 gradientRect(canvas, 0f, H * (if (hero) 0.84f else 0.76f), w, H, alpha(base, 0), base, mid = alpha(base, 170), midAt = 0.5f)
                 p.color = base
                 canvas.drawRect(0f, H, w, h, p)
-                titleVeil(canvas, w, H * if (hero) 0.50f else 0.82f, base)
+                titleVeil(canvas, w, H * if (hero) 0.40f else 0.82f, base)
                 if (photo == null) {
                     grain(canvas, w, h)
                     leaves(canvas, w, H * 0.34f)
@@ -294,8 +296,8 @@ internal object ScenePainter {
                 gradientRect(canvas, 0f, h - band - 1f, w, h - band * 0.55f, base, alpha(base, 0), mid = alpha(base, 150), midAt = 0.45f)
             }
             SceneLayout.CARD_RIGHT -> {
-                // Landscape on the right ~45 % of the card; the text side stays the card colour.
-                val bw = w * 0.5f
+                // Landscape on the right [vignette] of the card; the text side stays the card colour.
+                val bw = w * vignette
                 val H = max(h * 1.5f, bw * 0.95f)
                 canvas.save()
                 canvas.translate(w - bw, h * 1.12f - H)
@@ -303,7 +305,7 @@ internal object ScenePainter {
                 canvas.restore()
                 p.color = base
                 canvas.drawRect(0f, 0f, w - bw, h, p)
-                p.shader = LinearGradient(w - bw - 1f, 0f, w - bw * 0.45f, 0f, base, alpha(base, 0), Shader.TileMode.CLAMP)
+                p.shader = LinearGradient(w - bw - 1f, 0f, w - bw * 0.5f, 0f, base, alpha(base, 0), Shader.TileMode.CLAMP)
                 canvas.drawRect(w - bw - 1f, 0f, w, h, p)
                 p.shader = null
                 gradientRect(canvas, 0f, 0f, w, h * 0.45f, alpha(base, 210), alpha(base, 0))
@@ -374,9 +376,12 @@ internal object ScenePainter {
         // Golden lake with the sun's reflection.
         val lt = H * 0.592f
         p.maskFilter = null
-        p.shader = LinearGradient(0f, lt, 0f, H * 0.70f, alpha(l.lake[0], 252), alpha(l.lake[1], 252), Shader.TileMode.CLAMP)
+        val deep = blend(l.lake[1], l.range3, 0.3f)
+        p.shader = LinearGradient(0f, lt, 0f, H * 0.86f, intArrayOf(alpha(l.lake[0], 252), alpha(l.lake[1], 252), alpha(deep, 252)), floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
         c.drawRect(0f, lt, w, H * 0.86f, p)
         p.shader = null
+        farShore(c, w, H, l)
+        ripples(c, w, H, lt)
         soft(w * 0.018f)
         p.color = alpha(c(0xFFF8E0), 225)
         c.drawOval(sx - w * 0.05f, lt - H * 0.01f, sx + w * 0.05f, lt + H * 0.17f, p)
@@ -431,6 +436,52 @@ internal object ScenePainter {
         if (l.road) road(c, w, H)
         grass(c, w, H, ground, l)
         flowers(c, w, H * 0.80f, ground, 320, 3)
+        p.maskFilter = null
+    }
+
+    private fun blend(a: Int, b: Int, t: Float): Int = Color.rgb(
+        (Color.red(a) + (Color.red(b) - Color.red(a)) * t).roundToInt(),
+        (Color.green(a) + (Color.green(b) - Color.green(a)) * t).roundToInt(),
+        (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t).roundToInt(),
+    )
+
+    /** A low wooded far shore across the lake, mirrored softly in the water. */
+    private fun farShore(c: Canvas, w: Float, H: Float, l: Look) {
+        val top = H * 0.632f
+        val shore = Path().apply {
+            moveTo(w * 0.08f, top + H * 0.012f)
+            for (i in 0..40) {
+                val t = i / 40f
+                lineTo(w * (0.08f + 0.84f * t), top - H * 0.006f * sin(t * 9f) - H * 0.004f * sin(t * 23f))
+            }
+            lineTo(w * 0.92f, top + H * 0.012f)
+            close()
+        }
+        soft(w * 0.0015f)
+        p.color = alpha(l.mid, 235)
+        c.drawPath(shore, p)
+        forest(c, w, H, { t -> top + H * 0.004f - H * 0.006f * sin(((t - 0.08f) / 0.84f) * 9f) }, 0.10f, 0.90f, 70, 0.008f, 0.022f, l.midTree, null, 88, 225, w * 0.0018f)
+        // Reflection: the same band, flipped and faint.
+        c.save()
+        c.scale(1f, -1f, 0f, top + H * 0.012f)
+        soft(w * 0.006f)
+        p.color = alpha(l.midTree, 90)
+        c.drawPath(shore, p)
+        c.restore()
+        p.maskFilter = null
+    }
+
+    /** Light ripples across the water. */
+    private fun ripples(c: Canvas, w: Float, H: Float, lt: Float) {
+        val r = Rnd(19)
+        soft(w * 0.0025f)
+        for (i in 0 until 46) {
+            val y = lt + H * 0.05f + (H * 0.25f) * r.next()
+            val x = w * r.next()
+            val half = w * (0.03f + 0.14f * r.next())
+            p.color = alpha(Color.WHITE, (40 + 50 * r.next()).roundToInt())
+            c.drawOval(x - half, y, x + half, y + H * 0.0022f, p)
+        }
         p.maskFilter = null
     }
 

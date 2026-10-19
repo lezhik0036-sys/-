@@ -297,7 +297,7 @@ object DesignPreviews {
                     addView(k.text(s.name, Typo.TAG, Palette.InkMuted), k.gap(6))
                 }, k.weight().apply { if (i > 0) leftMargin = k.dp(12) })
             }
-            if (line.size == 1) row.addView(View(context), k.weight().apply { leftMargin = k.dp(12) })
+            if (line.size == 1) row.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = k.dp(12) })
             addView(row, k.gap(if (r == 0) 14 else 12))
         }
         addView(View(context).apply { setBackgroundColor(Color.TRANSPARENT) }, LinearLayout.LayoutParams(1, k.dp(8)))
