@@ -1,107 +1,153 @@
 # MAMA — карта экранов UI v1 (Android)
 
-Перечень всех экранов текущего Android-приложения (v0.7.8) — основа
-редизайна — и утверждённые референсы из `docs/design-reference/` (source of
-truth для UI v1). Пока ничего в интерфейсе не меняется.
+Перечень всех экранов Android-приложения (основа — v0.7.8) и утверждённые
+референсы из `docs/design-reference/` (source of truth для UI v1).
+Решения владельца продукта — `docs/DESIGN_SYSTEM_V1.md`, §12.
 
 - Ключ экрана совпадает с именем экрана в режиме предпросмотра
   (`ui/Previews.kt`, `adb shell am start -n app.mama/.ui.MainActivity --es mama.preview <ключ>`).
 - Номер — порядок в CI-туре скриншотов: текущий вид экрана — релиз
-  `ui-screenshots`, файл `NN-<ключ>.jpg`. Референс кладётся как
-  `docs/design-reference/NN-<ключ>.png`, чтобы их было удобно сравнивать.
+  `ui-screenshots`, файл `NN-<ключ>.jpg`. Референс лежит как
+  `docs/design-reference/NN-<ключ>.webp`, чтобы их было удобно сравнивать.
 - Дизайн-система — `docs/DESIGN_SYSTEM_V1.md`.
 
-Статусы: **—** нет референса · **реф** референс утверждён и сохранён ·
-**реф (чат)** утверждён, но файл ещё не в репозитории · **готово** экран
-переделан и проверен. Экран без референса делается в общем стиле
-референсов (`docs/DESIGN_SYSTEM_V1.md`).
+Статусы: **—** нет референса (делается в общем стиле референсов) ·
+**реф** референс утверждён и сохранён · **готово** экран переделан и
+проверен · **FUTURE** не входит в пилот.
 
-## Настройка серии (светлые экраны)
+## Итоговое соответствие «референс → экран»
+
+| Референс | Экран |
+|---|---|
+| `03-series.webp` | 03 `series` — шаг 1 |
+| `04-time.webp` | 04 `time` — шаг 2; стиль 21 `restart_time`, 25 `flex_plan` |
+| `06-contact.webp` | 06 `contact` — шаг 3 (карточка контакта); 07 `promise` — шаг 4 (карточка «Моя причина») |
+| `08-commitment.webp` | 08 `commitment` — шаг 5; 22 `restart_commitment` (суммы — по §12.3) |
+| `09-review.webp` | 09 `review` — шаг 6; стиль 11 `edit` |
+| `13-dashboard_active.webp` | 13 `dashboard_active`; стиль 10 `dashboard`, 14 `needs_attention`, 15 `restart_scheduled`, 24 `flex`, `test_session` |
+| `16-lock.webp` | 16 `lock`; стиль 17 `emergency`, 18 `exit`, 19 `code` |
+| `20-failure.webp` | 20 `failure`; стиль 23 `success`, `flex_result` |
+| `new-role.webp` | `role` — FUTURE |
+| `new-motivation.webp` | `motivation` — FUTURE (стиль цитат — в карточках-цитатах экранов) |
+
+## До мастера (без счётчика шагов)
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
 | 01 | `welcome` | Приветствие | Первый запуск, нет серии | `SetupScreens.welcomeScreen` | — | — |
-| 02 | `permissions` | Разрешения (строгая защита) | Перед первой серией и «Исправить защиту» | `SetupScreens.permissionsScreen` | — | — |
-| 03 | `series` | Выбор: тест 15 мин · 3 · 5 · 7 дней · FLEX | Мастер, шаг 1 | `SetupScreens.seriesScreen` | `03-series.webp` | реф |
-| 04 | `time` | Выбери время (AUTO_NOW / MANUAL) | Мастер, шаг 2 | `SetupScreens.timeScreen` | `04-time.webp` | реф |
-| 05 | `time_test` | Тестовый режим 15 минут | Мастер, если выбран тест | `SetupScreens.timeScreen` | — | — |
-| 06 | `contact` | Доверенный контакт | Мастер | `SetupScreens.contactScreen` | `06-contact.webp` | реф |
-| 07 | `promise` | Личная причина | Мастер | `SetupScreens.promiseScreen` | `06-contact.webp` (карточка «Моя причина») | реф |
-| 08 | `commitment` | «Цена слова» + баланс | Мастер | `CommitmentScreens.commitmentScreen` | `08-commitment.webp` | реф |
-| 09 | `review` | Проверь условия | Мастер, последний шаг | `SetupScreens.reviewScreen` | `09-review.webp` | реф (чат) |
+| 02 | `permissions` | «Подготовим MAMA» — разрешения | Перед мастером и «Исправить защиту» | `SetupScreens.permissionsScreen` | — | — |
 
-## Серия до начала и во время (ночные экраны)
+## Мастер STANDARD: 6 шагов
+
+| № | Ключ | Шаг | Экран | Код | Референс | Статус |
+|---|---|---|---|---|---|---|
+| 03 | `series` | 1 из 6 | Выбор серии: 3 · 5 · 7 дней · FLEX | `SetupScreens.seriesScreen` | `03-series.webp` | реф |
+| 04 | `time` | 2 из 6 | Время (AUTO_NOW / MANUAL) | `SetupScreens.timeScreen` | `04-time.webp` | реф |
+| 06 | `contact` | 3 из 6 | Доверенный контакт | `SetupScreens.contactScreen` | `06-contact.webp` | реф |
+| 07 | `promise` | 4 из 6 | Личная причина | `SetupScreens.promiseScreen` | `06-contact.webp` («Моя причина») | реф |
+| 08 | `commitment` | 5 из 6 | «Цена слова»: 500 / 1 000 / 3 000 / 5 000 ₽, своя сумма, «Продолжить без цены слова» | `CommitmentScreens.commitmentScreen` | `08-commitment.webp` | реф |
+| 09 | `review` | 6 из 6 | Проверка / «Всё готово» | `SetupScreens.reviewScreen` | `09-review.webp` | реф |
+
+FLEX: 1 Выбор · 2 Контакт · 3 Причина · 4 Проверка (время — у каждого
+периода). Тест 15 минут (из «Настройки → Тестирование»): 1 Время · 2
+Контакт · 3 Причина · 4 Проверка. Без кошелька шага «Цена слова» нет.
+
+## Серия до начала и во время
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
-| 10 | `dashboard` | Серия запланирована (SCHEDULED) | После «Начать серию» | `HomeScreens.seriesDashboard` | — | — |
-| 11 | `edit` | Изменить условия | До ACTIVE: контакт, причина, «Цена слова» | `ScheduledScreens.editScreen` | — | — |
+| 10 | `dashboard` | Серия запланирована (SCHEDULED) | После «Начать» | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | — |
+| 11 | `edit` | Изменить условия | До ACTIVE: контакт, причина, «Цена слова» | `ScheduledScreens.editScreen` | стиль `09-review.webp` | — |
 | 12 | `cancel_launch` | Отменить запуск (подтверждение) | До ACTIVE | `ScheduledScreens.confirmCancelLaunch` | — | — |
-| 13 | `dashboard_active` | Серия идёт (ACTIVE) | После подтверждения защиты | `HomeScreens.seriesDashboard` | `13-dashboard_active.webp` | реф (чат) |
-| 14 | `needs_attention` | Серия не началась (NEEDS_ATTENTION) | Защита не включилась | `HomeScreens.seriesDashboard` | — | — |
-| 15 | `restart_scheduled` | Restart запланирован | После оплаты Restart | `HomeScreens.seriesDashboard` | — | — |
+| 13 | `dashboard_active` | Серия идёт (ACTIVE) | После подтверждения защиты | `HomeScreens.seriesDashboard` | `13-dashboard_active.webp` | реф |
+| 14 | `needs_attention` | Серия не началась (NEEDS_ATTENTION) | Защита не включилась | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | — |
+| 15 | `restart_scheduled` | Restart запланирован | После оплаты Restart | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | — |
+
+`dashboard_active`: только реальные данные (§12.6) — «День N из M»,
+прогресс по дням, время до конца / начала блокировки, окно, «Цена слова»,
+доверенный контакт. Без «Сегодня без телефона», «+1 ч 20 мин», «N дней
+подряд», «Так держать!» и без кнопки «Продолжать».
 
 ## Экран блокировки (поверх всего)
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
-| 16 | `lock` | Блокировка: таймер, фраза | Идёт блокировка | `lock/LockScreenView` | `16-lock.webp` | реф (чат) |
-| 17 | `emergency` | Экстренные службы | «Экстренный звонок» | `lock/LockScreenView` | — | — |
-| 18 | `exit` | Досрочный выход: запрос кода | «Попросить код» | `lock/LockScreenView` | — | — |
-| 19 | `code` | Ввод кода доверенного контакта | После запроса кода | `lock/LockScreenView` | — | — |
+| 16 | `lock` | «Время для себя»: кольцо «Осталось», день серии, фраза | Идёт блокировка | `lock/LockScreenView` | `16-lock.webp` | реф |
+| 17 | `emergency` | Экстренные службы | «Экстренный вызов» | `lock/LockScreenView` | стиль `16-lock.webp` | — |
+| 18 | `exit` | «Мне действительно нужно выйти»: запрос кода | «Доверенный контакт» | `lock/LockScreenView` | стиль `16-lock.webp` | — |
+| 19 | `code` | Ввод кода доверенного контакта | После запроса кода | `lock/LockScreenView` | стиль `16-lock.webp` | — |
+
+`lock`: только два действия — «Экстренный вызов» и «Доверенный контакт»
+(доверенный выход). Кнопки «Я держу курс» нет (можно некликабельной
+плашкой); «‹» с референса на блокировке не показывается — назад некуда.
 
 ## Итоги и Restart
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
-| 20 | `failure` | Серия завершена досрочно | Срыв ACTIVE-серии | `HomeScreens.failureScreen` | `20-failure.webp` | реф (чат) |
-| 21 | `restart_time` | Restart: выбери время | «Начать заново» | `SetupScreens.timeScreen` | — | — |
-| 22 | `restart_commitment` | Restart: «Цена слова» | «Начать заново», шаг 2 | `CommitmentScreens.commitmentScreen` | — | — |
-| 23 | `success` | Серия пройдена | Все дни серии | `HomeScreens.successScreen` | — | — |
+| 20 | `failure` | «Срыв — это часть пути»: «N из M ночей», «Начать заново · Restart · 299 ₽» | Срыв ACTIVE-серии | `HomeScreens.failureScreen` | `20-failure.webp` | реф |
+| 21 | `restart_time` | Restart: время | «Начать заново», шаг 1 из 2 | `SetupScreens.timeScreen` | стиль `04-time.webp` | — |
+| 22 | `restart_commitment` | Restart: «Цена слова» (не ниже цены Restart) | «Начать заново», шаг 2 из 2 | `CommitmentScreens.commitmentScreen` | стиль `08-commitment.webp` | — |
+| 23 | `success` | Серия пройдена | Все дни серии | `HomeScreens.successScreen` | стиль `20-failure.webp` | — |
+
+`failure`: светлая сцена `RECOVERY`, без красного, «!», «Неудача», «Провал»,
+«Ты проиграл»; без упоминания будущего возврата 50 %.
 
 ## FLEX
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
-| 24 | `flex` | FLEX: пакет и дни | Активный пакет FLEX | `HomeScreens.flexDashboard` | — | — |
-| 25 | `flex_plan` | FLEX: даты и время периода | «Запланировать FLEX-период» | `HomeScreens.flexPlannerScreen` | — | — |
-| — | `flex_result` | Итог FLEX | Пакет закончился | `HomeScreens.flexResultScreen` | — | — |
+| 24 | `flex` | FLEX: пакет и дни | Активный пакет FLEX | `HomeScreens.flexDashboard` | стиль `13-dashboard_active.webp` | — |
+| 25 | `flex_plan` | FLEX: даты и время периода | «Запланировать FLEX-период» | `HomeScreens.flexPlannerScreen` | стиль `04-time.webp` | — |
+| — | `flex_result` | Итог FLEX | Пакет закончился | `HomeScreens.flexResultScreen` | стиль `20-failure.webp` | — |
 
-## Новые экраны с референсов (в приложении их нет)
-
-Новая функциональность, а не перерисовка: делается только после
-подтверждения владельцем продукта (см. «Открытые вопросы» в
-`docs/DESIGN_SYSTEM_V1.md`).
-
-| Ключ | Экран | Референс | Статус |
-|---|---|---|---|
-| `role` | «Кто ты сегодня?» — роль: Спортсмен · Родитель · Работник · Бизнесмен · Студент · Творец; «MAMA подстроит фото и слова поддержки» | `new-role.webp` | реф |
-| `motivation` | «Поддержка для тебя» — мотивация по ролям, карточки с фото людей, «Выбрать мотивацию» | `new-motivation.webp` | реф (чат) |
-
-## Вкладки
+## Вкладки и настройки
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
-| 26 | `stats` | Статистика | Вкладка «Статистика» | `HomeScreens.statisticsScreen` | — | — |
-| 27 | `settings` | Настройки, баланс MAMA, история | Вкладка «Настройки» | `HomeScreens.settingsScreen`, `CommitmentScreens.balanceCard`, `ledgerList` | — | — |
+| 26 | `stats` | Статистика (пока без выдуманных цифр) | Вкладка «Статистика» | `HomeScreens.statisticsScreen` | — | — |
+| 27 | `settings` | Настройки: баланс MAMA, история, разрешения, «Тестирование» | Вкладка «Настройки»; шестерёнка на приветствии | `HomeScreens.settingsScreen` | — | — |
+| 28 | `settings_testing` | Настройки → Тестирование | Только debug/pilot-сборка | `HomeScreens.testingScreen` | — | — |
+| 05 | `time_test` | Тестовая блокировка 15 минут: время (шаг 1 из 4) | «Тестовая блокировка · 15 минут» | `SetupScreens.timeScreen` | стиль `04-time.webp` | — |
+
+**Настройки → Тестирование** (только при `PILOT_TEST_CREDITS` /
+`TEST_MODE_ENABLED`):
+- «Тестовая блокировка · 15 минут» — запускает мастер теста (время, контакт,
+  причина, проверка); доступно, когда нет серии, FLEX или блокировки;
+- «+1 000 ₽ · тест», «+5 000 ₽ · тест» — пополнение того же баланса MAMA;
+- пояснение: тестовые кредиты по-настоящему тратятся на Restart, FLEX и
+  «Цену слова».
 
 ## Без отдельного превью
 
 | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|
-| `test_session` | Идёт тестовый режим 15 минут | Тест запущен | `HomeScreens.sessionDashboard` | — | — |
-| `checkout` | Оплата Restart / FLEX: «Оплатить с баланса MAMA», «+1 000 ₽ · тест» | Restart, FLEX | `billing/Payments.kt` (`Checkout`) | — | — |
-| `return_notice` | «MAMA вернула тебе …» (возврат 50 %) | Через 24 ч после срыва с «Ценой слова» | `CommitmentScreens.showReturnNoticeIfAny` | — | — |
+| `test_session` | Идёт тестовая блокировка 15 минут | Тест запущен | `HomeScreens.sessionDashboard` | стиль `13-dashboard_active.webp` | — |
+| `checkout` | Оплата Restart / FLEX: «Оплатить с баланса MAMA», «+1 000 ₽ · тест» при нехватке | Restart, FLEX | `billing/Payments.kt` (`Checkout`) | — | — |
+| `return_notice` | «MAMA вернула тебе …» (возврат 50 %) | После фактического начисления | `CommitmentScreens.showReturnNoticeIfAny` | — | — |
 | `time_picker` | Цифровой выбор времени | Поля времени | `DigitalTimePicker` | — | — |
 | `date_list` | Выбор даты (FLEX) | Планирование FLEX | `DateList` | — | — |
 | `zone_picker` | Часовой пояс | «Изменить» на шаге времени | `SetupScreens.pickZone` (`BrandDialog`) | — | — |
 
+## FUTURE (в пилот не входят)
+
+| Ключ | Экран | Референс | Статус |
+|---|---|---|---|
+| `role` | «Кто ты сегодня?» — роль: Спортсмен · Родитель · Работник · Бизнесмен · Студент · Творец; «MAMA подстроит фото и слова поддержки» | `new-role.webp` | FUTURE |
+| `motivation` | «Поддержка для тебя» — мотивация по ролям, карточки с фото людей | `new-motivation.webp` | FUTURE |
+
+Не шаги мастера. Подготовлено: `MotivationCatalog` с `profileType`
+(`ATHLETE`, `ENTREPRENEUR`, `PARENT`, `PROFESSIONAL`, `STUDENT`, `CREATOR`,
+`GENERAL`); в пилоте всегда `GENERAL`. Фразы поддержки показываются внутри
+существующих экранов: запланированная серия, ACTIVE, блокировка, успех,
+срыв / восстановление, «Всё готово», «Цена слова», FLEX.
+
 ## Обязательно сохранить при редизайне
 
-- Тестовый режим 15 минут (экраны `series`, `time_test`, `test_session`).
-- Тестовое пополнение баланса +1 000 ₽ / +5 000 ₽ (карточка баланса MAMA
-  на экранах `commitment` и `settings`) и «+1 000 ₽ · тест» при нехватке
-  средств (`checkout`).
+- Тестовый режим 15 минут (`time_test`, `test_session`; вход — «Настройки →
+  Тестирование»).
+- Тестовое пополнение баланса +1 000 ₽ / +5 000 ₽ («Настройки →
+  Тестирование») и «+1 000 ₽ · тест» при нехватке средств (`checkout`).
 - Реальная оплата тестовыми кредитами Restart, FLEX и «Цены слова»
   (`checkout`, `commitment`, `restart_commitment`).
 - Все состояния серии из `docs/MONETIZATION.md`; тексты условий — оттуда же.
