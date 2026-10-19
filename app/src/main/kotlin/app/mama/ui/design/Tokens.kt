@@ -2,6 +2,7 @@ package app.mama.ui.design
 
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.util.TypedValue
 import android.widget.TextView
 import app.mama.ui.MamaFonts
@@ -83,20 +84,21 @@ object Palette {
 /**
  * Type scale (DESIGN_SYSTEM_V1 §3). Manrope for the interface, Cormorant
  * Garamond for quotes; both bundled, so the phone's font setting never
- * changes the look.
+ * changes the look. [leading] is the distance between baselines in em
+ * (0 = the font's own line height), as measured on the references.
  */
 enum class Typo(
     val sizeSp: Float,
     private val weight: Int,
     private val tracking: Float = 0f,
-    private val leading: Float = 1.25f,
+    private val leading: Float = 0f,
     private val serif: Boolean = false,
     private val italic: Boolean = false,
     private val caps: Boolean = false,
     private val tabular: Boolean = false,
 ) {
     /** Screen title: "Всё готово", "Срыв — это часть пути". */
-    DISPLAY(31f, 800, tracking = -0.025f, leading = 1.08f),
+    DISPLAY(34f, 800, tracking = -0.025f, leading = 1.08f),
 
     /** Sheet title, big card title. */
     HEADLINE(23f, 800, tracking = -0.015f, leading = 1.14f),
@@ -108,35 +110,35 @@ enum class Typo(
     VALUE(17f, 700, tracking = -0.005f, leading = 1.2f),
 
     /** Two lines under the title. */
-    SUBTITLE(16f, 500, leading = 1.32f),
-    BODY(15f, 500, leading = 1.4f),
+    SUBTITLE(16f, 500, leading = 1.3f),
+    BODY(15f, 500, leading = 1.38f),
 
     /** Field label: "Длительность", "Доверенный контакт". */
     LABEL(13.5f, 500, leading = 1.3f),
-    CAPTION(12.5f, 500, leading = 1.35f),
-    BUTTON(16f, 700, leading = 1.0f),
+    CAPTION(12.5f, 500, leading = 1.32f),
+    BUTTON(16f, 700),
 
     /** "M A M A" in the top bar. */
-    WORDMARK(16f, 600, tracking = 0.42f, leading = 1.0f),
+    WORDMARK(16f, 600, tracking = 0.36f),
 
     /** "6 из 6". */
-    STEP(14f, 500, leading = 1.0f),
+    STEP(14f, 500),
 
     /** "РЕКОМЕНДУЕМ", "ВЕЧЕРОМ". */
-    TAG(11f, 800, tracking = 0.08f, leading = 1.0f, caps = true),
+    TAG(10.5f, 800, tracking = 0.06f, caps = true),
 
     /** "500 ₽" on the "Цена слова" card. */
-    AMOUNT(40f, 800, tracking = -0.02f, leading = 1.0f, tabular = true),
+    AMOUNT(40f, 800, tracking = -0.02f, tabular = true),
 
     /** Big numbers: lock timer, values on the home screen. */
-    NUMBER(30f, 800, tracking = -0.02f, leading = 1.0f, tabular = true),
+    NUMBER(30f, 800, tracking = -0.02f, tabular = true),
 
     /** Serif quote: lock screen, quote cards. */
-    QUOTE(21f, 500, leading = 1.2f, serif = true),
-    QUOTE_ITALIC(21f, 500, leading = 1.2f, serif = true, italic = true),
+    QUOTE(21f, 500, leading = 1.18f, serif = true),
+    QUOTE_ITALIC(21f, 500, leading = 1.18f, serif = true, italic = true),
 
     /** Sans quote: home screen. */
-    QUOTE_SANS(15f, 500, leading = 1.42f),
+    QUOTE_SANS(15f, 500, leading = 1.38f),
     ;
 
     fun applyTo(view: TextView) {
@@ -145,10 +147,23 @@ enum class Typo(
         // Cormorant has no bundled italic: the framework slants the upright face.
         if (italic) view.setTypeface(face, Typeface.ITALIC) else view.typeface = face
         view.letterSpacing = tracking
-        view.setLineSpacing(0f, leading)
+        if (leading > 0f) {
+            // Baseline-to-baseline distance relative to the font's own line height (ascent + descent).
+            val factor = leading / if (serif) CORMORANT_LINE else MANROPE_LINE
+            // Before Android 9 the last line is shortened too, which could cut descenders: never tighter there.
+            view.setLineSpacing(0f, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) factor else maxOf(factor, 1f))
+        } else {
+            view.setLineSpacing(0f, 1f)
+        }
         view.isAllCaps = caps
         view.fontFeatureSettings = if (tabular) "tnum" else null
         view.includeFontPadding = false
+    }
+
+    private companion object {
+        /** (ascent + descent) / em of the bundled fonts (hhea / OS/2 typo metrics). */
+        const val MANROPE_LINE = 1.366f
+        const val CORMORANT_LINE = 1.211f
     }
 }
 

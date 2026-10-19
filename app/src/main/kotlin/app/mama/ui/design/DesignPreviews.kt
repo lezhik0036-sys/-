@@ -173,7 +173,7 @@ object DesignPreviews {
     /** Light screen: the "Всё готово" composition (reference 09-review), sample data. */
     private fun lightScreen(k: DesignKit): View {
         val body = k.body(22)
-        body.addView(k.titleBlock("Всё готово", "Ты выбрал путь, который помогает вернуть себя."))
+        body.addView(k.titleBlock("Всё готово", "Ты выбрал путь, который помогает вернуть себя.", narrow = true))
         body.addView(k.summaryCard("Твой план", listOf(
             SummaryItem(Icon.CALENDAR, "Длительность", "7 дней") {},
             SummaryItem(Icon.CLOCK, "Время блокировки", "21:00 – 07:00") {},
@@ -193,7 +193,7 @@ object DesignPreviews {
             addView(k.segments(2, 7), k.gap(4).apply { leftMargin = k.dp(Spacing.SCREEN); rightMargin = k.dp(Spacing.SCREEN) })
         }
         val body = k.body(26)
-        body.addView(k.titleBlock("День 2 из 7", "Ты держишь курс."))
+        body.addView(k.titleBlock("День 2 из 7", "Ты держишь курс.", narrow = true))
         body.addView(View(k.context), LinearLayout.LayoutParams(1, k.dp(200)))
         body.addView(k.valueCard(Icon.MOON, "До начала блокировки", k.hoursMinutes(5, 40), k.tag("Сегодня в 21:00")), k.fill())
         body.addView(k.valueCard(Icon.COINS, "Цена слова", "500 ₽", k.tag("В резерве до конца серии", TagTone.SAND)), k.gap(Spacing.GUTTER))
@@ -204,7 +204,7 @@ object DesignPreviews {
     /** Recovery card example (reference 20-failure): light, dawn, road; neutral fact; Restart as a chance. */
     private fun recovery(k: DesignKit): View {
         val body = k.body(18)
-        body.addView(k.titleBlock("Срыв —\nэто часть пути", "2 из 7 ночей позади.\nСегодня получилось не всё. Но решение всё ещё твоё."))
+        body.addView(k.titleBlock("Срыв —\nэто часть пути", "2 из 7 ночей позади. Сегодня получилось не всё. Но решение всё ещё твоё.", narrow = true))
         body.addView(k.offerCard(
             Icon.REFRESH, "Попробовать снова", "Restart · 299 ₽",
             "Ты можешь начать снова. Время выберешь заново.",

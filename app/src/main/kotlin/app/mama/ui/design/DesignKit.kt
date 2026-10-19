@@ -124,10 +124,17 @@ class DesignKit(val context: Context) {
     fun title(value: CharSequence, center: Boolean = false) = text(value, Typo.DISPLAY, Palette.Ink, center)
     fun subtitle(value: CharSequence, center: Boolean = false) = text(value, Typo.SUBTITLE, Palette.InkMuted, center)
 
-    /** Screen title and the two lines under it. */
-    fun titleBlock(title: CharSequence, subtitle: CharSequence? = null, center: Boolean = false): LinearLayout = column().apply {
+    /**
+     * Screen title and the two lines under it. [narrow]: the subtitle keeps to
+     * the left part of the screen, where the landscape is veiled (as on the references).
+     */
+    fun titleBlock(title: CharSequence, subtitle: CharSequence? = null, center: Boolean = false, narrow: Boolean = false): LinearLayout = column().apply {
         addView(title(title, center), fill())
-        subtitle?.let { addView(subtitle(it, center), gap(10)) }
+        subtitle?.let {
+            addView(subtitle(it, center).apply {
+                if (narrow) maxWidth = (context.resources.displayMetrics.widthPixels * 0.66f).toInt()
+            }, if (narrow) wrap().apply { topMargin = dp(10) } else gap(10))
+        }
     }
 
     /** "6 ч 12 мин": numbers large, units smaller (lock timer, home values). */
@@ -383,13 +390,13 @@ class DesignKit(val context: Context) {
 
     /** Half-width action ("Экстренный вызов", "Доверенный контакт" on the lock screen). */
     fun actionTile(icon: Icon, label: String, onClick: () -> Unit): View = row().apply {
-        setPadding(dp(12), dp(12), dp(10), dp(12))
+        setPadding(dp(12), dp(12), dp(8), dp(12))
         minimumHeight = dp(66)
         background = pressable(shape(Palette.Card, Radii.CARD), Radii.CARD)
         elevate(this, 3f)
-        addView(iconCircle(icon, 42))
-        addView(text(label, Typo.BODY, Palette.Ink).apply { typeface = MamaFonts.ui(context, 600); maxLines = 2 }, weight().apply { leftMargin = dp(10); rightMargin = dp(4) })
-        addView(chevron(sizeDp = 18))
+        addView(iconCircle(icon, 38))
+        addView(text(label, Typo.LABEL, Palette.Ink).apply { typeface = MamaFonts.ui(context, 600); textSize = 14f; maxLines = 2 }, weight().apply { leftMargin = dp(10); rightMargin = dp(2) })
+        addView(chevron(sizeDp = 16))
         contentDescription = label.replace('\n', ' ')
         clickable(this, onClick)
     }
@@ -398,19 +405,19 @@ class DesignKit(val context: Context) {
     fun summaryCard(title: String?, items: List<SummaryItem>): View = card(paddingDp = 0).apply {
         title?.let { addView(text(it, Typo.VALUE).apply { setPadding(dp(18), dp(16), dp(18), dp(4)) }) }
         items.forEachIndexed { i, item ->
-            if (i > 0) addView(divider(), fill().apply { leftMargin = dp(16 + 44 + 14); rightMargin = dp(16) })
+            if (i > 0) addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply { leftMargin = dp(16 + 40 + 14); rightMargin = dp(16) })
             addView(summaryRow(item))
         }
         setPadding(0, 0, 0, dp(4))
     }
 
     fun summaryRow(item: SummaryItem): View = row().apply {
-        setPadding(dp(16), dp(12), dp(14), dp(12))
-        minimumHeight = dp(68)
-        addView(iconCircle(item.icon, 44))
+        setPadding(dp(16), dp(9), dp(14), dp(9))
+        minimumHeight = dp(60)
+        addView(iconCircle(item.icon, 40))
         val texts = column()
         texts.addView(text(item.label, Typo.LABEL, Palette.InkMuted))
-        texts.addView(text(item.value, Typo.VALUE), gap(3))
+        texts.addView(text(item.value, Typo.VALUE), gap(2))
         addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(8) })
         item.onClick?.let {
             addView(chevron())
@@ -441,14 +448,14 @@ class DesignKit(val context: Context) {
         outlineProvider = roundOutline(radius)
         clipToOutline = false
         elevate(this, if (selected) 5f else 3f)
-        setPadding(dp(14), dp(14), dp(12), dp(14))
+        setPadding(dp(12), dp(14), dp(10), dp(14))
         val head = row().apply { gravity = Gravity.TOP }
-        head.addView(iconCircle(icon, 46, if (selected) CircleStyle.FILLED else CircleStyle.MINT))
+        head.addView(iconCircle(icon, 42, if (selected) CircleStyle.FILLED else CircleStyle.MINT))
         val texts = column()
         texts.addView(text(title, Typo.TITLE))
-        tag?.let { texts.addView(tag(it), wrap().apply { topMargin = dp(6) }) }
+        tag?.let { texts.addView(tag(it).apply { maxLines = 1 }, wrap().apply { topMargin = dp(6) }) }
         texts.addView(text(body, Typo.LABEL, Palette.InkMuted), gap(8))
-        head.addView(texts, weight().apply { leftMargin = dp(12) })
+        head.addView(texts, weight().apply { leftMargin = dp(10) })
         addView(head)
         // Room for the landscape.
         if (scenery != null) addView(View(context), LinearLayout.LayoutParams(1, dp(58)))
@@ -473,7 +480,7 @@ class DesignKit(val context: Context) {
         texts.addView(text(title, Typo.HEADLINE))
         line?.let { texts.addView(text(it, Typo.VALUE), gap(6)) }
         texts.addView(text(message, Typo.LABEL, Palette.InkMuted), gap(8))
-        head.addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(if (scenery != null) 40 else 0) })
+        head.addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(if (scenery != null) 72 else 0) })
         addView(head)
         addView(action, gap(18))
     }
@@ -523,21 +530,15 @@ class DesignKit(val context: Context) {
         background = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.CardQuiet, radius) } ?: shape(Palette.CardQuiet, Radii.CARD)
         outlineProvider = roundOutline(radius)
         elevate(this, 1.5f)
-        setPadding(dp(16), dp(16), dp(if (scenery != null) 96 else 18), dp(18))
-        val markColor = if (accent == QuoteAccent.SAND) Palette.Sand else Color.argb(0x8C, 0x5A, 0x99, 0x74)
-        val mark = text("“", Typo.QUOTE, markColor).apply {
-            textSize = 54f
-            typeface = MamaFonts.wordmark(context, 700)
-            setLineSpacing(0f, 0.8f)
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
+        setPadding(dp(16), dp(16), dp(if (scenery != null) 120 else 18), dp(18))
+        val markColor = if (accent == QuoteAccent.SAND) Palette.Sand else Color.argb(0x99, 0x5A, 0x99, 0x74)
         if (markInCircle) {
             addView(FrameLayout(context).apply {
                 background = oval(if (accent == QuoteAccent.SAND) Palette.SandSoft else Palette.MintBadge)
-                addView(mark, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply { topMargin = dp(12) })
+                addView(ImageView(context).apply { setImageDrawable(IconDrawable(Icon.QUOTE, markColor)) }, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
             }, size(46))
         } else {
-            addView(mark, LinearLayout.LayoutParams(dp(34), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = -dp(2) })
+            addView(ImageView(context).apply { setImageDrawable(IconDrawable(Icon.QUOTE, markColor)) }, size(32).apply { topMargin = dp(2) })
         }
         val texts = column()
         val style = when {
@@ -594,11 +595,16 @@ class DesignKit(val context: Context) {
 
     /** The lock timer: ring, sprout, "Осталось", "6 ч 12 мин", "День 2 из 7". Bind with [TimerRing.set]. */
     fun timerRing(sizeDp: Int = 196): TimerRing {
-        val root = FrameLayout(context)
+        // The disc and its shadow belong to the container, so the ring and the text are drawn above them.
+        val root = FrameLayout(context).apply {
+            background = oval(Color.argb(0xEE, 0xFE, 0xFD, 0xF9))
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            elevate(this, 4f)
+        }
         val ring = TimerRingView(context)
         root.addView(ring, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val inner = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
-        inner.addView(iconCircle(Icon.SPROUT, 44), centered())
+        inner.addView(iconCircle(Icon.SPROUT, 44), size(44).apply { gravity = Gravity.CENTER_HORIZONTAL })
         val caption = text("Осталось", Typo.LABEL, Palette.InkMuted, center = true)
         inner.addView(caption, centered(8))
         val value = text("", Typo.NUMBER, Palette.Ink, center = true)

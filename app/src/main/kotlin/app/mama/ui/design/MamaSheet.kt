@@ -105,7 +105,7 @@ object MamaSheet {
                     bottomMargin = kit.dp(16)
                 })
             }
-            icon?.let { addView(kit.iconCircle(it, 52, iconStyle), kit.wrap().apply { bottomMargin = kit.dp(14) }) }
+            icon?.let { addView(kit.iconCircle(it, 52, iconStyle), kit.size(52).apply { bottomMargin = kit.dp(14) }) }
             addView(kit.text(title, Typo.HEADLINE), kit.fill())
             message?.let { addView(kit.text(it, Typo.BODY, Palette.InkMuted), kit.gap(10)) }
             content?.let { addView(it, kit.gap(18)) }

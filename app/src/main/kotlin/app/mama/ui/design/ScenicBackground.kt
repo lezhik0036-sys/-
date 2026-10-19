@@ -255,7 +255,7 @@ internal object ScenePainter {
                 } else {
                     landscape(canvas, w, H, l)
                     // The meadow goes on to the bottom.
-                    p.shader = LinearGradient(0f, H * 0.95f, 0f, h, l.hill, c(0xDCE5C8), Shader.TileMode.CLAMP)
+                    p.shader = LinearGradient(0f, H * 0.95f, 0f, h, l.hill2, c(0xDCE5C8), Shader.TileMode.CLAMP)
                     canvas.drawRect(0f, H * 0.95f, w, h, p)
                     p.shader = null
                     flowers(canvas, w, H * 0.95f, h, 120, 9)
@@ -269,28 +269,31 @@ internal object ScenePainter {
                 }
             }
             SceneLayout.CARD_BOTTOM -> {
-                // Landscape in the lower part of the card, sky dissolving into the card.
-                val H = h * 1.6f
+                // A band of landscape along the bottom, its height set by the card width, so taller text never runs into it.
+                val band = min(h * 0.55f, w * 0.40f)
+                val H = band * 2.2f
                 canvas.save()
-                canvas.translate(0f, h * 1.15f - H)
+                canvas.translate(0f, h + band * 0.15f - H)
                 if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, H) else landscape(canvas, w, H, l)
                 canvas.restore()
-                gradientRect(canvas, 0f, 0f, w, h * 0.62f, base, alpha(base, 0), mid = alpha(base, 235), midAt = 0.55f)
+                p.color = base
+                canvas.drawRect(0f, 0f, w, h - band, p)
+                gradientRect(canvas, 0f, h - band - 1f, w, h - band * 0.35f, base, alpha(base, 0), mid = alpha(base, 200), midAt = 0.4f)
             }
             SceneLayout.CARD_RIGHT -> {
-                val bw = w * 0.66f
+                // Landscape on the right ~45 % of the card; the text side stays the card colour.
+                val bw = w * 0.5f
                 val H = max(h * 1.5f, bw * 0.95f)
                 canvas.save()
                 canvas.translate(w - bw, h * 1.12f - H)
                 if (photo != null) drawPhoto(canvas, photo, 0f, 0f, bw, H) else landscape(canvas, bw, H, l)
                 canvas.restore()
-                // Text side stays the card colour.
-                p.shader = LinearGradient(w - bw, 0f, w - bw * 0.35f, 0f, base, alpha(base, 0), Shader.TileMode.CLAMP)
-                canvas.drawRect(0f, 0f, w, h, p)
-                p.shader = null
                 p.color = base
                 canvas.drawRect(0f, 0f, w - bw, h, p)
-                gradientRect(canvas, 0f, 0f, w, h * 0.45f, alpha(base, 200), alpha(base, 0))
+                p.shader = LinearGradient(w - bw - 1f, 0f, w - bw * 0.45f, 0f, base, alpha(base, 0), Shader.TileMode.CLAMP)
+                canvas.drawRect(w - bw - 1f, 0f, w, h, p)
+                p.shader = null
+                gradientRect(canvas, 0f, 0f, w, h * 0.45f, alpha(base, 210), alpha(base, 0))
             }
         }
         reset()
@@ -355,7 +358,7 @@ internal object ScenePainter {
         for (i in 0 until 70) {
             val t = (i + r.next() * 0.8f) / 70f
             val size = H * (0.025f + 0.03f * r.next())
-            if (t > 0.28f && t < 0.52f) continue
+            if (t < 0.55f) continue
             val g = H * (mBase - mAmp * noise(t, mSeed, 0.3f))
             tree(c, w * t, g + H * 0.008f, size)
         }
@@ -364,7 +367,7 @@ internal object ScenePainter {
         val lt = H * 0.605f
         p.maskFilter = null
         p.shader = LinearGradient(0f, lt, 0f, H * 0.7f, alpha(l.lake, 240), alpha(l.lake, 225), Shader.TileMode.CLAMP)
-        c.drawRect(0f, lt, w, H * 0.76f, p)
+        c.drawRect(0f, lt, w, H * 0.84f, p)
         p.shader = null
         soft(w * 0.004f)
         p.color = alpha(c(0xFFF7DF), 190)
@@ -373,43 +376,46 @@ internal object ScenePainter {
             val half = w * (0.12f - i * 0.014f)
             c.drawOval(sx - half, y, sx + half, y + H * 0.004f, p)
         }
-        // Near hills: the main slope on the right, a low one on the left.
+        // Near hills: a smooth slope on the right; on the left only a low, hazy shore.
         path.reset()
-        path.moveTo(w * 0.30f, H * 0.86f)
         for (i in 0..60) {
             val t = i / 60f
-            path.lineTo(w * (0.30f + 0.70f * t), H * (0.76f - 0.15f * sin(t * PI.toFloat() * 0.55f) - 0.008f * sin(t * 23f)))
+            val sm = t * t * (3 - 2 * t)
+            val x = w * (0.36f + 0.64f * t)
+            val y = H * (0.81f - 0.21f * sm - 0.006f * sin(t * 23f))
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
-        path.lineTo(w, H * 0.58f); path.lineTo(w, H); path.lineTo(w * 0.3f, H); path.close()
+        path.lineTo(w, H); path.lineTo(w * 0.36f, H); path.close()
         soft(w * 0.002f)
         p.shader = LinearGradient(0f, H * 0.6f, 0f, H * 0.9f, alpha(l.hill, 252), alpha(l.hill2, 252), Shader.TileMode.CLAMP)
         c.drawPath(path, p)
         path.reset()
-        path.moveTo(0f, H * 0.71f)
+        path.moveTo(0f, H * 0.80f)
         for (i in 0..40) {
             val t = i / 40f
-            path.lineTo(w * 0.5f * t, H * (0.715f + 0.055f * t.pow(1.6f) - 0.01f * sin(i * 0.6f)))
+            path.lineTo(w * 0.6f * t, H * (0.80f + 0.04f * t.pow(1.6f) - 0.008f * sin(i * 0.6f)))
         }
-        path.lineTo(w * 0.5f, H); path.lineTo(0f, H); path.close()
-        p.shader = LinearGradient(0f, H * 0.7f, 0f, H * 0.9f, alpha(l.hill, 240), alpha(l.hill2, 240), Shader.TileMode.CLAMP)
+        path.lineTo(w * 0.6f, H); path.lineTo(0f, H); path.close()
+        soft(w * 0.004f)
+        p.shader = LinearGradient(0f, H * 0.78f, 0f, H * 0.95f, alpha(l.hill, 200), alpha(l.hill2, 220), Shader.TileMode.CLAMP)
         c.drawPath(path, p)
         p.shader = null
-        // Conifers on the slopes.
+        // Conifers on the right slope.
         val r2 = Rnd(7)
-        soft(w * 0.0018f)
-        for (i in 0 until 22) {
-            val t = 0.50f + 0.50f * r2.next()
-            val u = (t - 0.30f) / 0.70f
-            val y = H * (0.76f - 0.15f * sin(u * PI.toFloat() * 0.55f)) + H * 0.03f * r2.next()
-            val size = H * (0.05f + 0.08f * r2.next())
+        soft(w * 0.0025f)
+        for (i in 0 until 26) {
+            val t = 0.58f + 0.42f * r2.next()
+            val u = (t - 0.36f) / 0.64f
+            val sm = u * u * (3 - 2 * u)
+            val y = H * (0.81f - 0.21f * sm) + H * 0.03f * r2.next()
+            val size = H * (0.035f + 0.06f * r2.next())
             p.color = alpha(if (r2.next() > 0.4f) l.tree else l.tree2, 245)
             tree(c, w * t, y + H * 0.012f, size)
         }
-        p.color = alpha(l.tree2, 230)
-        for (i in 0 until 7) {
-            val t = 0.01f + 0.2f * r2.next()
-            tree(c, w * t, H * 0.727f, H * (0.04f + 0.05f * r2.next()))
-        }
+        // Aerial haze over the near land: soft, low contrast.
+        p.maskFilter = null
+        p.color = alpha(l.haze, 60)
+        c.drawRect(0f, H * 0.55f, w, H, p)
         if (l.road) road(c, w, H)
         flowers(c, w, H * 0.74f, H, 180, 3)
         p.maskFilter = null
@@ -483,7 +489,7 @@ internal object ScenePainter {
             val v = r.next()
             val y = top + (bottom - top) * v
             val rr = w * (0.0035f + 0.006f * v * r.next() + 0.002f)
-            if (x < w * 0.32f && y < top + (bottom - top) * 0.25f) continue
+            if (x < w * 0.5f && y < top + (bottom - top) * 0.46f) continue
             p.color = alpha(c(0xFFFDF6), 235)
             c.drawOval(x - rr, y - rr * 0.8f, x + rr, y + rr * 0.8f, p)
             p.color = alpha(c(0xEDC25E), 235)
@@ -496,8 +502,8 @@ internal object ScenePainter {
 
     /** Leafy branches entering from the top-right corner; [lowY] places the small lower twig. */
     private fun leaves(c: Canvas, w: Float, lowY: Float) {
-        branch(c, w, w * 1.06f, w * 0.05f, 205f, w * 0.30f, 5, 23, w * 0.075f, w * 0.012f, 190)
-        branch(c, w, w * 1.04f, -w * 0.04f, 162f, w * 0.42f, 7, 11, w * 0.085f, w * 0.002f, 250)
+        branch(c, w, w * 1.06f, w * 0.06f, 200f, w * 0.22f, 4, 23, w * 0.07f, w * 0.012f, 190)
+        branch(c, w, w * 1.04f, -w * 0.05f, 160f, w * 0.30f, 6, 11, w * 0.08f, w * 0.002f, 250)
         branch(c, w, w * 1.03f, lowY, 195f, w * 0.16f, 3, 31, w * 0.065f, w * 0.002f, 240)
         p.maskFilter = null
     }
@@ -613,8 +619,8 @@ internal object ScenePainter {
         val bottom = H * 0.8f
         val layer = c.saveLayer(0f, 0f, w, bottom, null)
         p.maskFilter = null
-        p.shader = LinearGradient(0f, 0f, w * 0.66f, 0f, intArrayOf(alpha(base, 175), alpha(base, 70), alpha(base, 0)), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
-        c.drawRect(0f, 0f, w * 0.66f, bottom, p)
+        p.shader = LinearGradient(0f, 0f, w * 0.62f, 0f, intArrayOf(alpha(base, 205), alpha(base, 95), alpha(base, 0)), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, w * 0.62f, bottom, p)
         p.shader = LinearGradient(0f, 0f, 0f, bottom, Color.BLACK, Color.TRANSPARENT, Shader.TileMode.CLAMP)
         p.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
         c.drawRect(0f, 0f, w, bottom, p)

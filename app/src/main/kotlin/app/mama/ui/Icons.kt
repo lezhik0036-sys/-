@@ -19,7 +19,7 @@ enum class Icon {
     BELL, PHONE, SHIELD, LAYERS, ACCESSIBILITY, ALARM, BATTERY, MESSAGE, LEAF, MOUNTAIN, INFINITY, FLASK,
     CALENDAR, CLOCK, INFO, PERSON, LOCK, MOON, GEAR, HOME, CHART, REFRESH, CHECK, CHEVRON_RIGHT, BACK,
     ALERT, HEART, ARROW_RIGHT, GLOBE, SUN,
-    SPROUT, COINS, PEOPLE, STAR, SUNRISE,
+    SPROUT, COINS, PEOPLE, STAR, SUNRISE, QUOTE,
 }
 
 /** Draws one [Icon] in [color], scaled to the drawable bounds; [solid] fills silhouette icons. */
@@ -252,6 +252,14 @@ class IconDrawable(
             }
             close()
         })
+        Icon.QUOTE -> {
+            // Two "66" marks: a filled dot with a tail curling up to the right.
+            val tail = Paint(stroke).apply { strokeWidth = 2.9f }
+            for (dx in floatArrayOf(0f, 9.8f)) {
+                circle(c, 6.3f + dx, 15.6f, 3.6f, fill)
+                p({ moveTo(2.75f + dx, 15.9f); cubicTo(2.4f + dx, 11f, 4.6f + dx, 7.5f, 9f + dx, 5.4f) }, c, tail)
+            }
+        }
         Icon.SUNRISE -> {
             p({ arcTo(RectF(6.5f, 9.5f, 17.5f, 20.5f), 180f, 180f); close() }, c, body)
             p({ moveTo(3f, 15.5f); lineTo(21f, 15.5f) }, c)
