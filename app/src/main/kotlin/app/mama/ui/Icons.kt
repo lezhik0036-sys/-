@@ -10,15 +10,25 @@ import android.graphics.drawable.Drawable
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** The MAMA icon set: thin line icons drawn on a 24×24 grid. */
+/**
+ * The MAMA icon set, drawn on a 24×24 grid: thin line icons, and for UI v1
+ * a solid variant of the silhouette icons (person, heart, home, phone…), as
+ * on the references.
+ */
 enum class Icon {
     BELL, PHONE, SHIELD, LAYERS, ACCESSIBILITY, ALARM, BATTERY, MESSAGE, LEAF, MOUNTAIN, INFINITY, FLASK,
     CALENDAR, CLOCK, INFO, PERSON, LOCK, MOON, GEAR, HOME, CHART, REFRESH, CHECK, CHEVRON_RIGHT, BACK,
     ALERT, HEART, ARROW_RIGHT, GLOBE, SUN,
+    SPROUT, COINS, PEOPLE, STAR, SUNRISE,
 }
 
-/** Draws one [Icon] in [color], scaled to the drawable bounds. */
-class IconDrawable(private val icon: Icon, color: Int, private val strokeUnits: Float = 1.7f) : Drawable() {
+/** Draws one [Icon] in [color], scaled to the drawable bounds; [solid] fills silhouette icons. */
+class IconDrawable(
+    private val icon: Icon,
+    color: Int,
+    private val strokeUnits: Float = 1.7f,
+    private val solid: Boolean = false,
+) : Drawable() {
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -26,6 +36,19 @@ class IconDrawable(private val icon: Icon, color: Int, private val strokeUnits: 
         this.color = color
     }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; this.color = color }
+    private val clear = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.6f
+        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)
+    }
+
+    /** Outline, or filled outline for [solid] silhouettes. */
+    private val body = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = if (solid) Paint.Style.FILL_AND_STROKE else Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        this.color = color
+    }
     private val path = Path()
     private val oval = RectF()
 
@@ -35,6 +58,7 @@ class IconDrawable(private val icon: Icon, color: Int, private val strokeUnits: 
         canvas.translate(bounds.left + (bounds.width() - 24 * s) / 2, bounds.top + (bounds.height() - 24 * s) / 2)
         canvas.scale(s, s)
         stroke.strokeWidth = strokeUnits
+        body.strokeWidth = strokeUnits
         drawIcon(canvas)
         canvas.restore()
     }
@@ -58,12 +82,12 @@ class IconDrawable(private val icon: Icon, color: Int, private val strokeUnits: 
             p({ moveTo(10f, 20.5f); quadTo(12f, 22f, 14f, 20.5f) }, c)
             p({ moveTo(12f, 5f); lineTo(12f, 3.5f) }, c)
         }
-        Icon.PHONE -> p({
+        Icon.PHONE -> p(c = c, paint = body, block = {
             moveTo(6.5f, 3.5f); lineTo(9.2f, 3.5f); lineTo(10.6f, 7.6f); lineTo(8.6f, 9.4f)
             cubicTo(9.8f, 11.9f, 12.1f, 14.2f, 14.6f, 15.4f); lineTo(16.4f, 13.4f); lineTo(20.5f, 14.8f); lineTo(20.5f, 17.5f)
             cubicTo(20.5f, 19.2f, 19.2f, 20.5f, 17.5f, 20.5f); cubicTo(10.3f, 20.1f, 3.9f, 13.7f, 3.5f, 6.5f)
             cubicTo(3.5f, 4.8f, 4.8f, 3.5f, 6.5f, 3.5f); close()
-        }, c)
+        })
         Icon.SHIELD -> {
             p({ moveTo(12f, 3f); lineTo(19f, 5.8f); lineTo(19f, 11f); cubicTo(19f, 15.6f, 16f, 19.3f, 12f, 21f); cubicTo(8f, 19.3f, 5f, 15.6f, 5f, 11f); lineTo(5f, 5.8f); close() }, c)
             p({ moveTo(9f, 12f); lineTo(11.2f, 14.2f); lineTo(15.2f, 10f) }, c)
@@ -124,15 +148,15 @@ class IconDrawable(private val icon: Icon, color: Int, private val strokeUnits: 
             circle(c, 12f, 7.9f, 1.05f, fill)
         }
         Icon.PERSON -> {
-            circle(c, 12f, 8.3f, 3.8f)
-            p({ moveTo(4.6f, 20.2f); cubicTo(5.4f, 16.2f, 8.4f, 14.2f, 12f, 14.2f); cubicTo(15.6f, 14.2f, 18.6f, 16.2f, 19.4f, 20.2f) }, c)
+            circle(c, 12f, 8.3f, 3.8f, body)
+            p({ moveTo(4.6f, 20.2f); cubicTo(5.4f, 16.2f, 8.4f, 14.2f, 12f, 14.2f); cubicTo(15.6f, 14.2f, 18.6f, 16.2f, 19.4f, 20.2f); if (solid) close() }, c, body)
         }
         Icon.LOCK -> {
             rrect(c, 5f, 10.5f, 19f, 20.5f, 2.4f)
             p({ moveTo(8f, 10.5f); lineTo(8f, 7.8f); cubicTo(8f, 5.3f, 9.8f, 3.5f, 12f, 3.5f); cubicTo(14.2f, 3.5f, 16f, 5.3f, 16f, 7.8f); lineTo(16f, 10.5f) }, c)
             p({ moveTo(12f, 14.5f); lineTo(12f, 16.5f) }, c)
         }
-        Icon.MOON -> p({ moveTo(19.5f, 14.2f); cubicTo(18.2f, 18.2f, 13.6f, 20.6f, 9.4f, 19f); cubicTo(5.2f, 17.4f, 3.4f, 12.6f, 5f, 8.6f); cubicTo(5.8f, 6.6f, 7.4f, 5f, 9.4f, 4.4f); cubicTo(7.8f, 8.6f, 9.8f, 13.4f, 14f, 14.8f); cubicTo(15.8f, 15.4f, 17.8f, 15.2f, 19.5f, 14.2f); close() }, c)
+        Icon.MOON -> p(c = c, paint = body, block = { moveTo(19.5f, 14.2f); cubicTo(18.2f, 18.2f, 13.6f, 20.6f, 9.4f, 19f); cubicTo(5.2f, 17.4f, 3.4f, 12.6f, 5f, 8.6f); cubicTo(5.8f, 6.6f, 7.4f, 5f, 9.4f, 4.4f); cubicTo(7.8f, 8.6f, 9.8f, 13.4f, 14f, 14.8f); cubicTo(15.8f, 15.4f, 17.8f, 15.2f, 19.5f, 14.2f); close() })
         Icon.GEAR -> {
             circle(c, 12f, 12f, 3f)
             p({
@@ -150,7 +174,12 @@ class IconDrawable(private val icon: Icon, color: Int, private val strokeUnits: 
                 close()
             }, c)
         }
-        Icon.HOME -> {
+        Icon.HOME -> if (solid) {
+            p({
+                moveTo(12f, 3.6f); lineTo(20.4f, 10.8f); lineTo(18.6f, 10.8f); lineTo(18.6f, 20f); lineTo(14.4f, 20f); lineTo(14.4f, 14.6f)
+                lineTo(9.6f, 14.6f); lineTo(9.6f, 20f); lineTo(5.4f, 20f); lineTo(5.4f, 10.8f); lineTo(3.6f, 10.8f); close()
+            }, c, body)
+        } else {
             p({ moveTo(3.8f, 11f); lineTo(12f, 4f); lineTo(20.2f, 11f) }, c)
             p({ moveTo(6f, 9.4f); lineTo(6f, 20f); lineTo(18f, 20f); lineTo(18f, 9.4f) }, c)
             p({ moveTo(10f, 20f); lineTo(10f, 14.5f); lineTo(14f, 14.5f); lineTo(14f, 20f) }, c)
@@ -170,7 +199,7 @@ class IconDrawable(private val icon: Icon, color: Int, private val strokeUnits: 
             p({ moveTo(12f, 7f); lineTo(12f, 13.5f) }, c)
             circle(c, 12f, 17f, 1.1f, fill)
         }
-        Icon.HEART -> p({ moveTo(12f, 19.5f); cubicTo(5.5f, 15.2f, 3.5f, 12f, 3.5f, 8.9f); cubicTo(3.5f, 6.4f, 5.4f, 4.5f, 7.8f, 4.5f); cubicTo(9.6f, 4.5f, 11f, 5.5f, 12f, 7f); cubicTo(13f, 5.5f, 14.4f, 4.5f, 16.2f, 4.5f); cubicTo(18.6f, 4.5f, 20.5f, 6.4f, 20.5f, 8.9f); cubicTo(20.5f, 12f, 18.5f, 15.2f, 12f, 19.5f); close() }, c)
+        Icon.HEART -> p(c = c, paint = body, block = { moveTo(12f, 19.5f); cubicTo(5.5f, 15.2f, 3.5f, 12f, 3.5f, 8.9f); cubicTo(3.5f, 6.4f, 5.4f, 4.5f, 7.8f, 4.5f); cubicTo(9.6f, 4.5f, 11f, 5.5f, 12f, 7f); cubicTo(13f, 5.5f, 14.4f, 4.5f, 16.2f, 4.5f); cubicTo(18.6f, 4.5f, 20.5f, 6.4f, 20.5f, 8.9f); cubicTo(20.5f, 12f, 18.5f, 15.2f, 12f, 19.5f); close() })
         Icon.ARROW_RIGHT -> p({ moveTo(4.5f, 12f); lineTo(19f, 12f); moveTo(13.5f, 6.5f); lineTo(19f, 12f); lineTo(13.5f, 17.5f) }, c)
         Icon.GLOBE -> {
             circle(c, 12f, 12f, 8.6f)
@@ -187,16 +216,65 @@ class IconDrawable(private val icon: Icon, color: Int, private val strokeUnits: 
                 }
             }, c)
         }
+        Icon.SPROUT -> {
+            p({ moveTo(12f, 21f); lineTo(12f, 11.5f) }, c)
+            p({ moveTo(12f, 12.5f); cubicTo(11.6f, 8.2f, 8.6f, 5.6f, 3.8f, 5.8f); cubicTo(3.8f, 10.4f, 7.2f, 13.2f, 12f, 12.5f); close() }, c, body)
+            p({ moveTo(12f, 11.2f); cubicTo(12.6f, 7.2f, 15.6f, 4.6f, 20.2f, 4.8f); cubicTo(20.2f, 9.2f, 16.8f, 11.8f, 12f, 11.2f); close() }, c, body)
+        }
+        Icon.COINS -> {
+            // Three stacked coins, the bottom one first; solid coins are parted by a thin cleared ring.
+            val layer = c.saveLayer(0f, 0f, 24f, 24f, null)
+            for (i in 2 downTo 0) {
+                val top = 4.5f + i * 4.8f
+                oval.set(4.5f, top, 19.5f, top + 5.6f)
+                if (solid) {
+                    c.drawOval(oval, clear)
+                    c.drawOval(oval, fill)
+                } else {
+                    c.drawOval(oval, stroke)
+                }
+            }
+            c.restoreToCount(layer)
+        }
+        Icon.PEOPLE -> {
+            circle(c, 9f, 8.2f, 3.2f, body)
+            p({ moveTo(2.8f, 19.6f); cubicTo(3.4f, 15.9f, 5.9f, 13.9f, 9f, 13.9f); cubicTo(12.1f, 13.9f, 14.6f, 15.9f, 15.2f, 19.6f); if (solid) close() }, c, body)
+            circle(c, 16.6f, 8.8f, 2.6f, body)
+            p({ moveTo(16.4f, 13.6f); cubicTo(19f, 13.6f, 20.9f, 15.4f, 21.3f, 18.6f) }, c)
+        }
+        Icon.STAR -> p(c = c, paint = body, block = {
+            for (i in 0 until 10) {
+                val a = -Math.PI / 2 + Math.PI * i / 5
+                val r = if (i % 2 == 0) 9f else 4.1f
+                val x = 12f + r * cos(a).toFloat()
+                val y = 12.6f + r * sin(a).toFloat()
+                if (i == 0) moveTo(x, y) else lineTo(x, y)
+            }
+            close()
+        })
+        Icon.SUNRISE -> {
+            p({ arcTo(RectF(6.5f, 9.5f, 17.5f, 20.5f), 180f, 180f); close() }, c, body)
+            p({ moveTo(3f, 15.5f); lineTo(21f, 15.5f) }, c)
+            p({
+                for (i in 0 until 5) {
+                    val a = Math.PI + Math.PI * (i + 1) / 6
+                    moveTo(12f + 7.8f * cos(a).toFloat(), 15f + 7.8f * sin(a).toFloat())
+                    lineTo(12f + 9.8f * cos(a).toFloat(), 15f + 9.8f * sin(a).toFloat())
+                }
+            }, c)
+        }
     }
 
     override fun setAlpha(alpha: Int) {
         stroke.alpha = alpha
         fill.alpha = alpha
+        body.alpha = alpha
     }
 
     override fun setColorFilter(colorFilter: ColorFilter?) {
         stroke.colorFilter = colorFilter
         fill.colorFilter = colorFilter
+        body.colorFilter = colorFilter
     }
 
     @Deprecated("Deprecated in Java")

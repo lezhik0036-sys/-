@@ -36,7 +36,7 @@ object Previews {
         "dashboard", "lock", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
         "commitment", "restart_commitment", "dashboard_active", "edit", "cancel_launch",
         "needs_attention", "restart_scheduled", "emergency", "restart_time",
-    )
+    ) + app.mama.ui.design.DesignPreviews.names
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
     private val contact = TrustedContact("Жена", "+79856322062")
@@ -51,6 +51,8 @@ object Previews {
     private fun scheduledCommitment(now: Instant) = Commitment("preview", 5_000_00, now, CommitmentState.SCHEDULED)
 
     fun render(a: MainActivity, name: String): Pair<View, Boolean> {
+        // UI v1 foundation (PHASE 1): components on sample screens.
+        if (name.startsWith("ds_")) return app.mama.ui.design.DesignPreviews.render(a, name)
         a.contactName.setText(contact.name)
         a.contactPhone.setText(Texts.phone(contact.phone))
         a.promiseField.setText("Хочу нормально высыпаться и чувствовать себя лучше утром.")
