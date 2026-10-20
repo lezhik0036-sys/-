@@ -97,7 +97,13 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
     val root: FrameLayout = FrameLayout(context)
 
+    // The scene lies on the root, so it also fills the area under the system bars:
+    // the whole photo behind the lock itself, a header photo behind the pages over it.
+    private val lockScene = ScenicBackground(context, Scenery.DAWN, SceneLayout.FULL)
+    private val pageScene by lazy { ScenicBackground(context, Scenery.DAWN, SceneLayout.HEADER) }
+
     // Main page.
+    private lateinit var mainPage: View
     private lateinit var phrase: TextView
     private lateinit var until: TextView
     private lateinit var ring: TimerRing
@@ -130,8 +136,9 @@ class LockScreenView(private val context: Context, private val actions: LockActi
     private lateinit var introMessage: TextView
 
     init {
-        root.background = ScenicBackground(context, Scenery.DAWN, SceneLayout.FULL)
-        root.addView(buildMain(), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        root.background = lockScene
+        mainPage = buildMain()
+        root.addView(mainPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         exitPage = buildExit()
         root.addView(exitPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         emergencyPage = buildEmergency()
@@ -140,10 +147,9 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
     private fun dp(v: Int) = d.dp(v)
 
-    private fun page(content: View, scenery: Scenery, layout: SceneLayout): View = ScrollView(context).apply {
+    private fun page(content: View): View = ScrollView(context).apply {
         isFillViewport = true
         isVerticalScrollBarEnabled = false
-        background = ScenicBackground(context, scenery, layout)
         addView(content)
     }
 
@@ -211,7 +217,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         col.addView(emergencyNote, d.gap(16))
         col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
         col.addView(d.secondaryButton("Назад в MAMA") { actions.closeEmergency() }, d.gap(24))
-        return page(col, Scenery.DAWN, SceneLayout.HEADER)
+        return page(col)
     }
 
     private fun serviceRow(s: EmergencyService): View = d.row().apply {
@@ -275,7 +281,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         body.addView(codePage, d.fill())
 
         col.addView(body, d.fill())
-        return page(col, Scenery.DAWN, SceneLayout.HEADER)
+        return page(col)
     }
 
     private fun keypad(): View {
@@ -318,6 +324,10 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         answer.visibility = if (m.call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
         backToCall.visibility = if (m.emergencyCallActive && m.call != Calls.CallState.NONE) View.VISIBLE else View.GONE
 
+        val overLock = m.emergencyOpen || m.exitOpen
+        mainPage.visibility = if (overLock) View.GONE else View.VISIBLE
+        val scene = if (overLock) pageScene else lockScene
+        if (root.background !== scene) root.background = scene
         emergencyPage.visibility = if (m.emergencyOpen) View.VISIBLE else View.GONE
         if (m.emergencyServices != shownServices) {
             shownServices = m.emergencyServices
@@ -329,7 +339,8 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         diagnostics.text = m.diagnostics.orEmpty()
         diagnostics.visibility = if (m.diagnostics.isNullOrEmpty()) View.GONE else View.VISIBLE
 
-        exitPage.visibility = if (m.exitOpen) View.VISIBLE else View.GONE
+        // The emergency page stays on top of the exit page, as before.
+        exitPage.visibility = if (m.exitOpen && !m.emergencyOpen) View.VISIBLE else View.GONE
         intro.visibility = if (m.codeActive) View.GONE else View.VISIBLE
         codePage.visibility = if (m.codeActive) View.VISIBLE else View.GONE
         promiseBlock.visibility = if (m.promise.isBlank()) View.GONE else View.VISIBLE

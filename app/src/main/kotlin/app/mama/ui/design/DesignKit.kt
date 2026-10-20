@@ -859,6 +859,8 @@ class DesignKit(val context: Context) {
             addView(body)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         cta?.let {
+            // The button's soft glow spreads past the footer instead of being cut to a rectangle.
+            (it as? ViewGroup)?.clipChildren = false
             addView(it, fill().apply {
                 leftMargin = dp(Spacing.SCREEN); rightMargin = dp(Spacing.SCREEN); topMargin = dp(8); bottomMargin = dp(16)
             })
