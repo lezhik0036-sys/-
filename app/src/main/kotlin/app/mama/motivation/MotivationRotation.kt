@@ -19,13 +19,17 @@ class MotivationRotation(private val store: Store, private val historySize: Int 
      * The phrase for [placement] in the period [periodKey] (e.g. the series
      * id and day). Profile: always [ProfileType.GENERAL] in the pilot.
      */
-    fun phrase(placement: Placement, periodKey: String, profile: ProfileType = ProfileType.GENERAL): Phrase {
+    fun phrase(placement: Placement, periodKey: String, profile: ProfileType = ProfileType.GENERAL, maxLength: Int = Int.MAX_VALUE): Phrase {
         val slot = "slot.${placement.name}"
         store.get(slot)?.split('|', limit = 2)?.takeIf { it.size == 2 }?.let { (key, id) ->
-            if (key == periodKey) MotivationCatalog.byId(id)?.takeIf { it.fits(profile) && it.category in placement.categories }?.let { return it }
+            if (key == periodKey) {
+                MotivationCatalog.byId(id)
+                    ?.takeIf { it.fits(profile) && it.category in placement.categories && it.text.length <= maxLength }
+                    ?.let { return it }
+            }
         }
         val recent = store.get(RECENT)?.split(',')?.filter { it.isNotEmpty() }.orEmpty()
-        val phrase = MotivationCatalog.pick(placement, periodKey, profile, recent)
+        val phrase = MotivationCatalog.pick(placement, periodKey, profile, recent, maxLength)
         store.put(slot, "$periodKey|${phrase.id}")
         store.put(RECENT, (listOf(phrase.id) + recent.filter { it != phrase.id }).take(historySize).joinToString(","))
         return phrase

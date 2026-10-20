@@ -1,6 +1,7 @@
 package app.mama.ui
 
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -124,12 +125,6 @@ private fun partIcon(t: LocalTime) = when (t.hour) {
     else -> Icon.MOON
 }
 
-private fun partScene(t: LocalTime) = when (t.hour) {
-    in 4..11 -> Scenery.DAWN
-    in 12..16 -> Scenery.DAY
-    else -> Scenery.EVENING
-}
-
 /** The supportive line of a setup step: the reference's phrase from [MotivationCatalog]. */
 internal fun stepPhrase(id: String, fallback: Placement): String = (MotivationCatalog.byId(id) ?: MotivationCatalog.pick(fallback, id)).text
 
@@ -249,9 +244,11 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         b.addView(d.titleBlock("Тестовый режим", "Блокировка начнётся сразу после запуска и продлится ровно 15 минут.", narrow = true))
         val from = LocalDateTime.ofInstant(now, zone).toLocalTime()
         val to = LocalDateTime.ofInstant(now + TestMode.DURATION, zone).toLocalTime()
-        b.addView(d.timeCard("Начало · сразу после запуска", Texts.time(now, zone), dayPart(from), partIcon(from), partScene(from), onClick = null), d.gap(26))
-        b.addView(d.timeCard("Окончание · через 15 минут", Texts.time(now + TestMode.DURATION, zone), dayPart(to), partIcon(to), partScene(to), onClick = null), d.gap(Spacing.GUTTER))
-        b.addView(d.noteCard("Только для тестирования: бесплатно, не входит в серии, не тратит FLEX-дни.", icon = Icon.FLASK), d.gap(Spacing.GUTTER))
+        b.addView(d.timeRange(
+            d.timeTile("Начало", Texts.time(now, zone), dayPart(from), partIcon(from), "сразу после запуска", onClick = null),
+            d.timeTile("Окончание", Texts.time(now + TestMode.DURATION, zone), dayPart(to), partIcon(to), "через 15 минут", onClick = null),
+        ), d.gap(28))
+        b.addView(d.noteCard("Только для тестирования: бесплатно, не входит в серии, не тратит FLEX-дни.", icon = Icon.FLASK), d.gap(18))
     } else {
         b.addView(d.titleBlock(
             "Выбери время",
@@ -268,28 +265,30 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
             plan != null -> Duration.between(plan.start, plan.end)
             else -> Duration.ZERO // not a window yet: the note below says so
         }
-        // MANUAL: the days of the first lock beside the times ("сегодня", "завтра").
+        // Start and end side by side, read at a glance. MANUAL: the days of the first lock under them ("сегодня", "завтра").
         val today = LocalDateTime.ofInstant(now, zone).toLocalDate()
         fun day(at: java.time.Instant) = Texts.dayName(LocalDateTime.ofInstant(at, zone).toLocalDate(), today).lowerFirst()
-        b.addView(d.timeCard("Начало", Texts.hhmm(start), dayPart(start), partIcon(start), partScene(start), plan?.let { day(it.start) }) {
-            DigitalTimePicker.show(this, "Начало блокировки", start) { pickStart(it); render() }
-        }, d.gap(26))
-        b.addView(d.timeCard("Окончание", Texts.hhmm(end), dayPart(end), partIcon(end), partScene(end), plan?.let { day(it.end) }) {
-            DigitalTimePicker.show(this, "Окончание блокировки", end) { pickEnd(it); render() }
-        }, d.gap(Spacing.GUTTER))
-        val rows = mutableListOf(d.infoRow(Icon.CLOCK, "${Texts.hhmm(start)} → ${Texts.hhmm(end)} · каждый день · ${shortDuration(length)}", strong = true))
+        b.addView(d.timeRange(
+            d.timeTile("Начало", Texts.hhmm(start), dayPart(start), partIcon(start), plan?.let { day(it.start) }) {
+                DigitalTimePicker.show(this, "Начало блокировки", start) { pickStart(it); render() }
+            },
+            d.timeTile("Окончание", Texts.hhmm(end), dayPart(end), partIcon(end), plan?.let { day(it.end) }) {
+                DigitalTimePicker.show(this, "Окончание блокировки", end) { pickEnd(it); render() }
+            },
+        ), d.gap(28))
+        val rows = mutableListOf(d.infoRow(Icon.CLOCK, "Каждый день · ${shortDuration(length)}", strong = true))
         if (auto) rows += d.infoRow(Icon.CALENDAR, "Начать после подтверждения", note = "Начало уточнится в момент запуска.")
         val change = d.linkButton("Изменить") { pickZone() }.apply {
             textSize = 14f
             setPadding(d.dp(10), d.dp(8), d.dp(10), d.dp(8))
         }
         rows += d.infoRow(Icon.GLOBE, "Часовой пояс: ${Texts.zone(zone)}", trailing = change)
-        b.addView(d.rowsCard(rows), d.gap(Spacing.GUTTER))
+        b.addView(d.rowsCard(rows), d.gap(18))
         if (start == end) {
-            b.addView(d.noteCard("Выбери другое время окончания.", "Начало и окончание совпадают", NoteTone.CARE, Icon.CLOCK), d.gap(Spacing.GUTTER))
+            b.addView(d.noteCard("Выбери другое время окончания.", "Начало и окончание совпадают", NoteTone.CARE, Icon.CLOCK), d.gap(18))
         }
         val night = start.hour >= 17 || start.hour < 5
-        b.addView(d.phraseCard(if (night) stepPhrase(NIGHT_PHRASE, Placement.LOCK_NIGHT) else MotivationCatalog.pick(Placement.LOCK_DAY, "time").text), d.gap(Spacing.GUTTER))
+        b.addView(d.phraseCard(if (night) stepPhrase(NIGHT_PHRASE, Placement.LOCK_NIGHT) else MotivationCatalog.pick(Placement.LOCK_DAY, "time").text), d.gap(18))
     }
     val cta = d.primaryButton("Далее") {
         when {
@@ -351,9 +350,9 @@ internal fun MainActivity.contactScreen(): Pair<View, Boolean> {
             addView(contactName, d.gap(6))
             addView(d.text("Телефон", Typo.LABEL, Palette.InkMuted), d.gap(14))
             addView(contactPhone, d.gap(6))
-        }, d.gap(26))
-        name.isNotEmpty() && phone.isNotEmpty() -> b.addView(d.contactCard("Доверенный контакт", name, Texts.phone(phone)) { pickContact() }, d.gap(26))
-        else -> b.addView(d.contactCard("Доверенный контакт", "Выбери человека", "Нажми, чтобы выбрать из контактов") { pickContact() }, d.gap(26))
+        }, d.gap(28))
+        name.isNotEmpty() && phone.isNotEmpty() -> b.addView(d.contactCard("Доверенный контакт", name, Texts.phone(phone)) { pickContact() }, d.gap(28))
+        else -> b.addView(d.contactCard("Доверенный контакт", "Выбери человека", "Нажми, чтобы выбрать из контактов") { pickContact() }, d.gap(28))
     }
     val links = d.row().apply { gravity = Gravity.CENTER_HORIZONTAL }
     if (manualContact) links.addView(d.linkButton("Выбрать из контактов") { pickContact() })
@@ -364,11 +363,11 @@ internal fun MainActivity.contactScreen(): Pair<View, Boolean> {
     })
     b.addView(links, d.gap(6))
     b.addView(d.noteCard(
-        "Только этот человек сможет подтвердить досрочный выход: ему придёт SMS с кодом из ${Mama.policy.codeLength} цифр. " +
+        "Если понадобится выйти раньше, этому человеку придёт SMS с кодом из ${Mama.policy.codeLength} цифр. " +
             "У тебя будет максимум ${Mama.policy.maxAttempts} попытки ввода.",
-        icon = Icon.SHIELD,
-    ), d.gap(6))
-    b.addView(d.phraseCard(stepPhrase(SUPPORT_PHRASE, Placement.SCHEDULED)), d.gap(Spacing.GUTTER))
+        "Досрочный выход — только через этот контакт", icon = Icon.SHIELD,
+    ), d.gap(10))
+    b.addView(d.phraseCard(stepPhrase(SUPPORT_PHRASE, Placement.SCHEDULED)), d.gap(18))
     val cta = d.primaryButton(nextLabel()) {
         if (readyContact() != null) go(nextStep(Step.CONTACT))
     }
@@ -427,91 +426,107 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
     val d = design
     val b = d.body(22)
     val contactLine = contactName.text.toString().trim()
-    val phoneLine = Texts.phone(contactPhone.text.toString().trim())
     val reason = promiseField.text.toString().trim().ifEmpty { Promise.get(this) }
     // Every row opens its step again (when that step is part of this wizard).
     fun open(s: Step): (() -> Unit)? = if (s in steps()) ({ go(s) }) else null
+    // First level: the four things that matter, large. Second level: short facts, the full terms one tap away.
     val items = mutableListOf<SummaryItem>()
+    val facts = mutableListOf<View>()
+    fun fact(icon: Icon, text: String, onClick: (() -> Unit)? = null) {
+        facts += d.infoRow(icon, text, trailing = onClick?.let { d.icon(Icon.CHEVRON_RIGHT, Palette.InkMuted, 20, solid = false) }).apply {
+            onClick?.let { click ->
+                background = d.pressable(ColorDrawable(Color.TRANSPARENT), 0)
+                setOnClickListener { click() }
+            }
+        }
+    }
+    val reasonLine = "Моя причина: «$reason»"
     val subtitle: String
     val ctaLabel: String
     val needsAgreement: Boolean
     when (choice) {
         Choice.TEST -> {
             subtitle = "Проверь условия. Если всё верно — запускаем тест."
-            items += SummaryItem(Icon.FLASK, "Режим", "Тестовый режим", "15 минут · только для тестирования", open(Step.SERIES))
-            items += SummaryItem(Icon.CLOCK, "Время", "Сразу после запуска", "ровно 15 минут")
-            items += SummaryItem(Icon.PERSON, "Доверенный контакт", contactLine, phoneLine, open(Step.CONTACT))
-            items += SummaryItem(Icon.HEART, "Моя причина", "«$reason»", null, open(Step.PROMISE))
-            items += SummaryItem(Icon.INFO, "Стоимость", "Бесплатно", "Без Restart, не тратит FLEX-дни")
+            items += SummaryItem(Icon.FLASK, "Режим", "Тестовый режим", null, open(Step.SERIES))
+            items += SummaryItem(Icon.CLOCK, "Время", "Сразу после запуска · 15 минут")
+            items += SummaryItem(Icon.PERSON, "Доверенный контакт", contactLine, null, open(Step.CONTACT))
+            items += SummaryItem(Icon.COINS, "Стоимость", "Бесплатно")
+            fact(Icon.HEART, reasonLine, open(Step.PROMISE))
+            fact(Icon.FLASK, "Только для тестирования: без Restart, не тратит FLEX-дни.")
             ctaLabel = "Начать тест 15 минут"
             needsAgreement = false
         }
         Choice.FLEX -> {
             subtitle = "FLEX — разовый пакет, не подписка."
-            items += SummaryItem(Icon.INFINITY, "Пакет", "MAMA FLEX", "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.toDays()} дней", open(Step.SERIES))
-            items += SummaryItem(Icon.CLOCK, "Периоды", "От 3 до 24 часов", "Дата и время — для каждого периода отдельно")
-            items += SummaryItem(Icon.PERSON, "Доверенный контакт", contactLine, phoneLine, open(Step.CONTACT))
-            items += SummaryItem(Icon.HEART, "Моя причина", "«$reason»", null, open(Step.PROMISE))
             val free = Mama.entitlements(this).freeFlexCredits > 0
-            items += SummaryItem(Icon.COINS, "Стоимость", if (free) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB), "Пройди 7 из 7 — следующий FLEX бесплатно")
+            items += SummaryItem(Icon.INFINITY, "Пакет", "MAMA FLEX", null, open(Step.SERIES))
+            items += SummaryItem(Icon.CLOCK, "Периоды", "${FlexPackage.PERIODS} за ${FlexPackage.VALIDITY.toDays()} дней")
+            items += SummaryItem(Icon.PERSON, "Доверенный контакт", contactLine, null, open(Step.CONTACT))
+            items += SummaryItem(Icon.COINS, "Стоимость", if (free) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB))
+            fact(Icon.CLOCK, "Каждый период — от 3 до 24 часов, дата и время — отдельно.")
+            fact(Icon.STAR, "Пройди 7 из 7 — следующий FLEX бесплатно.")
+            fact(Icon.HEART, reasonLine, open(Step.PROMISE))
             ctaLabel = "Активировать FLEX"
             needsAgreement = true
         }
         else -> {
             val kind = choice.series!!
             subtitle = "Ты выбрал путь, который помогает вернуть себя."
-            items += SummaryItem(Icon.CALENDAR, "Длительность", Texts.seriesName(kind), null, open(Step.SERIES))
+            items += SummaryItem(Icon.CALENDAR, "Серия", Texts.seriesName(kind), null, open(Step.SERIES))
             val now = Mama.trustedNow(this)
             when (val time = launchTime()) {
                 is app.mama.core.LaunchTime.AutoNow -> {
                     val w = app.mama.core.SeriesDraft.resolve(time, now).window
-                    items += SummaryItem(
-                        Icon.CLOCK, "Время блокировки", "${Texts.hhmm(w.start)} – ${Texts.hhmm(w.end)}",
-                        "Первая — сразу после подтверждения, ${Texts.flexDuration(time.length)}; начало уточнится в момент запуска", open(Step.TIME),
-                    )
+                    items += SummaryItem(Icon.CLOCK, "Время блокировки", "${Texts.hhmm(w.start)} – ${Texts.hhmm(w.end)}", null, open(Step.TIME))
+                    fact(Icon.MOON, "Первая блокировка — сразу после подтверждения, ${Texts.flexDuration(time.length)}. Начало уточнится в момент запуска.")
                 }
-                is app.mama.core.LaunchTime.Fixed -> items += SummaryItem(
-                    Icon.CLOCK, "Время блокировки", "${Texts.hhmm(start)} – ${Texts.hhmm(end)}",
-                    "Первая — ${Texts.firstLock(time.window.nextFullPlan(now, mode).start, zone, now).lowerFirst()} · ${zone.id}", open(Step.TIME),
-                )
+                is app.mama.core.LaunchTime.Fixed -> {
+                    items += SummaryItem(Icon.CLOCK, "Время блокировки", "${Texts.hhmm(start)} – ${Texts.hhmm(end)}", null, open(Step.TIME))
+                    fact(Icon.MOON, "Первая блокировка — ${Texts.firstLock(time.window.nextFullPlan(now, mode).start, zone, now).lowerFirst()} · ${zone.id}")
+                }
             }
-            items += SummaryItem(Icon.PERSON, "Доверенный контакт", contactLine, phoneLine, open(Step.CONTACT))
-            items += SummaryItem(Icon.HEART, "Моя причина", "«$reason»", null, open(Step.PROMISE))
+            items += SummaryItem(Icon.PERSON, "Доверенный контакт", contactLine, null, open(Step.CONTACT))
             if (FeatureFlags.WALLET_ENABLED) {
                 val c = commitmentKop
-                items += SummaryItem(
-                    Icon.COINS, "Цена слова", if (c != null) Texts.money(c) else "Без цены слова",
-                    if (c != null) "резерв с баланса MAMA · к Restart не прибавляется" else null, open(Step.COMMITMENT),
-                )
+                items += SummaryItem(Icon.COINS, "Цена слова", if (c != null) Texts.money(c) else "Без цены слова", null, open(Step.COMMITMENT))
             }
-            items += SummaryItem(Icon.REFRESH, "Restart при срыве", Texts.price(kind.restartPriceRub), "Старт серии бесплатный")
+            fact(Icon.REFRESH, "Restart при срыве — ${Texts.price(kind.restartPriceRub)}. Старт серии бесплатный.")
+            fact(Icon.HEART, reasonLine, open(Step.PROMISE))
             ctaLabel = "Начать ${Texts.seriesName(kind)}"
             needsAgreement = true
         }
     }
     b.addView(d.titleBlock("Всё готово", subtitle, narrow = true))
-    b.addView(d.summaryCard("Твой план", items), d.gap(24))
-    b.addView(d.quoteCard(stepPhrase(CHOICE_PHRASE, Placement.REVIEW), italic = true, scenery = Scenery.DAY), d.gap(Spacing.GUTTER))
+    b.addView(d.summaryCard("Твой план", items, large = true), d.gap(24))
+    b.addView(d.text(stepPhrase(CHOICE_PHRASE, Placement.REVIEW), Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(22))
+    b.addView(d.rowsCard(facts).apply {
+        background = d.surface(Palette.CardQuiet)
+        d.elevate(this, 1f)
+    }, d.gap(22))
     choice.series?.let { kind ->
-        b.addView(d.noteCard(
-            "Прогресс обнулится. Сразу начать заново — Restart за ${Texts.price(kind.restartPriceRub)}, " +
-                "бесплатная новая серия — через ${StandardRules.FREE_START_AFTER.toDays()} дней.\n\n" +
-                "Доверенный выход всегда доступен и не требует отдельной оплаты.\n\n" +
-                "Если серия будет завершена досрочно, она считается сорванной. Если установлена «Цена слова», она применяется.",
-            "Если серия будет прервана", icon = Icon.SHIELD,
-        ), d.gap(Spacing.GUTTER))
-        b.addView(d.noteCard(
-            SCHEDULED_NOTE + (commitmentKop?.let { " Цена слова: ${Texts.money(it)} — резерв с баланса MAMA." } ?: ""),
-            icon = Icon.LOCK,
-        ), d.gap(Spacing.GUTTER))
+        // The full terms: one tap away, never hidden from the decision.
+        b.addView(d.linkButton(if (termsOpen) "Скрыть условия" else "Все условия серии") { termsOpen = !termsOpen; render() }, d.gap(4))
+        if (termsOpen) {
+            b.addView(d.noteCard(
+                "Прогресс обнулится. Сразу начать заново — Restart за ${Texts.price(kind.restartPriceRub)}, " +
+                    "бесплатная новая серия — через ${StandardRules.FREE_START_AFTER.toDays()} дней.\n\n" +
+                    "Доверенный выход всегда доступен и не требует отдельной оплаты.\n\n" +
+                    "Если серия будет завершена досрочно, она считается сорванной. Если установлена «Цена слова», она применяется.",
+                "Если серия будет прервана", icon = Icon.SHIELD,
+            ), d.gap(8))
+            b.addView(d.noteCard(
+                SCHEDULED_NOTE + (commitmentKop?.let { " Цена слова: ${Texts.money(it)} — резерв с баланса MAMA, к Restart не прибавляется." } ?: ""),
+                icon = Icon.LOCK,
+            ), d.gap(Spacing.GUTTER))
+        }
     }
-    val cta = d.primaryButton(ctaLabel) { startChosen() }
+    val cta = d.primaryButton(ctaLabel, large = true) { startChosen() }
     val footer = d.column()
     if (needsAgreement) {
         footer.addView(d.checkRow("Я понимаю условия и принимаю ответственность за своё решение.", agreed) { agreed = it; render() })
         cta.isEnabled = agreed
     }
-    footer.addView(cta, d.gap(if (needsAgreement) 6 else 0))
+    footer.addView(cta, d.gap(if (needsAgreement) 8 else 0))
     return v1Frame(Scenery.DAY, stepBar(Step.REVIEW), b, footer)
 }
 

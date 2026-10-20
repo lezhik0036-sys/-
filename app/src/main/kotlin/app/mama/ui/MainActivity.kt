@@ -77,6 +77,9 @@ class MainActivity : Activity() {
     internal var manualContact = false
     internal var agreed = false
 
+    /** "Всё готово": the full terms of the series are shown (they are one tap away otherwise). */
+    internal var termsOpen = false
+
     /** "Цена слова" chosen for the series about to start (kopecks), or null. Never carried forward. */
     internal var commitmentKop: Long? = null
 

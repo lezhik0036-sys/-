@@ -23,8 +23,6 @@ import app.mama.motivation.Placement
 import app.mama.platform.Mama
 import app.mama.platform.Protection
 import app.mama.ui.design.NoteTone
-import app.mama.ui.design.Palette
-import app.mama.ui.design.QuoteAccent
 import app.mama.ui.design.SceneLayout
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
@@ -46,7 +44,32 @@ private fun MainActivity.homeHeader(counter: String?, done: Int, total: Int): Vi
 }
 
 /** Room under the title where the landscape shows (reference 13). */
-private fun MainActivity.heroSpace(b: LinearLayout, heightDp: Int = 150) = b.addView(View(this), LinearLayout.LayoutParams(1, design.dp(heightDp)))
+private fun MainActivity.heroSpace(b: LinearLayout, heightDp: Int = 140) = b.addView(View(this), LinearLayout.LayoutParams(1, design.dp(heightDp)))
+
+/**
+ * Title of a dashboard: the main fact (the day of the series), its state as
+ * a quiet badge and one short line (a phrase from [app.mama.motivation.MotivationCatalog]).
+ */
+private fun MainActivity.homeTitle(b: LinearLayout, title: String, state: String?, stateIcon: Icon, line: String?) {
+    val d = design
+    b.addView(d.title(title))
+    state?.let { b.addView(d.badge(it, stateIcon), d.wrap().apply { topMargin = d.dp(12) }) }
+    line?.let {
+        b.addView(d.subtitle(it).apply { maxWidth = (resources.displayMetrics.widthPixels * 0.72f).toInt() }, d.wrap().apply { topMargin = d.dp(12) })
+    }
+}
+
+/** A short phrase for the home of a series: one line, the same for the whole day. */
+private fun MainActivity.homePhrase(placement: Placement, key: String): String =
+    MotivationRotation.of(this).phrase(placement, key, maxLength = 48).text
+
+/** The lock right now, in a few words ("Блокировка идёт"). */
+private fun lockBadge(st: LockState, waiting: String): Pair<String, Icon>? = when (st) {
+    is LockState.Locked -> "Блокировка идёт" to Icon.MOON
+    is LockState.EmergencyPass -> "Экстренный доступ" to Icon.PHONE
+    is LockState.Waiting -> waiting to Icon.SPROUT
+    LockState.Free -> null
+}
 
 private fun countdownLabel(st: LockState, waiting: String) = when (st) {
     is LockState.Waiting -> waiting
@@ -67,10 +90,11 @@ private fun MainActivity.countdownRow(state: () -> LockState, zone: ZoneId, wait
     val note = when (first) {
         is LockState.Waiting -> Texts.firstLock(first.startsAt, zone, now)
         is LockState.Locked -> "До ${Texts.time(first.endsAt, zone)}"
-        is LockState.EmergencyPass -> "Экстренный доступ до ${Texts.time(first.until, zone)}"
+        is LockState.EmergencyPass -> "До ${Texts.time(first.until, zone)}"
         LockState.Free -> null
     }
-    val row = d.valueRow(Icon.CLOCK, countdownLabel(first, waiting), "—", note?.let { d.badge(it) })
+    // The largest figure of the screen.
+    val row = d.valueRow(Icon.CLOCK, countdownLabel(first, waiting), "—", note?.let { d.badge(it) }, Typo.AMOUNT)
     var shown: Class<*>? = null
     startTicker {
         val st = state()
@@ -94,15 +118,9 @@ private fun MainActivity.countdownRow(state: () -> LockState, zone: ZoneId, wait
     return row.view
 }
 
-/** Countdown and the daily window in one card. */
-private fun MainActivity.lockTimeCard(state: () -> LockState, window: app.mama.core.DailyWindow, waiting: String = "До начала блокировки"): View {
-    val d = design
-    val windowRow = d.valueRow(
-        Icon.CALENDAR, "Окно блокировки", "${Texts.hhmm(window.start)} → ${Texts.hhmm(window.end)}",
-        d.text("каждый день · ${window.zone.id}", Typo.CAPTION, Palette.InkMuted), Typo.HEADLINE,
-    )
-    return d.rowsCard(listOf(countdownRow(state, window.zone, waiting), windowRow.view), paddingDp = 18, dividerInsetDp = 18)
-}
+/** The countdown alone in its card: the main thing on the home screen. */
+private fun MainActivity.timerCard(state: () -> LockState, zone: ZoneId, waiting: String = "До начала блокировки"): View =
+    design.rowsCard(listOf(countdownRow(state, zone, waiting)), paddingDp = 20)
 
 // ---------------- 8. Series dashboard: scheduled / activating / active ----------------
 
@@ -118,14 +136,18 @@ internal fun MainActivity.seriesDashboard(
     val n = series.kind.periods
     val day = minOf(series.completedPeriods + 1, n)
     val b = d.body(22)
+    // The day, the state and the timer first; one short phrase; the rest in one quiet card.
     when {
-        series.committed -> b.addView(d.titleBlock(Texts.dayOf(day, n), "Ты держишь курс.", narrow = true))
-        series.status == SeriesStatus.ACTIVATING -> b.addView(d.titleBlock("MAMA включает защиту", "Проверяем строгую защиту. Это займёт несколько секунд.", narrow = true))
-        else -> b.addView(d.titleBlock(
-            "Серия запланирована",
-            if (series.isRestart) "Restart: серия начнётся с первой блокировкой." else "Серия начнётся с первой блокировкой.",
-            narrow = true,
-        ))
+        series.committed -> {
+            val (badge, icon) = lockBadge(state(), "Серия идёт") ?: ("Серия идёт" to Icon.SPROUT)
+            homeTitle(b, Texts.dayOf(day, n), badge, icon, homePhrase(Placement.ACTIVE, "${series.id}:day-$day"))
+        }
+        series.status == SeriesStatus.ACTIVATING ->
+            homeTitle(b, "MAMA включает защиту", "Проверяем защиту", Icon.SHIELD, "Это займёт несколько секунд.")
+        else -> homeTitle(
+            b, "Серия запланирована", (if (series.isRestart) "Restart · " else "") + Texts.seriesName(series.kind), Icon.CALENDAR,
+            homePhrase(Placement.SCHEDULED, "${series.id}:scheduled"),
+        )
     }
     heroSpace(b)
     if (editSaved && series.status == SeriesStatus.SCHEDULED) {
@@ -138,20 +160,15 @@ internal fun MainActivity.seriesDashboard(
         ), d.gap(Spacing.GUTTER))
         b.addView(d.secondaryButton("Исправить защиту", Icon.SHIELD) { startSetupAll(Protection.strict) }, d.gap(10))
     }
-    b.addView(lockTimeCard(state, series.window), d.gap(Spacing.GUTTER))
-    b.addView(d.summaryCard(null, seriesDetails(series, sampleCommitment, sampleRestart)), d.gap(Spacing.GUTTER))
-    val placement = if (series.committed) Placement.ACTIVE else Placement.SCHEDULED
-    val phrase = MotivationRotation.of(this).phrase(placement, "${series.id}:${series.status}:$day").text
-    b.addView(d.quoteCard(phrase, QuoteAccent.SAND, serif = false, markInCircle = true), d.gap(Spacing.GUTTER))
+    b.addView(timerCard(state, series.window.zone), d.gap(Spacing.GUTTER))
+    b.addView(d.summaryCard(null, seriesDetails(series, series.window, sampleCommitment, sampleRestart)), d.gap(16))
     when (series.status) {
         SeriesStatus.SCHEDULED -> {
-            b.addView(d.secondaryButton("Изменить условия", Icon.CALENDAR) { beginEditing(series) }, d.gap(18))
+            b.addView(d.secondaryButton("Изменить условия", Icon.CALENDAR) { beginEditing(series) }, d.gap(22))
             b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(4))
         }
-        SeriesStatus.ACTIVATING -> b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(12))
-        else -> b.addView(d.text(
-            "Условия серии зафиксированы. Досрочный выход — только через доверенный контакт.", Typo.CAPTION, Palette.InkMuted, center = true,
-        ), d.gap(16))
+        SeriesStatus.ACTIVATING -> b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(14))
+        else -> Unit
     }
     val scenery = if (series.status == SeriesStatus.SCHEDULED) Scenery.EVENING else Scenery.MORNING
     // Days as segments once the series runs; before that only the wordmark.
@@ -159,27 +176,29 @@ internal fun MainActivity.seriesDashboard(
     return v1Frame(scenery, header, b, null, nav(), SceneLayout.HERO)
 }
 
-/** Trusted contact, "Цена слова" and a held Restart of a series: real values only. */
-private fun MainActivity.seriesDetails(series: Series, sampleCommitment: Commitment?, sampleRestart: RestartHold?): List<SummaryItem> {
-    val items = mutableListOf(SummaryItem(Icon.PERSON, "Доверенный контакт", series.contact.name, Texts.phone(series.contact.phone)))
+/** The window, trusted contact, "Цена слова" and a held Restart of a series: real values, short notes. */
+private fun MainActivity.seriesDetails(
+    series: Series,
+    window: app.mama.core.DailyWindow,
+    sampleCommitment: Commitment?,
+    sampleRestart: RestartHold?,
+): List<SummaryItem> {
+    val items = mutableListOf(
+        SummaryItem(Icon.CALENDAR, "Окно блокировки", "${Texts.hhmm(window.start)} → ${Texts.hhmm(window.end)}"),
+        SummaryItem(Icon.PERSON, "Доверенный контакт", series.contact.name),
+    )
     val wallet = Mama.wallet(this)
     val commitment = sampleCommitment ?: wallet.commitmentFor(series.id)
     when {
-        commitment != null && commitment.state == CommitmentState.SCHEDULED -> items += SummaryItem(
-            Icon.COINS, "Цена слова", Texts.money(commitment.amountKop), "Зарезервировано до начала. Можно изменить до первой блокировки.",
-        )
-        commitment != null && commitment.state == CommitmentState.RESERVED -> items += SummaryItem(
-            Icon.COINS, "Цена слова", Texts.money(commitment.amountKop),
-            "В резерве до конца серии. Пройдёшь серию — сумма снова будет доступна на балансе MAMA.",
-        )
+        commitment != null && commitment.state == CommitmentState.SCHEDULED ->
+            items += SummaryItem(Icon.COINS, "Цена слова", Texts.money(commitment.amountKop), "можно изменить до первой блокировки")
+        commitment != null && commitment.state == CommitmentState.RESERVED ->
+            items += SummaryItem(Icon.COINS, "Цена слова", Texts.money(commitment.amountKop), "в резерве до конца серии")
         else -> if (FeatureFlags.WALLET_ENABLED && !series.committed) items += SummaryItem(Icon.COINS, "Цена слова", "Без цены слова")
     }
     val hold = sampleRestart ?: wallet.restartHoldFor(series.id)
     if (hold != null && hold.state == RestartHoldState.HELD) {
-        items += SummaryItem(
-            Icon.REFRESH, "Restart", Texts.money(hold.amountKop),
-            "Зарезервирован до начала серии. Если отменить запуск до первой блокировки, вернётся на баланс MAMA.",
-        )
+        items += SummaryItem(Icon.REFRESH, "Restart", Texts.money(hold.amountKop), "вернётся на баланс, если отменить запуск")
     }
     return items
 }
@@ -232,12 +251,7 @@ private fun MainActivity.needsAttentionScreen(
     }
     b.addView(d.secondaryButton("Изменить условия", Icon.CALENDAR) { beginEditing(series) }, d.gap(10))
     b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(4))
-    val window = shownWindow(series)
-    b.addView(d.valueCard(
-        Icon.CALENDAR, "Окно блокировки", "${Texts.hhmm(window.start)} → ${Texts.hhmm(window.end)}",
-        d.text("каждый день · ${window.zone.id}", Typo.CAPTION, Palette.InkMuted),
-    ), d.gap(18))
-    b.addView(d.summaryCard(null, seriesDetails(series, sampleCommitment, sampleRestart)), d.gap(Spacing.GUTTER))
+    b.addView(d.summaryCard(null, seriesDetails(series, shownWindow(series), sampleCommitment, sampleRestart)), d.gap(18))
     return v1Frame(Scenery.EVENING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO)
 }
 
@@ -259,19 +273,15 @@ internal fun MainActivity.sessionDashboard(session: Session, state: () -> LockSt
     val d = design
     val b = d.body(22)
     val isTest = Duration.between(session.plan.start, session.plan.end) == app.mama.core.TestMode.DURATION
-    b.addView(d.titleBlock(
-        if (isTest) "Тестовый режим" else "Блокировка",
-        if (isTest) "15 минут · только для тестирования" else Texts.mode(session.plan.mode),
-        narrow = true,
-    ))
+    val (badge, icon) = lockBadge(state(), "Скоро начнётся") ?: ("Скоро начнётся" to Icon.SPROUT)
+    homeTitle(b, if (isTest) "Тестовый режим" else "Блокировка", badge, icon, if (isTest) "15 минут · только для тестирования" else Texts.mode(session.plan.mode))
     heroSpace(b)
     val z = session.plan.zone
-    val times = d.valueRow(
-        Icon.CALENDAR, "Время блокировки", "${Texts.time(session.plan.start, z)} → ${Texts.time(session.plan.end, z)}",
-        if (isTest) d.testBadge("Тест") else null, Typo.HEADLINE,
-    )
-    b.addView(d.rowsCard(listOf(countdownRow(state, z), times.view), paddingDp = 18, dividerInsetDp = 18), d.gap(Spacing.GUTTER))
-    b.addView(d.summaryCard(null, listOf(SummaryItem(Icon.PERSON, "Доверенный контакт", session.contact.name, Texts.phone(session.contact.phone)))), d.gap(Spacing.GUTTER))
+    b.addView(timerCard(state, z), d.gap(Spacing.GUTTER))
+    b.addView(d.summaryCard(null, listOf(
+        SummaryItem(Icon.CALENDAR, "Время блокировки", "${Texts.time(session.plan.start, z)} → ${Texts.time(session.plan.end, z)}"),
+        SummaryItem(Icon.PERSON, "Доверенный контакт", session.contact.name),
+    )), d.gap(16))
     if (state() is LockState.Waiting) {
         b.addView(d.linkButton("Отменить до начала") { Mama.cancelBeforeStart(this); render() }, d.gap(10))
     }

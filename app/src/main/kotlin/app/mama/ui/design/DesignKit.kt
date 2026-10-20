@@ -205,14 +205,15 @@ class DesignKit(val context: Context) {
 
     // ---------------- buttons ----------------
 
-    /** Main action: emerald gradient pill, white label in the centre, "→" at the right edge. */
-    fun primaryButton(label: String, arrow: Boolean = true, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
+    /** Main action: emerald gradient pill, white label in the centre, "→" at the right edge; [large] for the one decisive action of a screen. */
+    fun primaryButton(label: String, arrow: Boolean = true, large: Boolean = false, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.BUTTON.applyTo(this)
+        if (large) textSize = 17.5f
         setTextColor(Palette.OnEmerald)
         gravity = Gravity.CENTER
-        minHeight = dp(Spacing.BUTTON)
-        minimumHeight = dp(Spacing.BUTTON)
+        minHeight = dp(if (large) 58 else Spacing.BUTTON)
+        minimumHeight = dp(if (large) 58 else Spacing.BUTTON)
         val radius = dp(Spacing.BUTTON)
         val pill = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Palette.EmeraldLight, Palette.EmeraldDeep)).apply {
             cornerRadius = radius.toFloat()
@@ -432,8 +433,9 @@ class DesignKit(val context: Context) {
     }
 
     /** "Твой план": rows with icon circle, label, value, "›"; with a [title], inside a light frame that carries it. */
-    fun summaryCard(title: String?, items: List<SummaryItem>): View {
-        val inner = summaryRows(items)
+    /** [large]: the few decisive values of a screen ("Всё готово"), bigger and with more air. */
+    fun summaryCard(title: String?, items: List<SummaryItem>, large: Boolean = false): View {
+        val inner = summaryRows(items, large)
         if (title == null) return inner
         return column().apply {
             background = shape(Color.argb(0xE6, 0xFE, 0xFD, 0xF9), Radii.CARD + 2)
@@ -444,21 +446,22 @@ class DesignKit(val context: Context) {
         }
     }
 
-    private fun summaryRows(items: List<SummaryItem>): LinearLayout = card(paddingDp = 0).apply {
+    private fun summaryRows(items: List<SummaryItem>, large: Boolean): LinearLayout = card(paddingDp = 0).apply {
+        val circle = if (large) 46 else 40
         items.forEachIndexed { i, item ->
-            if (i > 0) addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply { leftMargin = dp(16 + 40 + 14); rightMargin = dp(16) })
-            addView(summaryRow(item))
+            if (i > 0) addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply { leftMargin = dp(16 + circle + 14); rightMargin = dp(16) })
+            addView(summaryRow(item, large))
         }
         setPadding(0, 0, 0, dp(4))
     }
 
-    fun summaryRow(item: SummaryItem): View = row().apply {
-        setPadding(dp(16), dp(8), dp(14), dp(8))
-        minimumHeight = dp(58)
-        addView(iconCircle(item.icon, 40))
+    fun summaryRow(item: SummaryItem, large: Boolean = false): View = row().apply {
+        setPadding(dp(16), dp(if (large) 12 else 8), dp(14), dp(if (large) 12 else 8))
+        minimumHeight = dp(if (large) 70 else 58)
+        addView(iconCircle(item.icon, if (large) 46 else 40))
         val texts = column()
         texts.addView(text(item.label, Typo.LABEL, Palette.InkMuted))
-        texts.addView(text(item.value, Typo.VALUE).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END }, gap(2))
+        texts.addView(text(item.value, if (large) Typo.TITLE else Typo.VALUE).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END }, gap(if (large) 3 else 2))
         item.note?.let { texts.addView(text(it, Typo.CAPTION, Palette.InkMuted), gap(3)) }
         addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(8) })
         item.onClick?.let {
@@ -573,41 +576,39 @@ class DesignKit(val context: Context) {
     }
 
     /**
-     * Time of a window (reference 04): label and "›" on top, icon circle,
-     * the time in large digits, its part of day ("ВЕЧЕРОМ") and a [note]
-     * beside it ("сегодня"); a landscape on the right. Without [onClick] it
-     * is only shown (test mode).
+     * One end of a lock window (reference 04), read at a glance: icon and
+     * label with "›", the time in large digits, its part of day ("ВЕЧЕРОМ")
+     * and a [note] under it ("сегодня"). Two side by side in [timeRange].
+     * Without [onClick] it is only shown (test mode).
      */
-    fun timeCard(label: String, time: String, part: String?, icon: Icon, scenery: Scenery?, note: String? = null, onClick: (() -> Unit)?): View = column().apply {
-        val radius = dpf(Radii.CARD.toFloat())
-        val fill: Drawable = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.Card, radius, vignette = 0.5f) } ?: surface()
-        background = if (onClick != null) RippleDrawable(ColorStateList.valueOf(Palette.Ripple), fill, shape(Color.WHITE, Radii.CARD)) else fill
-        outlineProvider = roundOutline(radius)
+    fun timeTile(label: String, time: String, part: String?, icon: Icon, note: String? = null, onClick: (() -> Unit)?): View = column().apply {
+        background = if (onClick != null) pressable(surface(), Radii.CARD) else surface()
         elevate(this, 2.5f)
-        setPadding(dp(18), dp(14), dp(12), dp(18))
+        setPadding(dp(16), dp(14), dp(12), dp(16))
         val top = row()
-        top.addView(text(label, Typo.BODY, Palette.InkMuted).apply { textSize = 16f }, weight())
-        if (onClick != null) top.addView(chevron())
+        top.addView(iconCircle(icon, 36))
+        top.addView(text(label, Typo.LABEL, Palette.InkMuted).apply { textSize = 15f; isSingleLine = true; ellipsize = TextUtils.TruncateAt.END }, weight().apply { leftMargin = dp(10) })
+        if (onClick != null) top.addView(chevron(sizeDp = 18))
         addView(top, fill())
-        val main = row()
-        main.addView(iconCircle(icon, 62))
-        val texts = column()
-        // Its own width (a match-parent child would not widen this wrap-content column) and one line.
-        texts.addView(text(time, Typo.AMOUNT).apply { isSingleLine = true }, wrap())
-        val under = row()
-        part?.let { under.addView(tag(it).apply { maxLines = 1; setPadding(dp(12), dp(5), dp(12), dp(5)) }) }
-        note?.let { under.addView(text(it, Typo.LABEL, Palette.InkMuted).apply { isSingleLine = true }, wrap().apply { leftMargin = dp(if (part != null) 10 else 0) }) }
-        texts.addView(under, wrap().apply { topMargin = dp(4) })
-        main.addView(texts, wrap().apply { leftMargin = dp(18) })
-        addView(main, gap(8))
+        // Its own width and one line: the time is never cut or wrapped.
+        addView(text(time, Typo.AMOUNT).apply { isSingleLine = true }, wrap().apply { topMargin = dp(14) })
+        part?.let { addView(tag(it).apply { maxLines = 1; setPadding(dp(10), dp(4), dp(10), dp(4)) }, wrap().apply { topMargin = dp(6) }) }
+        note?.let { addView(text(it, Typo.LABEL, Palette.InkMuted).apply { isSingleLine = true; ellipsize = TextUtils.TruncateAt.END }, wrap().apply { topMargin = dp(8) }) }
         onClick?.let { clickable(this, it) }
     }
 
+    /** Start and end of a window side by side, equally high. */
+    fun timeRange(start: View, end: View): View = row().apply {
+        gravity = Gravity.TOP
+        addView(start, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        addView(end, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = dp(12) })
+    }
+
     /**
-     * A person (reference 06): large circle, label, name, phone, "›", a
-     * landscape along the bottom of the card.
+     * A person (reference 06): large circle, label, name, phone, "›"; a
+     * landscape along the bottom only when a [scenery] is given.
      */
-    fun contactCard(label: String, name: String, phone: String?, scenery: Scenery? = Scenery.DAY, onClick: (() -> Unit)?): View = column().apply {
+    fun contactCard(label: String, name: String, phone: String?, scenery: Scenery? = null, onClick: (() -> Unit)?): View = column().apply {
         val radius = dpf(Radii.CARD.toFloat())
         val fill: Drawable = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_BOTTOM, Palette.Card, radius) } ?: surface()
         background = if (onClick != null) RippleDrawable(ColorStateList.valueOf(Palette.Ripple), fill, shape(Color.WHITE, Radii.CARD)) else fill
@@ -628,8 +629,8 @@ class DesignKit(val context: Context) {
         onClick?.let { clickable(this, it) }
     }
 
-    /** A short supportive line on a setup step (references 04, 06): sprout circle, text, landscape on the right. */
-    fun phraseCard(phrase: String, icon: Icon = Icon.SPROUT, scenery: Scenery? = Scenery.DAY): View = row().apply {
+    /** A short supportive line on a setup step (references 04, 06): sprout circle, text; a landscape on the right only with a [scenery]. */
+    fun phraseCard(phrase: String, icon: Icon = Icon.SPROUT, scenery: Scenery? = null): View = row().apply {
         val radius = dpf(Radii.CARD.toFloat())
         background = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.CardQuiet, radius, vignette = 0.38f) } ?: surface(Palette.CardQuiet)
         outlineProvider = roundOutline(radius)

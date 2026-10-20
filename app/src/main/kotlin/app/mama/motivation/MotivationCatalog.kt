@@ -213,9 +213,14 @@ object MotivationCatalog {
 
     fun byCategory(category: MotivationCategory): List<Phrase> = phrases.filter { it.category == category }
 
-    /** Phrases for [placement]; a profile's own phrases first, then the general ones. */
-    fun candidates(placement: Placement, profile: ProfileType = ProfileType.GENERAL): List<Phrase> {
-        val fitting = phrases.filter { it.category in placement.categories && it.fits(profile) }
+    /**
+     * Phrases for [placement]; a profile's own phrases first, then the
+     * general ones. [maxLength]: only short ones, where a single line fits
+     * (all of them if none is that short).
+     */
+    fun candidates(placement: Placement, profile: ProfileType = ProfileType.GENERAL, maxLength: Int = Int.MAX_VALUE): List<Phrase> {
+        val all = phrases.filter { it.category in placement.categories && it.fits(profile) }
+        val fitting = all.filter { it.text.length <= maxLength }.ifEmpty { all }
         return fitting.filter { it.profiles.isNotEmpty() } + fitting.filter { it.profiles.isEmpty() }
     }
 
@@ -223,8 +228,14 @@ object MotivationCatalog {
      * A phrase for [placement], chosen by [key] (same key, same phrase) and
      * avoiding the [recent] ids while there is anything else to show.
      */
-    fun pick(placement: Placement, key: String, profile: ProfileType = ProfileType.GENERAL, recent: List<String> = emptyList()): Phrase {
-        val all = candidates(placement, profile)
+    fun pick(
+        placement: Placement,
+        key: String,
+        profile: ProfileType = ProfileType.GENERAL,
+        recent: List<String> = emptyList(),
+        maxLength: Int = Int.MAX_VALUE,
+    ): Phrase {
+        val all = candidates(placement, profile, maxLength)
         val fresh = all.filter { it.id !in recent }
         val pool = fresh.ifEmpty {
             // Everything was shown lately: the one shown longest ago.

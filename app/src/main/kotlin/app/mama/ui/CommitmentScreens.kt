@@ -111,21 +111,29 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind, w
         b.addView(note, d.gap(Spacing.GUTTER))
     }
 
-    b.addView(d.quoteCard(stepPhrase(WEIGHT_PHRASE, Placement.COMMITMENT), scenery = Scenery.DAY), d.gap(Spacing.GUTTER))
-    b.addView(d.noteCard(
-        "Если серия пройдена — вся сумма снова доступна на твоём балансе MAMA.\n" +
-            "Если серия будет завершена досрочно, она считается сорванной, и Цена слова применяется.\n" +
-            "Баланс MAMA — только внутри приложения: его нельзя вывести или перевести.\n" +
+    b.addView(d.quoteCard(stepPhrase(WEIGHT_PHRASE, Placement.COMMITMENT)), d.gap(18))
+    // The rules, quietly and one per line (never a word about a return: it is not announced).
+    b.addView(d.text("Как это работает", Typo.VALUE), d.gap(26))
+    val rules = listOf(
+        d.infoRow(Icon.CHECK, "Серия пройдена — вся сумма снова доступна на твоём балансе MAMA."),
+        d.infoRow(Icon.SHIELD, "Серия завершена досрочно — она считается сорванной, и Цена слова применяется."),
+        d.infoRow(
+            Icon.REFRESH,
             "Restart при срыве — отдельно: ${Texts.price(kind.restartPriceRub)}. Цена слова к нему не прибавляется." +
-            if (restart) "" else " Сама серия остаётся бесплатной.",
-        "Как это работает", icon = Icon.SHIELD,
-    ), d.gap(Spacing.GUTTER))
+                if (restart) "" else " Сама серия остаётся бесплатной.",
+        ),
+        d.infoRow(Icon.LOCK, "Баланс MAMA — только внутри приложения: его нельзя вывести или перевести."),
+    )
+    b.addView(d.rowsCard(rules).apply {
+        background = d.surface(Palette.CardQuiet)
+        d.elevate(this, 1f)
+    }, d.gap(10))
     if (restart) {
         b.addView(d.noteCard(
             "После Restart серия будет запланирована: длина та же, время — выбранное. До первой блокировки можно изменить " +
                 "доверенный контакт, личную причину и Цену слова. Restart с баланса MAMA засчитывается, только когда серия начнётся: " +
                 "если отменить запуск, он вернётся на баланс.",
-            icon = Icon.LOCK,
+            icon = Icon.CALENDAR,
         ), d.gap(Spacing.GUTTER))
     }
 
