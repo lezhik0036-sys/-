@@ -519,6 +519,8 @@ class DesignKit(val context: Context) {
         outlineProvider = roundOutline(radius)
         elevate(this, 3f)
         setPadding(dp(18), dp(20), dp(18), dp(18))
+        // The action's soft glow spreads into the padding instead of being cut to a rectangle.
+        clipToPadding = false
         val head = row().apply { gravity = Gravity.TOP }
         head.addView(iconCircle(icon, 62))
         val texts = column()
