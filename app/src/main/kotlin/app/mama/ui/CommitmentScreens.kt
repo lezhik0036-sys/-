@@ -340,20 +340,25 @@ internal fun MainActivity.showReturnNoticeIfAny() {
 }
 
 /** "Цена слова" outcome on the failure / success screens. */
-internal fun MainActivity.commitmentOutcome(seriesId: String, sample: app.mama.core.Commitment? = null): View? {
+/** What "Цена слова" came to for a finished series, the same facts whatever card shows them. */
+internal data class CommitmentNote(val title: String, val message: String, val icon: Icon, val care: Boolean)
+
+internal fun MainActivity.commitmentNote(seriesId: String, sample: app.mama.core.Commitment? = null): CommitmentNote? {
     val c = sample ?: Mama.wallet(this).commitmentFor(seriesId) ?: return null
-    val d = design
     return when (c.state) {
-        CommitmentState.RELEASED -> d.noteCard("${Texts.money(c.amountKop)} снова доступны на твоём балансе MAMA.", "Ты сдержал слово.", icon = Icon.CHECK)
+        CommitmentState.RELEASED -> CommitmentNote("Ты сдержал слово.", "${Texts.money(c.amountKop)} снова доступны на твоём балансе MAMA.", Icon.CHECK, care = false)
         // Before the return is credited: only the fact, calmly, no promise of a return.
         CommitmentState.FORFEITED -> if (c.returnProcessed) {
-            d.noteCard("$RETURN_TEXT Попробуй ещё раз.", returnTitle(c.returnKop), icon = Icon.HEART)
+            CommitmentNote(returnTitle(c.returnKop), "$RETURN_TEXT Попробуй ещё раз.", Icon.HEART, care = false)
         } else {
-            d.noteCard("Цена слова применена.", "Цена слова: ${Texts.money(c.amountKop)}", NoteTone.CARE, Icon.COINS)
+            CommitmentNote("Цена слова: ${Texts.money(c.amountKop)}", "Цена слова применена.", Icon.COINS, care = true)
         }
         CommitmentState.SCHEDULED, CommitmentState.RESERVED -> null
     }
 }
+
+internal fun MainActivity.commitmentOutcome(seriesId: String, sample: app.mama.core.Commitment? = null): View? =
+    commitmentNote(seriesId, sample)?.let { design.noteCard(it.message, it.title, if (it.care) NoteTone.CARE else NoteTone.INFO, it.icon) }
 
 /** "MAMA вернула тебе 250 ₽": the partial return, once credited. */
 internal fun returnTitle(amountKop: Long) = "MAMA вернула тебе ${Texts.money(amountKop)}"

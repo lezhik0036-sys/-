@@ -15,12 +15,13 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * The welcome (UI v1, 3D): the approved illustration on top as a view of its
- * own, the welcome as real text, "Начать свой путь" always on screen, and the
- * illustration never cut above the child and the dog, on a Pixel 6 and on a
+ * The welcome (Design System v2): the approved illustration on top as a view
+ * of its own, whole down to its wave; the welcome as real text; "Начать свой
+ * путь" always on screen and "Мой путь" under it; on a Pixel 6 and on a
  * narrower phone.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -28,9 +29,9 @@ import kotlin.math.roundToInt
 class WelcomeScreenTest {
     private val welcome = listOf(
         "Добро пожаловать в MAMA",
-        "Ты уже сделал главное — решил изменить вечер.",
-        "MAMA поможет сохранить это решение, когда силы воли станет меньше.",
-        "Сегодня не нужно быть идеальным. Достаточно сделать один спокойный шаг.",
+        "Ты уже сделал важный шаг — выбрал больше времени для настоящей жизни.",
+        "MAMA поможет сохранить решение, когда вечером захочется его отменить.",
+        "Один вечер. Одно решение. Начнём.",
         "Начать свой путь",
         "Мой путь",
     )
@@ -56,14 +57,13 @@ class WelcomeScreenTest {
         return at[1] - r[1] + v.height
     }
 
-    /** The illustration shows the image from its top down to row 990 (the child and the dog) at least, row 1290 at most. */
+    /** The illustration is shown whole, down to its wave (900 rows of a 941 px wide art), as wide as the screen. */
     private fun assertHero(a: MainActivity) {
         val root = content(a)
         val hero = root.findViewWithTag<View>(WELCOME_HERO)
         assertTrue(hero is HeroIllustration)
-        val min = (hero.width * 990f / 1024).roundToInt()
-        val max = (hero.width * 1290f / 1024).roundToInt()
-        assertTrue("illustration height ${hero.height} in $min..$max", hero.height in (min - 1)..(max + 1))
+        val whole = (hero.width * 900f / 941).roundToInt()
+        assertTrue("illustration height ${hero.height}, whole art $whole", abs(hero.height - whole) <= 1)
         assertEquals("as wide as the screen", root.width, hero.width)
         assertNotNull("«Мой путь» stays", root.findViewWithTag<View>(OPEN_PATH))
         val cta = root.findViewsWithText("Начать свой путь")
@@ -79,13 +79,13 @@ class WelcomeScreenTest {
         val a = open()
         val shown = texts(content(a))
         for (t in welcome) assertTrue("«$t» in $shown", t in shown)
-        assertFalse("the old welcome is gone", shown.any { it.contains("Ты уже решил") })
+        assertFalse("the old welcome is gone", shown.any { it.contains("Ты уже решил") || it.contains("решил изменить вечер") })
         assertHero(a)
     }
 
     @Test
     @Config(qualifiers = "w360dp-h720dp-xhdpi")
-    fun `a narrower phone - the same, the illustration never cut above the child`() {
+    fun `a narrower phone - the same, the illustration whole`() {
         val a = open()
         val shown = texts(content(a))
         for (t in welcome) assertTrue("«$t» in $shown", t in shown)

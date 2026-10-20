@@ -65,6 +65,9 @@ class MainActivity : Activity() {
     /** UI v1 components (docs/DESIGN_SYSTEM_V1.md); screens move to it group by group. */
     internal val design by lazy { DesignKit(this) }
 
+    /** MAMA Design System v2 (docs/MAMA_DESIGN_SYSTEM_V2.md): Welcome, ACTIVE and Recovery so far. */
+    internal val v2 by lazy { app.mama.ui.design.DesignKitV2(this) }
+
     internal var mode = SessionMode.SLEEP
     internal var choice = Choice.SEVEN
     internal var start: LocalTime = LocalTime.of(23, 0)

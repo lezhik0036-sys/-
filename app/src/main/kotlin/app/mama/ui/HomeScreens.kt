@@ -1,5 +1,6 @@
 package app.mama.ui
 
+import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.view.ViewTreeObserver
@@ -35,6 +36,7 @@ import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.SummaryItem
 import app.mama.ui.design.Typo
+import app.mama.ui.design.V2
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -538,52 +540,65 @@ internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
 internal const val RECOVERY_SCREEN = "recovery_screen"
 internal const val RESTART_CTA = "restart_cta"
 
+/** MAMA's round portrait on Recovery: a crop of the approved welcome art, until a supportive illustration of her exists. */
+internal const val MAMA_PORTRAIT = "art/mama_portrait_v2.webp"
+
 /**
- * A series ended early (reference 20): light, a path to the lake, no red,
- * no "!" and nothing that punishes. The main line supports; the nights done
- * are a quiet badge; Restart is a new chance to go on, with a new time.
- * Nothing about a return of «Цена слова» before it has really come.
+ * A series ended early (Design System v2): the milky page, MAMA beside the
+ * person as a small round portrait, no red, no warning, no verdict. "Этот
+ * путь продолжается" and the support come first, the nights done as a pill,
+ * Restart as the natural way on (with a new time). Nothing about a return of
+ * «Цена слова» before it has really come.
  */
 internal fun MainActivity.failureScreen(
     series: Series,
     freeInDays: Long = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this)),
     sampleCommitment: app.mama.core.Commitment? = null,
 ): Pair<View, Boolean> {
-    val d = design
-    val b = d.body(22)
-    // No verdict line: the title and the support (in ink, over the photo) go first.
-    b.addView(d.titleBlock(
-        "Этот путь продолжается",
-        narrow = true,
-        lead = "Ты уже сделал важное — начал. Один сложный вечер не отменяет твоего решения.",
-    ))
-    b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap().apply { topMargin = d.dp(14) })
-    heroSpace(b, 96)
-    b.addView(d.offerCard(
-        Icon.REFRESH, "Попробовать снова", "Restart · ${Texts.price(series.kind.restartPriceRub)}",
-        "Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново.",
-        d.primaryButton("Начать заново") {
-            // A new launch: time first (a new draft from the current time), then "Цена слова", then payment.
-            beginRestart(series.kind)
-            render()
-        }.apply { tag = RESTART_CTA },
-    ), d.gap(Spacing.GUTTER))
-    commitmentOutcome(series.id, sampleCommitment)?.let { b.addView(it, d.gap(Spacing.GUTTER)) }
-    if (freeInDays > 0) {
-        b.addView(d.noteCard(
-            "Без Restart — бесплатно, телефон при этом не заблокирован.",
-            "Следующая бесплатная серия через ${Texts.days(freeInDays.toInt())}", icon = Icon.CALENDAR,
-        ), d.gap(Spacing.GUTTER))
+    val v = v2
+    val b = v.k.column().apply {
+        gravity = Gravity.CENTER_HORIZONTAL
+        setPadding(v.dp(Spacing.SCREEN), v.dp(6), v.dp(Spacing.SCREEN), v.dp(28))
+        clipToPadding = false
     }
-    b.addView(d.actionRow(Icon.HOME, "Вернуться на главную", "Продолжить, когда почувствуешь готовность.") {
+    b.addView(v.portrait(MAMA_PORTRAIT, 132))
+    b.addView(v.text("Этот путь продолжается", Typo.DISPLAY, V2.Ink, center = true).apply { textSize = 30f }, v.k.gap(12))
+    b.addView(v.text("Один сложный вечер не отменяет твоего решения.", Typo.SUBTITLE, V2.InkMuted, center = true), v.k.gap(10))
+    b.addView(v.pill(doneLine(series), Icon.SPROUT), v.k.centered(16))
+
+    // Restart: the way on, the one main action of the screen.
+    val offer = v.card(paddingDp = 20, radiusDp = V2.CARD_LARGE).apply { clipToPadding = false }
+    val head = v.k.row().apply { gravity = Gravity.TOP }
+    head.addView(v.bubble(Icon.REFRESH, V2.Coral, Color.argb(0x40, 0xE6, 0xA0, 0x97), 52))
+    val texts = v.k.column()
+    texts.addView(v.text("Попробовать снова", Typo.HEADLINE, V2.Ink))
+    texts.addView(v.text("Restart · ${Texts.price(series.kind.restartPriceRub)}", Typo.VALUE, V2.Coral), v.k.gap(4))
+    texts.addView(v.text("Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново.", Typo.LABEL, V2.InkMuted), v.k.gap(6))
+    head.addView(texts, v.k.weight().apply { leftMargin = v.dp(14) })
+    offer.addView(head, v.k.fill())
+    offer.addView(v.primary("Начать заново") {
+        // A new launch: time first (a new draft from the current time), then "Цена слова", then payment.
+        beginRestart(series.kind)
+        render()
+    }.apply { tag = RESTART_CTA }, v.k.gap(18))
+    b.addView(offer, v.k.gap(24))
+
+    commitmentNote(series.id, sampleCommitment)?.let { b.addView(v.note(it.title, it.message, it.icon, warm = it.care), v.k.gap(Spacing.GUTTER)) }
+    if (freeInDays > 0) {
+        b.addView(v.note(
+            "Следующая бесплатная серия через ${Texts.days(freeInDays.toInt())}",
+            "Без Restart — бесплатно, телефон при этом не заблокирован.", Icon.CALENDAR,
+        ), v.k.gap(Spacing.GUTTER))
+    }
+    b.addView(v.secondary("Вернуться на главную", Icon.HOME) {
         closeDraft()
         Mama.dismissSeries(this)
         render()
-    }, d.gap(Spacing.GUTTER))
-    b.addView(d.linkButton("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }, d.gap(8))
-    val phrase = MotivationRotation.of(this).phrase(Placement.RECOVERY, "${series.id}:ended").text
-    b.addView(d.text(phrase, Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(26))
-    return v1Frame(Scenery.RECOVERY, d.topBar(null), b, null, layout = SceneLayout.HERO).also { it.first.tag = RECOVERY_SCREEN }
+    }, v.k.gap(22))
+    b.addView(v.link("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }, v.k.centered(6))
+    val screen = design.screen(null, header = design.topBar(null), body = b)
+    screen.background = v.page()
+    return (screen to true).also { it.first.tag = RECOVERY_SCREEN }
 }
 
 // ---------------- 12. Success ----------------

@@ -31,6 +31,7 @@ import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.SummaryItem
 import app.mama.ui.design.Typo
+import app.mama.ui.design.V2
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -147,46 +148,50 @@ private fun shortDuration(d: Duration): String {
 
 // ---------------- 1. Welcome ----------------
 
-/** The approved welcome illustration (source of truth, never redrawn). */
-internal const val WELCOME_ART = "scenes/v1/welcome_mama_audience_v1.webp"
+/**
+ * The approved welcome art (docs/design-reference/welcome_v2_mockup.webp, the
+ * source of truth): its illustration down to the wave, the page under the
+ * wave transparent. Cut from the mockup, never redrawn.
+ */
+internal const val WELCOME_ART = "art/welcome_mama_v2.webp"
 
 /** Tag of the welcome illustration (tests). */
 internal const val WELCOME_HERO = "welcome_hero"
 
 /**
- * The first screen (UI v1, 3D): MAMA and the people around her on top, the
- * welcome as real text under it, "Начать свой путь" always in view. The
- * illustration takes the room the text leaves: at least down to the child
- * and the dog, on a taller screen the desk as well; on a short one the text
- * scrolls under the button.
+ * The first screen (Design System v2): MAMA and the people around her on
+ * top, ending in the wave of the approved art; the welcome as real text on
+ * the milky page; "Начать свой путь" always in view and "Мой путь" under
+ * it. On a short screen the text scrolls under the button and fades there.
  */
 internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
-    val d = design
-    val body = d.column()
+    val d = v2
+    val body = d.k.column()
     body.addView(
-        HeroIllustration(this, WELCOME_ART, imageWidth = 1024, imageHeight = 1536, minShown = 990, maxShown = 1290, page = Palette.Bg)
+        HeroIllustration(this, WELCOME_ART, imageWidth = 941, imageHeight = 900, minShown = 900, maxShown = 900, page = V2.Milk, fadeBottom = false)
             .apply { tag = WELCOME_HERO },
-        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
+        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
     )
     // A short screen (a small phone) gets slightly more compact type, so more of the welcome is in view.
     val compact = resources.configuration.screenHeightDp < 780
-    val text = d.column().apply { setPadding(d.dp(Spacing.SCREEN), d.dp(4), d.dp(Spacing.SCREEN), d.dp(14)) }
-    // Non-breaking spaces keep "в MAMA" and "главное —" together.
-    text.addView(d.text("Добро пожаловать в\u00A0MAMA", Typo.DISPLAY).apply { textSize = if (compact) 26f else 30f }, d.fill())
-    text.addView(d.text("Ты уже сделал главное\u00A0— решил изменить вечер.", Typo.SUBTITLE, Palette.Ink).apply {
+    val text = d.k.column().apply { setPadding(d.dp(Spacing.SCREEN + 4), 0, d.dp(Spacing.SCREEN + 4), d.dp(14)) }
+    // Non-breaking spaces keep "в MAMA" and "шаг —" together.
+    text.addView(d.text(d.accented("Добро пожаловать в\u00A0MAMA", "MAMA"), Typo.DISPLAY).apply { textSize = if (compact) 28f else 32f }, d.k.fill())
+    text.addView(d.text("Ты уже сделал важный шаг\u00A0— выбрал больше времени для настоящей жизни.", Typo.SUBTITLE, V2.Ink).apply {
         if (compact) textSize = 16f
-    }, d.gap(if (compact) 10 else 12))
-    for ((i, line) in listOf(
-        "MAMA поможет сохранить это решение, когда силы воли станет меньше.",
-        "Сегодня не нужно быть идеальным. Достаточно сделать один спокойный шаг.",
-    ).withIndex()) {
-        text.addView(d.text(line, Typo.BODY, Palette.InkMuted).apply { if (compact) textSize = 14.5f }, d.gap(if (i == 0) (if (compact) 8 else 10) else (if (compact) 6 else 8)))
-    }
-    body.addView(text, d.fill())
-    val start = d.primaryButton("Начать свой путь", large = true) { beginDraft(); go(Step.PERMISSIONS) }
+    }, d.k.gap(if (compact) 10 else 14))
+    text.addView(d.text("MAMA поможет сохранить решение, когда вечером захочется его отменить.", Typo.BODY, V2.InkMuted).apply {
+        textSize = if (compact) 14.5f else 15.5f
+    }, d.k.gap(if (compact) 8 else 10))
+    text.addView(d.text("Один вечер. Одно решение. Начнём.", Typo.VALUE, V2.OliveDeep).apply {
+        textSize = if (compact) 15f else 16f
+    }, d.k.gap(if (compact) 10 else 14))
+    body.addView(text, d.k.fill())
+    val start = d.primary("Начать свой путь") { beginDraft(); go(Step.PERMISSIONS) }
     // A quiet way to everything already done, at any time between series (3A.1).
-    val path = d.linkButton("Мой путь") { openPath() }.apply { tag = OPEN_PATH }
-    val screen = d.screen(null, header = null, body = body, cta = d.bottomCta(start, path))
+    val path = d.link("Мой путь") { openPath() }.apply { tag = OPEN_PATH }
+    val screen = design.screen(null, header = null, body = body, cta = design.bottomCta(start, path))
+    screen.background = d.page()
     // Text that does not fit fades into a scroll above the button instead of being cut mid-line.
     (body.parent as? ScrollView)?.apply {
         isVerticalFadingEdgeEnabled = true

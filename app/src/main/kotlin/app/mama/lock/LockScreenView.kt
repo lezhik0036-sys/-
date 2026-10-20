@@ -2,6 +2,7 @@ package app.mama.lock
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.Drawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -13,8 +14,10 @@ import app.mama.core.EmergencyService
 import app.mama.platform.Calls
 import app.mama.ui.BrandButtonView
 import app.mama.ui.Icon
+import app.mama.ui.MamaFonts
 import app.mama.ui.Texts
 import app.mama.ui.design.DesignKit
+import app.mama.ui.design.DesignKitV2
 import app.mama.ui.design.Palette
 import app.mama.ui.design.Radii
 import app.mama.ui.design.SceneLayout
@@ -23,6 +26,7 @@ import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.TimerRing
 import app.mama.ui.design.Typo
+import app.mama.ui.design.V2
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -95,12 +99,15 @@ interface LockActions {
 class LockScreenView(private val context: Context, private val actions: LockActions) {
     private val d = DesignKit(context)
 
+    /** Design System v2: the lock itself (its main page); the pages over it follow later. */
+    private val v = DesignKitV2(context)
+
     val root: FrameLayout = FrameLayout(context)
 
-    // The scene lies on the root, so it also fills the area under the system bars:
-    // the whole photo behind the lock itself, a header photo behind the pages over it.
-    private val lockScene = ScenicBackground(context, Scenery.DAWN, SceneLayout.FULL)
-    private val pageScene by lazy { ScenicBackground(context, Scenery.DAWN, SceneLayout.HEADER) }
+    // The background lies on the root, so it also fills the area under the system bars:
+    // the milky v2 page behind the lock itself, the header photo behind the pages over it.
+    private val lockScene: Drawable = v.page()
+    private val pageScene: Drawable by lazy { ScenicBackground(context, Scenery.DAWN, SceneLayout.HEADER) }
 
     // Main page.
     private lateinit var mainPage: View
@@ -160,7 +167,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(Spacing.SCREEN), dp(48), dp(Spacing.SCREEN), dp(26))
         }
-        col.addView(d.wordmark(), d.centered())
+        col.addView(d.wordmark(V2.Ink), d.centered())
 
         callCard = d.card(Spacing.INNER).apply { gravity = Gravity.CENTER_HORIZONTAL }
         callInfo = d.text("", Typo.HEADLINE, Palette.Ink, center = true).also { callCard.addView(it, d.fill()) }
@@ -171,21 +178,24 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         callCard.addView(d.secondaryButton("Завершить звонок") { actions.hangUp() }, d.gap(10))
         col.addView(callCard, d.gap(18))
 
-        // One short line of support and when the phone is free again.
-        phrase = d.text("", Typo.QUOTE, Palette.Ink, center = true).apply { textSize = 25f }
+        // One short line of support and when the phone is free again (v2: Manrope only).
+        phrase = v.text("", Typo.SUBTITLE, V2.Ink, center = true).apply {
+            textSize = 21f
+            typeface = MamaFonts.ui(context, 600)
+        }
         col.addView(phrase, d.gap(40).apply { leftMargin = dp(8); rightMargin = dp(8) })
-        until = d.text("", Typo.SUBTITLE, Palette.InkMuted, center = true).apply { textSize = 15.5f }
+        until = v.text("", Typo.SUBTITLE, V2.InkMuted, center = true).apply { textSize = 15.5f }
         col.addView(until, d.centered(14))
 
         // Remaining time and the day of the series: the anchor of the screen.
-        ring = d.timerRing(232)
+        ring = v.timerRing(232)
         col.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(30) })
 
         col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
 
         // Only two actions, both quiet: always at hand, never the main thing on the screen.
-        col.addView(d.quietAction(Icon.PHONE, "Экстренный звонок") { actions.openEmergency() }, d.centered(30))
-        col.addView(d.quietAction(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() }, d.centered(8))
+        col.addView(v.quietAction(Icon.PHONE, "Экстренный звонок") { actions.openEmergency() }, d.centered(30))
+        col.addView(v.quietAction(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() }, d.centered(8))
         diagnostics = d.text("", Typo.CAPTION, Color.argb(0x99, 0x5E, 0x62, 0x66), center = true).also {
             it.textSize = 9.5f
             col.addView(it, d.gap(14))

@@ -34,6 +34,8 @@ class HeroIllustration(
     private val maxShown: Int,
     private val page: Int,
     private val maxWidthDp: Int = 560,
+    /** False when the art ends in a shape of its own (the v2 welcome ends in a wave). */
+    private val fadeBottom: Boolean = true,
 ) : View(context) {
     private val density = context.resources.displayMetrics.density
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
@@ -73,9 +75,11 @@ class HeroIllustration(
         dst.set(left, 0f, left + iw, shown * scale)
         canvas.drawBitmap(bitmap, src, dst, paint)
 
-        val edge = 44 * density
-        fade.shader = LinearGradient(0f, dst.bottom - edge, 0f, dst.bottom, transparent(page), page, Shader.TileMode.CLAMP)
-        canvas.drawRect(0f, dst.bottom - edge, width.toFloat(), dst.bottom, fade)
+        if (fadeBottom) {
+            val edge = 44 * density
+            fade.shader = LinearGradient(0f, dst.bottom - edge, 0f, dst.bottom, transparent(page), page, Shader.TileMode.CLAMP)
+            canvas.drawRect(0f, dst.bottom - edge, width.toFloat(), dst.bottom, fade)
+        }
         if (left > 0f) {
             val side = 28 * density
             fade.shader = LinearGradient(left, 0f, left + side, 0f, page, transparent(page), Shader.TileMode.CLAMP)

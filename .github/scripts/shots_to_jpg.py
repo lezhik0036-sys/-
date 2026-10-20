@@ -12,6 +12,9 @@ from PIL import Image
 
 # Screenshot key -> reference file it should be compared with.
 REFERENCES = {
+    # Design System v2: the approved welcome mockup.
+    "welcome": "welcome_v2_mockup.webp",
+    "welcome_narrow": "welcome_v2_mockup.webp",
     "dashboard_active": "13-dashboard_active.webp",
     "time": "04-time.webp",
     "contact": "06-contact.webp",
@@ -43,8 +46,6 @@ SCENES = {
     "stats": "evening",
     "stats_empty": "morning",
     "path": "evening",
-    "welcome": "welcome_mama_audience_v1",
-    "welcome_narrow": "welcome_mama_audience_v1",
 }
 
 
