@@ -6,6 +6,9 @@ import app.mama.core.CommitmentState
 import app.mama.core.DailyWindow
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
+import app.mama.core.HistoryRecord
+import app.mama.core.HistoryResult
+import app.mama.core.HistoryType
 import app.mama.core.LockState
 import app.mama.core.RestartHold
 import app.mama.core.Series
@@ -42,6 +45,8 @@ object Previews {
     ) + app.mama.ui.design.DesignPreviews.names + listOf(
         // UI v1 group 2: the home of a 7-day series at its start, middle and end; the motivation screen.
         "progress_early", "progress_middle", "progress_final", "motivation",
+        // UI v1 3A: statistics with a sample history, opened at "Твой путь", and before any history.
+        "stats_history", "stats_empty",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -138,11 +143,32 @@ object Previews {
             "restart_commitment" -> { a.commitmentKop = null; a.commitmentScreen(true, SeriesKind.THREE, sampleWallet) }
             "flex" -> a.flexDashboard(FlexPackage("p", now.minus(6, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 5, successful = 5)) { LockState.Free }
             "flex_plan" -> { a.flexStartNow = false; a.flexPlannerScreen(FlexPackage("p", now, GrantSource.TEST_NO_PAYMENT)) }
-            "stats" -> { a.tab = 1; a.statisticsScreen() }
+            "stats", "stats_history" -> { a.tab = 1; a.statisticsScreen(sampleHistory(), series(3), null, showPath = name == "stats_history") }
+            "stats_empty" -> { a.tab = 1; a.statisticsScreen(emptyList(), null, null) }
             "settings" -> { a.tab = 2; a.settingsScreen() }
             "lock", "exit", "code", "emergency" -> lock(a, name)
             else -> a.welcomeScreen()
         }
+    }
+
+    /**
+     * One person's path, newest first: a 7-night Restart done 7 of 7 after a
+     * 7-night series that stopped at 4, a FLEX package (7 used, 6 done) and a
+     * first 3-night series. Dates are relative to today.
+     */
+    private fun sampleHistory(): List<HistoryRecord> {
+        val today = java.time.LocalDate.now(zone)
+        fun at(daysAgo: Long, h: Int, m: Int = 0) = today.minusDays(daysAgo).atTime(h, m).atZone(zone).toInstant()
+        val night = DailyWindow(LocalTime.of(23, 0), LocalTime.of(7, 0), zone)
+        return listOf(
+            HistoryRecord("restart", HistoryType.STANDARD_7, at(20, 23), at(13, 7), HistoryResult.COMPLETED, 7, null, 7, night, "first-7"),
+            HistoryRecord("first-7", HistoryType.STANDARD_7, at(27, 23), at(23, 0, 40), HistoryResult.BROKEN, 7, null, 4, night, null),
+            HistoryRecord("flex", HistoryType.FLEX, at(62, 18), at(36, 7), HistoryResult.COMPLETED, 7, 7, 6, null, null),
+            HistoryRecord(
+                "first-3", HistoryType.STANDARD_3, at(70, 22, 30), at(67, 6, 30), HistoryResult.COMPLETED, 3, null, 3,
+                DailyWindow(LocalTime.of(22, 30), LocalTime.of(6, 30), zone), null,
+            ),
+        )
     }
 
     private fun lock(a: MainActivity, name: String): Pair<View, Boolean> {

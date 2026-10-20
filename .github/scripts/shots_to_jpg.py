@@ -40,6 +40,8 @@ SCENES = {
     "success": "evening",
     "ds_lock_shell": "dawn",
     "ds_recovery": "recovery",
+    "stats": "evening",
+    "stats_empty": "morning",
 }
 
 

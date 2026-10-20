@@ -2,13 +2,18 @@ package app.mama.ui
 
 import android.view.Gravity
 import android.view.View
+import android.view.ViewTreeObserver
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
 import app.mama.billing.Product
 import app.mama.core.FlexEngine
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
+import app.mama.core.HistoryRecord
+import app.mama.core.HistoryResult
+import app.mama.core.HistoryType
 import app.mama.core.LockState
 import app.mama.core.Commitment
 import app.mama.core.CommitmentState
@@ -20,6 +25,7 @@ import app.mama.core.Session
 import app.mama.core.StandardRules
 import app.mama.motivation.MotivationRotation
 import app.mama.motivation.Placement
+import app.mama.platform.History
 import app.mama.platform.Mama
 import app.mama.platform.Protection
 import app.mama.ui.design.NoteTone
@@ -30,6 +36,7 @@ import app.mama.ui.design.Spacing
 import app.mama.ui.design.SummaryItem
 import app.mama.ui.design.Typo
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -332,18 +339,155 @@ internal fun MainActivity.sessionDashboard(session: Session, state: () -> LockSt
 
 // ---------------- tabs ----------------
 
-internal fun MainActivity.statisticsScreen(): Pair<View, Boolean> {
-    val b = body(30)
-    b.addView(kit.sectionHeader("Статистика"))
-    val empty = kit.column().apply {
-        gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(kit.dp(24), kit.dp(56), kit.dp(24), kit.dp(56))
-        addView(kit.iconCircle(Icon.CHART, 72), kit.centered())
-        addView(kit.text("Статистика появится здесь", MamaType.H2, MamaColors.Graphite, center = true), kit.centered(20))
-        addView(kit.caption("Скоро здесь будут пройденные серии и FLEX-дни.", center = true), kit.centered(8))
+/** Stable identifiers (view tags) of the statistics states and of each card of "Твой путь", for tests. */
+internal const val STATISTICS_SCREEN = "statistics_screen"
+internal const val STATISTICS_EMPTY = "statistics_empty"
+internal const val PATH_ITEM = "path_item"
+
+/**
+ * "Статистика" (UI v1, 3A): the decisions already made, from the history of
+ * finished series and FLEX packages ([History]) and the series running now.
+ * Only real numbers; no hours "without the phone", streaks, percentages,
+ * ratings, comparisons or money. Before anything is done: an empty state,
+ * never zeros. [showPath]: previews open the screen at "Твой путь".
+ */
+internal fun MainActivity.statisticsScreen(
+    records: List<HistoryRecord> = History.records(this),
+    running: Series? = Mama.series(this),
+    flex: FlexPackage? = Mama.entitlements(this).flex,
+    showPath: Boolean = false,
+): Pair<View, Boolean> {
+    val d = design
+    val stats = Statistics.of(records, running, flex)
+    if (stats.isEmpty) return statisticsEmpty()
+    val b = d.body(18)
+
+    // The main number over the golden photo: the nights already chosen.
+    val (label, each) = when (stats.unit) {
+        Statistics.PeriodUnit.NIGHTS -> "Ночей пройдено" to "Каждая — решение в пользу себя."
+        Statistics.PeriodUnit.DAYS -> "Дней пройдено" to "Каждый — решение в пользу себя."
+        Statistics.PeriodUnit.NIGHTS_AND_DAYS -> "Ночей и дней пройдено" to "Каждое — решение в пользу себя."
     }
-    b.addView(empty, kit.gap(30))
-    return lightFrame(null, b, null, nav())
+    b.addView(d.text(label, Typo.SUBTITLE, Palette.Ink), d.fill())
+    b.addView(d.text(stats.nightsDone.toString(), Typo.DISPLAY, Palette.Ink).apply { textSize = 76f }, d.wrap())
+    b.addView(d.text(each, Typo.SUBTITLE, Palette.Ink), d.wrap().apply { topMargin = d.dp(2) })
+    heroSpace(b, 96)
+
+    // Only what exists: a row with nothing to say is left out, never shown as zero.
+    val rows = buildList {
+        if (stats.seriesCompleted > 0) add(SummaryItem(Icon.CHECK, "Серий завершено", stats.seriesCompleted.toString()))
+        stats.best?.let { add(SummaryItem(Icon.STAR, "Лучший результат", "${it.done} из ${it.planned}")) }
+        if (stats.restartsStarted > 0) {
+            add(SummaryItem(Icon.REFRESH, "Продолжил после срыва", "${stats.restartsStarted} ${plural(stats.restartsStarted, "раз", "раза", "раз")}"))
+        }
+        stats.flex?.let {
+            add(SummaryItem(
+                Icon.INFINITY, "FLEX-периодов пройдено", it.successful.toString(),
+                "из ${it.used} использованных · ${it.packages} ${plural(it.packages, "пакет", "пакета", "пакетов")}",
+            ))
+        }
+    }
+    if (rows.isNotEmpty()) b.addView(d.summaryCard(null, rows), d.fill())
+
+    val pathTitle = d.text("Твой путь", Typo.HEADLINE)
+    b.addView(pathTitle, d.gap(30))
+    val thisYear = LocalDate.now().year
+    stats.path.forEachIndexed { i, item ->
+        b.addView(pathCard(item, thisYear).apply { tag = PATH_ITEM }, d.gap(if (i == 0) 14 else Spacing.GUTTER))
+    }
+    if (showPath) {
+        pathTitle.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                pathTitle.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                generateSequence(pathTitle.parent) { it.parent }.filterIsInstance<ScrollView>().firstOrNull()?.scrollTo(0, pathTitle.top - d.dp(16))
+            }
+        })
+    }
+    return v1Frame(Scenery.EVENING, d.topBar(null), b, null, nav()).also { it.first.tag = STATISTICS_SCREEN }
+}
+
+/** No history yet: the beginning of the path, a morning photo, no numbers. */
+private fun MainActivity.statisticsEmpty(): Pair<View, Boolean> {
+    val d = design
+    val b = d.body(26)
+    b.addView(d.titleBlock(
+        "Твой путь только начинается",
+        narrow = true,
+        lead = "Здесь появятся решения, которыми ты будешь гордиться.",
+    ))
+    return v1Frame(Scenery.MORNING, d.topBar(null), b, null, nav(), layout = SceneLayout.FULL).also { it.first.tag = STATISTICS_EMPTY }
+}
+
+/** One card of "Твой путь": calm facts, never a verdict. */
+private fun MainActivity.pathCard(item: Statistics.PathItem, thisYear: Int): View {
+    val d = design
+    val card = d.card(paddingDp = 18)
+    fun head(tags: List<String>) {
+        if (tags.isEmpty()) return
+        val row = d.row()
+        tags.forEachIndexed { i, t -> row.addView(d.tag(t), d.wrap().apply { if (i > 0) leftMargin = d.dp(6) }) }
+        card.addView(row, d.fill())
+    }
+    fun main(title: String, value: String?, caption: String) {
+        val row = d.row().apply { gravity = Gravity.CENTER_VERTICAL }
+        val texts = d.column()
+        texts.addView(d.text(title, Typo.TITLE))
+        texts.addView(d.text(caption, Typo.LABEL, Palette.InkMuted), d.gap(4))
+        row.addView(texts, d.weight())
+        value?.let { row.addView(d.text(it, Typo.HEADLINE, Palette.EmeraldInk), d.wrap().apply { leftMargin = d.dp(12) }) }
+        card.addView(row, d.gap(if (card.childCount == 0) 0 else 10))
+    }
+    fun note(icon: Icon, text: String, color: Int) {
+        val row = d.row().apply { gravity = Gravity.CENTER_VERTICAL }
+        row.addView(d.icon(icon, color, 16), d.size(16))
+        row.addView(d.text(text, Typo.LABEL, color), d.wrap().apply { leftMargin = d.dp(8) })
+        card.addView(row, d.gap(12))
+    }
+    fun span(start: java.time.Instant?, end: java.time.Instant, zone: ZoneId) =
+        Statistics.dateRange(start?.atZone(zone)?.toLocalDate(), end.atZone(zone).toLocalDate(), thisYear)
+    fun nights(n: Int, window: app.mama.core.DailyWindow?) =
+        if (window == null || Statistics.nightWindow(window)) "$n ${plural(n, "ночь", "ночи", "ночей")}" else "$n ${plural(n, "день", "дня", "дней")}"
+    fun window(w: app.mama.core.DailyWindow) = "${Texts.hhmm(w.start)}–${Texts.hhmm(w.end)}"
+    fun periods(n: Int) = "$n ${plural(n, "период", "периода", "периодов")}"
+
+    when (item) {
+        is Statistics.PathItem.RunningSeries -> {
+            val s = item.series
+            head(listOfNotNull("Сейчас", if (s.restartOf != null) "Restart" else null))
+            val since = s.actualStartedAt ?: s.startedAt
+            main(nights(s.kind.periods, s.window), "${s.completedPeriods} из ${s.kind.periods}", "с ${span(null, since, s.window.zone)} · ${window(s.window)}")
+            card.addView(d.segments(s.completedPeriods, s.kind.periods), d.gap(14))
+        }
+        is Statistics.PathItem.RunningFlex -> {
+            val p = item.pkg
+            head(listOf("FLEX", "Сейчас"))
+            main("Пройдено ${periods(p.successful)}", null, "Использовано ${p.used} из ${FlexPackage.PERIODS} · с ${span(null, p.activatedAt, ZoneId.systemDefault())}")
+        }
+        is Statistics.PathItem.Finished -> {
+            val r = item.record
+            val zone = r.window?.zone ?: ZoneId.systemDefault()
+            val dates = span(r.startedAt, r.endedAt, zone)
+            if (r.type == HistoryType.FLEX) {
+                head(listOf("FLEX"))
+                main("Пройдено ${periods(r.successfulNights)}", null, "Использовано ${r.consumedNights ?: 0} из ${r.plannedNights} · $dates")
+                if (r.result == HistoryResult.COMPLETED) {
+                    note(Icon.CHECK, "Все ${r.plannedNights} периодов использованы", Palette.EmeraldInk)
+                } else {
+                    note(Icon.CALENDAR, "Срок пакета закончился", Palette.InkMuted)
+                }
+            } else {
+                head(if (r.restartOf != null) listOf("Restart") else emptyList())
+                main(nights(r.plannedNights, r.window), "${r.successfulNights} из ${r.plannedNights}", listOfNotNull(dates, r.window?.let(::window)).joinToString(" · "))
+                card.addView(d.segments(r.successfulNights, r.plannedNights), d.gap(14))
+                when {
+                    r.result == HistoryResult.COMPLETED -> note(Icon.SPROUT, "Серия пройдена", Palette.EmeraldInk)
+                    item.continuedLater -> note(Icon.REFRESH, "Ты продолжил путь позже", Palette.InkMuted)
+                    else -> note(Icon.SPROUT, "Этот путь продолжается", Palette.InkMuted)
+                }
+            }
+        }
+    }
+    return card
 }
 
 internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
