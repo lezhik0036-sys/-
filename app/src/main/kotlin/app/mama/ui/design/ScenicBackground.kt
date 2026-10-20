@@ -283,7 +283,7 @@ internal object ScenePainter {
                 val H = w * if (hero) 1.22f else 1.0f
                 // Photo: its sun right of the subtitle (wizard) or under the subtitle (home, a little closer).
                 if (photo != null) {
-                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, if (hero) 0.58f else 0.42f, if (hero) 1.12f else 1f)
+                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, if (hero) 0.62f else 0.42f, if (hero) 1.2f else 1f)
                 } else {
                     landscape(canvas, w, H, l, H)
                 }
@@ -293,7 +293,8 @@ internal object ScenePainter {
                 p.color = base
                 canvas.drawRect(0f, H, w, h, p)
                 if (photo != null) {
-                    textVeil(canvas, w, w * if (hero) 0.52f else 0.55f, w * 0.12f, base)
+                    // Home: title, state badge and a phrase sit a little lower than a wizard subtitle.
+                    textVeil(canvas, w, w * if (hero) 0.62f else 0.55f, w * 0.12f, base)
                 } else {
                     titleVeil(canvas, w, H * if (hero) 0.40f else 0.82f, base)
                     grain(canvas, w, h)

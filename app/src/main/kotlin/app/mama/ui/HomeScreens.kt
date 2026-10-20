@@ -61,7 +61,7 @@ private fun MainActivity.homeTitle(b: LinearLayout, title: String, state: String
 
 /** A short phrase for the home of a series: one line, the same for the whole day. */
 private fun MainActivity.homePhrase(placement: Placement, key: String): String =
-    MotivationRotation.of(this).phrase(placement, key, maxLength = 48).text
+    MotivationRotation.of(this).phrase(placement, key, maxLength = 40).text
 
 /** The lock right now, in a few words ("Блокировка идёт"). */
 private fun lockBadge(st: LockState, waiting: String): Pair<String, Icon>? = when (st) {
