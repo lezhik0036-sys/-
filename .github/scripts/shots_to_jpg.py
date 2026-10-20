@@ -43,6 +43,8 @@ SCENES = {
     "stats": "evening",
     "stats_empty": "morning",
     "path": "evening",
+    "welcome": "welcome_mama_audience_v1",
+    "welcome_narrow": "welcome_mama_audience_v1",
 }
 
 

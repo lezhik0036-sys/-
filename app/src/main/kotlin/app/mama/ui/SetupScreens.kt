@@ -23,6 +23,7 @@ import app.mama.platform.Mama
 import app.mama.platform.Promise
 import app.mama.ui.MainActivity.Choice
 import app.mama.ui.MainActivity.Step
+import app.mama.ui.design.HeroIllustration
 import app.mama.ui.design.NoteTone
 import app.mama.ui.design.Palette
 import app.mama.ui.design.Scenery
@@ -145,28 +146,37 @@ private fun shortDuration(d: Duration): String {
 
 // ---------------- 1. Welcome ----------------
 
+/** The approved welcome illustration (source of truth, never redrawn). */
+internal const val WELCOME_ART = "scenes/v1/welcome_mama_audience_v1.webp"
+
+/** Tag of the welcome illustration (tests). */
+internal const val WELCOME_HERO = "welcome_hero"
+
+/**
+ * The first screen (UI v1, 3D): MAMA and the people around her on top, the
+ * welcome as real text under it, "Начать свой путь" always in view. The
+ * illustration takes the room the text leaves: at least down to the child
+ * and the dog, on a taller screen the desk as well; on a short one the text
+ * scrolls under the button.
+ */
 internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
-    val k = nightKit
-    val b = k.column().apply {
-        gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(k.dp(28), k.dp(72), k.dp(28), k.dp(24))
-    }
-    b.addView(k.text("MAMA", MamaType.WORDMARK_XL, MamaColors.Night, center = true), k.centered())
-    b.addView(k.text("Ты уже решил.\nТеперь просто\nне меняй решение.", MamaType.H2, MamaColors.Graphite, center = true).apply {
-        textSize = 21f
-        typeface = MamaFonts.ui(context, 500)
-        setLineSpacing(0f, 1.3f)
-    }, k.centered(22))
-    b.addView(View(this).apply { setBackgroundColor(Color.argb(0x80, 0x26, 0x2A, 0x27)) }, LinearLayout.LayoutParams(k.dp(48), 2).apply {
-        topMargin = k.dp(26); gravity = Gravity.CENTER_HORIZONTAL
-    })
-    val footer = k.column().apply {
-        addView(k.primaryButton("Начать", Icon.ARROW_RIGHT) { beginDraft(); go(Step.PERMISSIONS) }, k.fill())
-        addView(k.text("Решение принято. Осталось его выдержать.", MamaType.CAPTION, MamaColors.OnNightMuted, center = true), k.gap(14))
-        // A quiet way to everything already done, at any time between series.
-        addView(k.textButton("Мой путь") { openPath() }.apply { tag = OPEN_PATH }, k.gap(4))
-    }
-    return nightFrame(Scene.DAWN, b, footer)
+    val d = design
+    val body = d.column()
+    body.addView(
+        HeroIllustration(this, WELCOME_ART, imageWidth = 1024, imageHeight = 1536, minShown = 990, maxShown = 1290, page = Palette.Bg)
+            .apply { tag = WELCOME_HERO },
+        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
+    )
+    val text = d.column().apply { setPadding(d.dp(Spacing.SCREEN), d.dp(4), d.dp(Spacing.SCREEN), d.dp(14)) }
+    text.addView(d.text("Добро пожаловать в MAMA", Typo.DISPLAY).apply { textSize = 30f }, d.fill())
+    text.addView(d.text("Ты уже сделал главное — решил изменить вечер.", Typo.SUBTITLE, Palette.Ink), d.gap(12))
+    text.addView(d.text("MAMA поможет сохранить это решение, когда силы воли станет меньше.", Typo.BODY, Palette.InkMuted), d.gap(10))
+    text.addView(d.text("Сегодня не нужно быть идеальным. Достаточно сделать один спокойный шаг.", Typo.BODY, Palette.InkMuted), d.gap(8))
+    body.addView(text, d.fill())
+    val start = d.primaryButton("Начать свой путь", large = true) { beginDraft(); go(Step.PERMISSIONS) }
+    // A quiet way to everything already done, at any time between series (3A.1).
+    val path = d.linkButton("Мой путь") { openPath() }.apply { tag = OPEN_PATH }
+    return d.screen(null, header = null, body = body, cta = d.bottomCta(start, path)) to true
 }
 
 // ---------------- 2. Permissions ----------------

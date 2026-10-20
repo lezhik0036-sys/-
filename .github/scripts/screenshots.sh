@@ -13,6 +13,18 @@ for name in welcome permissions series time time_test contact promise commitment
   adb exec-out screencap -p > "shots/$(printf '%02d' $i)-$name.png"
   echo "shot $i $name $(stat -c %s "shots/$(printf '%02d' $i)-$name.png") bytes"
 done
+# The welcome once more on a narrower phone: 720x1440 px at 320 dpi (360 x 720 dp).
+adb shell wm size 720x1440
+adb shell wm density 320
+sleep 2
+i=$((i + 1))
+adb shell am start -W -S -n app.mama/.ui.MainActivity --es mama.preview welcome > /dev/null
+sleep 3
+adb exec-out screencap -p > "shots/$(printf '%02d' $i)-welcome_narrow.png"
+echo "shot $i welcome_narrow $(stat -c %s "shots/$(printf '%02d' $i)-welcome_narrow.png") bytes"
+adb shell wm size reset
+adb shell wm density reset
+sleep 2
 adb shell am force-stop app.mama
 # Only MAMA's own crashes count (system apps on emulator images crash too).
 crash=$(adb logcat -d -b crash | grep -E -A 40 "Process: app\.mama|>>> app\.mama <<<" || true)
