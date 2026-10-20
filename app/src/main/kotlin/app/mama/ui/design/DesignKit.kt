@@ -859,11 +859,14 @@ class DesignKit(val context: Context) {
             addView(body)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         cta?.let {
-            // The button's soft glow spreads past the footer instead of being cut to a rectangle.
-            (it as? ViewGroup)?.clipChildren = false
-            addView(it, fill().apply {
-                leftMargin = dp(Spacing.SCREEN); rightMargin = dp(Spacing.SCREEN); topMargin = dp(8); bottomMargin = dp(16)
-            })
+            // Padding instead of margins: the footer reaches the screen edges, so the button's
+            // soft glow has room inside it instead of being cut to a rectangle.
+            addView(FrameLayout(context).apply {
+                setPadding(dp(Spacing.SCREEN), dp(8), dp(Spacing.SCREEN), dp(16))
+                clipToPadding = false
+                clipChildren = false
+                addView(it, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            }, fill())
         }
         nav?.let { addView(it, fill()) }
     }

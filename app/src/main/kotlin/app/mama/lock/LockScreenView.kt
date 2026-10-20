@@ -207,9 +207,10 @@ class LockScreenView(private val context: Context, private val actions: LockActi
     private fun buildEmergency(): View {
         val col = d.column().apply { setPadding(dp(Spacing.SCREEN), dp(48), dp(Spacing.SCREEN), dp(26)) }
         col.addView(d.wordmark(), d.centered())
+        // Ink, not the muted tone: the longer header of this page reaches the trees of the photo.
         col.addView(d.titleBlock(
             "Экстренные службы",
-            "Номер откроется в приложении «Телефон» — останется нажать вызов. Звонок не прерывает серию и ничего не стоит.",
+            lead = "Номер откроется в приложении «Телефон» — останется нажать вызов. Звонок не прерывает серию и ничего не стоит.",
         ), d.gap(30))
         serviceList = d.column()
         col.addView(serviceList, d.gap(24))
@@ -242,9 +243,9 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
         // Intro: the user's own reason and a pause.
         intro = d.column()
-        intro.addView(d.titleBlock("Досрочный выход", "Сначала — минута тишины. Решение всё ещё твоё."), d.gap(18))
+        intro.addView(d.titleBlock("Досрочный выход", lead = "Сначала — минута тишины. Решение всё ещё твоё."), d.gap(18))
         promiseBlock = d.column()
-        promiseBlock.addView(d.text("Ты начал эту серию потому что:", Typo.LABEL, Palette.InkMuted), d.fill())
+        promiseBlock.addView(d.text("Ты начал эту серию потому что:", Typo.LABEL, Palette.Ink), d.fill())
         promiseText = d.text("", Typo.QUOTE_ITALIC, Palette.Ink)
         promiseBlock.addView(d.quietCard().apply { addView(promiseText, d.fill()) }, d.gap(10))
         intro.addView(promiseBlock, d.gap(26))
