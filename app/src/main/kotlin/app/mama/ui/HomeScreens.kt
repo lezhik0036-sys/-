@@ -435,7 +435,8 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     val done = series.completedPeriods
     val unit = if (countsNights(series.window)) plural(done, "ночь", "ночи", "ночей") else plural(done, "день", "дня", "дней")
     val b = d.body(22)
-    b.addView(d.titleBlock("Ты сделал это.", "$done $unit. $done ${plural(done, "решение", "решения", "решений")} в пользу себя.", narrow = true))
+    // The result in ink, one thought per line: it is the reward of the screen.
+    b.addView(d.titleBlock("Ты сделал это.", narrow = true, lead = "$done $unit.\n$done ${plural(done, "решение", "решения", "решений")} в пользу себя."))
     b.addView(d.badge("Серия пройдена", Icon.STAR), d.wrap().apply { topMargin = d.dp(14) })
     heroSpace(b, 150)
     // The result: every day of the series, done.
@@ -474,7 +475,8 @@ internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> 
     b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap())
     b.addView(d.segments(done, n), d.gap(14))
     val next = d.primaryButton("Продолжить", large = true) { closeMotivation(series) }
-    return v1Frame(progressScenery(series), d.topBar(null), b, d.bottomCta(next), layout = SceneLayout.HERO)
+    // The whole photo, as on the lock: one thought and the landscape, the air in between.
+    return v1Frame(progressScenery(series), d.topBar(null), b, d.bottomCta(next), layout = SceneLayout.FULL)
 }
 
 /** The motivation screen was seen for this night: back to the home screen. */

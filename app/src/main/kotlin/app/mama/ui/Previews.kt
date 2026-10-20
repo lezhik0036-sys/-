@@ -71,7 +71,9 @@ object Previews {
         a.choice = Choice.SEVEN
         a.startMode = MainActivity.StartMode.MANUAL
         val now = Instant.now()
-        val waiting = LockState.Waiting(now + Duration.ofSeconds(13 * 3600 + 18 * 60 + 24), now + Duration.ofHours(21))
+        // The next lock of the sample window 23:00 → 07:00, so the timer agrees with the window on the screen.
+        val night = java.time.LocalDate.now(zone).atTime(23, 0).atZone(zone).toInstant().let { if (it.isAfter(now)) it else it.plus(1, ChronoUnit.DAYS) }
+        val waiting = LockState.Waiting(night, night + Duration.ofHours(8))
         return when (name) {
             "welcome" -> a.welcomeScreen()
             "permissions" -> a.permissionsScreen()
