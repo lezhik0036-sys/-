@@ -76,7 +76,7 @@ object Mama {
                 var ent = r.snapshot.entitlements.copy(flex = u.pkg)
                 if (u.rewardEarnedNow) ent = ent.copy(freeFlexCredits = ent.freeFlexCredits + 1)
                 r = r.copy(snapshot = r.snapshot.copy(entitlements = ent))
-                if (u.pkg.over) History.recordFlex(app, u.pkg)
+                if (u.pkg.over) History.recordFlex(app, u.pkg, r.trustedNow)
             }
         }
         // "Цена слова": credit due partial returns once.
@@ -113,7 +113,7 @@ object Mama {
         if (snap == before) return r
         val series = snap.series
         if (series != null && series != before.series) {
-            if (series.status == SeriesStatus.COMPLETED || series.status == SeriesStatus.BROKEN) History.record(app, series)
+            if (series.status == SeriesStatus.COMPLETED || series.status == SeriesStatus.BROKEN) History.record(app, series, now)
             if (series.status == SeriesStatus.NEEDS_ATTENTION && before.series?.status != SeriesStatus.NEEDS_ATTENTION) {
                 Log.w(TAG, "Series ${series.id} did not start: protection could not be switched on")
                 Notifications.seriesNotStarted(app)
