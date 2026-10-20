@@ -22,6 +22,7 @@ import app.mama.core.Wallet
 import app.mama.platform.Mama
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -178,7 +179,9 @@ class ScheduledSeriesTest {
         assertEquals("old", Mama.series(context)!!.id)
         assertEquals(SeriesStatus.BROKEN, Mama.series(context)!!.status)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        assertTrue("Этот путь продолжается" in texts(activity.findViewById<ViewGroup>(android.R.id.content)!!))
+        val content = activity.findViewById<ViewGroup>(android.R.id.content)!!
+        assertNotNull("the recovery screen is shown again", content.findViewWithTag<View>(RECOVERY_SCREEN))
+        assertNotNull("it offers a Restart", content.findViewWithTag<View>(RESTART_CTA))
     }
 
     @Test

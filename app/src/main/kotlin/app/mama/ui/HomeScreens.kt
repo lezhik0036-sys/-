@@ -375,9 +375,16 @@ internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
 // ---------------- 11. Failure / Restart ----------------
 
 /**
+ * Stable identifiers of the recovery screen and its Restart action (view
+ * tags), so tests find the state without relying on the copy on it.
+ */
+internal const val RECOVERY_SCREEN = "recovery_screen"
+internal const val RESTART_CTA = "restart_cta"
+
+/**
  * A series ended early (reference 20): light, a path to the lake, no red,
- * no "!" and nothing that punishes. The main line supports; the fact is
- * small and neutral; Restart is a new chance to go on, with a new time.
+ * no "!" and nothing that punishes. The main line supports; the nights done
+ * are a quiet badge; Restart is a new chance to go on, with a new time.
  * Nothing about a return of «Цена слова» before it has really come.
  */
 internal fun MainActivity.failureScreen(
@@ -387,8 +394,7 @@ internal fun MainActivity.failureScreen(
 ): Pair<View, Boolean> {
     val d = design
     val b = d.body(22)
-    // The supportive line in ink: it is the main message, it must read over the photo.
-    // No verdict line: the title and the support go first, the facts follow quietly.
+    // No verdict line: the title and the support (in ink, over the photo) go first.
     b.addView(d.titleBlock(
         "Этот путь продолжается",
         narrow = true,
@@ -403,7 +409,7 @@ internal fun MainActivity.failureScreen(
             // A new launch: time first (a new draft from the current time), then "Цена слова", then payment.
             beginRestart(series.kind)
             render()
-        },
+        }.apply { tag = RESTART_CTA },
     ), d.gap(Spacing.GUTTER))
     commitmentOutcome(series.id, sampleCommitment)?.let { b.addView(it, d.gap(Spacing.GUTTER)) }
     if (freeInDays > 0) {
@@ -419,7 +425,7 @@ internal fun MainActivity.failureScreen(
     }, d.gap(Spacing.GUTTER))
     val phrase = MotivationRotation.of(this).phrase(Placement.RECOVERY, "${series.id}:ended").text
     b.addView(d.text(phrase, Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(26))
-    return v1Frame(Scenery.RECOVERY, d.topBar(null), b, null, layout = SceneLayout.HERO)
+    return v1Frame(Scenery.RECOVERY, d.topBar(null), b, null, layout = SceneLayout.HERO).also { it.first.tag = RECOVERY_SCREEN }
 }
 
 // ---------------- 12. Success ----------------
