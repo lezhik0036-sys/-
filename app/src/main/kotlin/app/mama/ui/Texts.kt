@@ -86,27 +86,6 @@ object Texts {
     /** 24-hour "HH:mm", never AM/PM. */
     fun hhmm(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
 
-    /** Short lines for the lock screen: calm, firm, never shaming. */
-    val lockPhrases = listOf(
-        "Не сдавайся.\nТы уже выбрал себя.",
-        "Это временно.\nТы сильнее этого момента.",
-        "Ты управляешь собой.\nНе телефон.",
-        "Решение принято.\nПросто будь в нём.",
-        "Выдержка сегодня —\nсвобода завтра.",
-        "Ещё немного.\nТы справишься.",
-        "Тишина тоже\nделает тебя сильнее.",
-        "Каждая минута —\nмаленькая победа.",
-        "Телефон подождёт.\nТы важнее.",
-        "Ты держишь слово,\nданное себе.",
-    )
-
-    /** Second line under the phrase when no personal reason is set. */
-    const val LOCK_SUBLINE = "Ты можешь больше, чем думаешь."
-
-    /** A phrase for this session that changes every [everyMinutes] minutes. */
-    fun lockPhrase(sessionId: String, elapsedMinutes: Long, everyMinutes: Long = 10): String =
-        lockPhrases[Math.floorMod(sessionId.hashCode() + (elapsedMinutes / everyMinutes).toInt(), lockPhrases.size)]
-
     /** "Продолжительность" value: "3 ч 1 мин", "6 часов", "24 часа". */
     fun flexDuration(d: Duration): String {
         val totalMin = maxOf(0, d.toMinutes())

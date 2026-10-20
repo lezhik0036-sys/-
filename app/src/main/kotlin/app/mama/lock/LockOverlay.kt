@@ -13,6 +13,8 @@ import app.mama.core.ExitKind
 import app.mama.core.LockEngine
 import app.mama.core.Session
 import app.mama.core.TestMode
+import app.mama.motivation.MotivationCatalog
+import app.mama.motivation.Placement
 import app.mama.platform.Calls
 import app.mama.platform.EmergencyCalls
 import app.mama.platform.Mama
@@ -125,7 +127,7 @@ class LockOverlay(private val service: LockService) : LockActions {
                 contactName = s.contact.name,
                 contactPhone = Texts.phone(s.contact.phone),
                 dayLabel = dayLabel(s),
-                phrase = Texts.lockPhrase(s.id, Duration.between(s.plan.start, now).toMinutes()),
+                phrase = lockPhrase(s),
                 promise = Promise.get(service),
                 call = LockService.callState,
                 exitOpen = exitOpen,
@@ -142,6 +144,17 @@ class LockOverlay(private val service: LockService) : LockActions {
                 emergencyCallActive = EmergencyCalls.session(service)?.callStarted == true,
             ),
         )
+    }
+
+    /**
+     * One calm phrase for the whole lock (the same on every tick): sleep and
+     * quiet for a lock that starts in the evening or at night, focus for a
+     * daytime one. From [MotivationCatalog].
+     */
+    private fun lockPhrase(s: Session): String {
+        val hour = s.plan.start.atZone(s.plan.zone).hour
+        val placement = if (hour >= 17 || hour < 5) Placement.LOCK_NIGHT else Placement.LOCK_DAY
+        return MotivationCatalog.pick(placement, s.id, maxLength = 60).text
     }
 
     /** "День 3 из 7", "FLEX-период", "Тестовый режим · 15 минут". */

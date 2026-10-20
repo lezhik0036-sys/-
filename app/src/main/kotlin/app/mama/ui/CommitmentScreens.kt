@@ -144,7 +144,8 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind, w
         restart -> d.stepHeader(2, 2) { restartStep = Step.TIME; render() }
         else -> stepBar(Step.COMMITMENT)
     }
-    return v1Frame(Scenery.DAY, header, b, d.bottomCta(go, skip))
+    // Restart is a second chance: its own light scene.
+    return v1Frame(if (restart) Scenery.RECOVERY else Scenery.DAY, header, b, d.bottomCta(go, skip))
 }
 
 private fun MainActivity.customAmount(min: Long) {
@@ -199,7 +200,7 @@ internal fun MainActivity.payRestart(kind: SeriesKind) {
     val note = "${Texts.seriesName(kind)}, $schedule. " +
         "Если отменить запуск до первой блокировки, Restart вернётся на баланс." +
         (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
-    Checkout.obtain(this, Product.Restart(kind), "Restart серии", reserveAheadKop = commitment ?: 0, note = note) { source ->
+    Checkout.obtain(this, Product.Restart(kind), "Новый старт · Restart", reserveAheadKop = commitment ?: 0, note = note) { source ->
         when (Mama.restartSeries(this, source, time, commitment)) {
             app.mama.platform.Mama.SeriesStart.Started -> {
                 restartFlow = false
@@ -339,18 +340,16 @@ internal fun MainActivity.showReturnNoticeIfAny() {
 }
 
 /** "Цена слова" outcome on the failure / success screens. */
-internal fun MainActivity.commitmentOutcome(seriesId: String, night: Boolean, zone: ZoneId, sample: app.mama.core.Commitment? = null): View? {
+internal fun MainActivity.commitmentOutcome(seriesId: String, sample: app.mama.core.Commitment? = null): View? {
     val c = sample ?: Mama.wallet(this).commitmentFor(seriesId) ?: return null
-    val k = if (night) nightKit else kit
+    val d = design
     return when (c.state) {
-        CommitmentState.RELEASED -> k.infoCard(
-            "${Texts.money(c.amountKop)} снова доступны на твоём балансе MAMA.", Icon.CHECK, Tone.SUCCESS, "Ты сдержал слово.",
-        )
-        // Before the return is credited: only the fact, no promise of a return.
+        CommitmentState.RELEASED -> d.noteCard("${Texts.money(c.amountKop)} снова доступны на твоём балансе MAMA.", "Ты сдержал слово.", icon = Icon.CHECK)
+        // Before the return is credited: only the fact, calmly, no promise of a return.
         CommitmentState.FORFEITED -> if (c.returnProcessed) {
-            k.infoCard("$RETURN_TEXT Попробуй ещё раз.", Icon.HEART, Tone.SUCCESS, returnTitle(c.returnKop))
+            d.noteCard("$RETURN_TEXT Попробуй ещё раз.", returnTitle(c.returnKop), icon = Icon.HEART)
         } else {
-            k.infoCard("Цена слова применена.", Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(c.amountKop)}")
+            d.noteCard("Цена слова применена.", "Цена слова: ${Texts.money(c.amountKop)}", NoteTone.CARE, Icon.COINS)
         }
         CommitmentState.SCHEDULED, CommitmentState.RESERVED -> null
     }

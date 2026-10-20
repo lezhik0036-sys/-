@@ -23,6 +23,7 @@ import app.mama.motivation.Placement
 import app.mama.platform.Mama
 import app.mama.platform.Protection
 import app.mama.ui.design.NoteTone
+import app.mama.ui.design.Palette
 import app.mama.ui.design.SceneLayout
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
@@ -50,18 +51,51 @@ private fun MainActivity.heroSpace(b: LinearLayout, heightDp: Int = 140) = b.add
  * Title of a dashboard: the main fact (the day of the series), its state as
  * a quiet badge and one short line (a phrase from [app.mama.motivation.MotivationCatalog]).
  */
-private fun MainActivity.homeTitle(b: LinearLayout, title: String, state: String?, stateIcon: Icon, line: String?) {
+private fun MainActivity.homeTitle(b: LinearLayout, title: String, state: String?, stateIcon: Icon, line: String?, onLine: (() -> Unit)? = null) {
     val d = design
     b.addView(d.title(title))
     state?.let { b.addView(d.badge(it, stateIcon), d.wrap().apply { topMargin = d.dp(12) }) }
     line?.let {
-        b.addView(d.subtitle(it).apply { maxWidth = (resources.displayMetrics.widthPixels * 0.72f).toInt() }, d.wrap().apply { topMargin = d.dp(12) })
+        b.addView(d.subtitle(it).apply {
+            maxWidth = (resources.displayMetrics.widthPixels * 0.72f).toInt()
+            onLine?.let { open -> setOnClickListener { open() } }
+        }, d.wrap().apply { topMargin = d.dp(12) })
     }
 }
 
 /** A short phrase for the home of a series: one line, the same for the whole day. */
 private fun MainActivity.homePhrase(placement: Placement, key: String): String =
     MotivationRotation.of(this).phrase(placement, key, maxLength = 40).text
+
+/**
+ * The home photo along a running series: calm at the start, movement in
+ * the middle, light at the end — morning, day, evening for the first,
+ * middle and last third of the days (3 days: one each). Only a picture:
+ * the series itself does not change.
+ */
+internal fun progressScenery(series: Series): Scenery {
+    val n = series.kind.periods
+    val day = minOf(series.completedPeriods + 1, n)
+    return when ((day - 1) * 3 / n) {
+        0 -> Scenery.MORNING
+        1 -> Scenery.DAY
+        else -> Scenery.EVENING
+    }
+}
+
+/** An evening or night window counts nights; a daytime one counts days. */
+private fun countsNights(window: app.mama.core.DailyWindow) = window.start.hour >= 17 || window.start.hour < 5
+
+/** "Пройдено ночей: 2 из 7" (real progress of the series). */
+private fun doneLine(series: Series) =
+    "Пройдено ${if (countsNights(series.window)) "ночей" else "дней"}: ${series.completedPeriods} из ${series.kind.periods}"
+
+/** Russian plural: 1 ночь, 2 ночи, 5 ночей. */
+private fun plural(n: Int, one: String, few: String, many: String) = when {
+    n % 10 == 1 && n % 100 != 11 -> one
+    n % 10 in 2..4 && n % 100 !in 12..14 -> few
+    else -> many
+}
 
 /** The lock right now, in a few words ("Блокировка идёт"). */
 private fun lockBadge(st: LockState, waiting: String): Pair<String, Icon>? = when (st) {
@@ -139,8 +173,12 @@ internal fun MainActivity.seriesDashboard(
     // The day, the state and the timer first; one short phrase; the rest in one quiet card.
     when {
         series.committed -> {
-            val (badge, icon) = lockBadge(state(), "Серия идёт") ?: ("Серия идёт" to Icon.SPROUT)
-            homeTitle(b, Texts.dayOf(day, n), badge, icon, homePhrase(Placement.ACTIVE, "${series.id}:day-$day"))
+            // The day, the nights already done and one short phrase (tap: the motivation screen).
+            val (badge, icon) = lockBadge(state(), doneLine(series)) ?: (doneLine(series) to Icon.SPROUT)
+            homeTitle(b, Texts.dayOf(day, n), badge, icon, homePhrase(Placement.ACTIVE, "${series.id}:day-$day")) {
+                motivationOpen = true
+                render()
+            }
         }
         series.status == SeriesStatus.ACTIVATING ->
             homeTitle(b, "MAMA включает защиту", "Проверяем защиту", Icon.SHIELD, "Это займёт несколько секунд.")
@@ -170,7 +208,11 @@ internal fun MainActivity.seriesDashboard(
         SeriesStatus.ACTIVATING -> b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(14))
         else -> Unit
     }
-    val scenery = if (series.status == SeriesStatus.SCHEDULED) Scenery.EVENING else Scenery.MORNING
+    val scenery = when {
+        series.status == SeriesStatus.SCHEDULED -> Scenery.EVENING
+        series.committed -> progressScenery(series)
+        else -> Scenery.MORNING
+    }
     // Days as segments once the series runs; before that only the wordmark.
     val header = if (series.committed) homeHeader("$day из $n", day, n) else homeHeader(null, 0, 0)
     return v1Frame(scenery, header, b, null, nav(), SceneLayout.HERO)
@@ -332,58 +374,113 @@ internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
 
 // ---------------- 11. Failure / Restart ----------------
 
+/**
+ * A series ended early (reference 20): light, a path to the lake, no red,
+ * no "!" and nothing that punishes. The main line supports; the fact is
+ * small and neutral; Restart is a new chance to go on, with a new time.
+ * Nothing about a return of «Цена слова» before it has really come.
+ */
 internal fun MainActivity.failureScreen(
     series: Series,
     freeInDays: Long = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this)),
     sampleCommitment: app.mama.core.Commitment? = null,
 ): Pair<View, Boolean> {
-    val k = nightKit
-    val b = body(40).apply { gravity = Gravity.CENTER_HORIZONTAL }
-    b.addView(k.emblem(Icon.ALERT, MamaColors.Warning))
-    b.addView(k.text("Серия завершена досрочно", MamaType.H1, MamaColors.OnNight, center = true), k.gap(20))
-    b.addView(k.text("Ты прошёл ${series.completedPeriods} из ${Texts.days(series.kind.periods)}.", MamaType.BODY, MamaColors.OnNight, center = true), k.gap(10))
-    b.addView(k.text("Так бывает. Это не поражение —\nтелефон уже разблокирован.", MamaType.CAPTION, MamaColors.OnNightMuted, center = true), k.gap(6))
-
-    val card = kit.card(18).apply { background = kit.shape(MamaColors.PureCard, 20) }
-    val head = kit.row()
-    head.addView(kit.iconCircle(Icon.REFRESH, 48, MamaColors.DangerSoft, MamaColors.Warning))
-    val t = kit.column()
-    t.addView(kit.text("Restart серии", MamaType.TITLE))
-    t.addView(kit.text(Texts.price(series.kind.restartPriceRub), MamaType.H1), kit.gap(2))
-    t.addView(kit.text("Та же серия, ${Texts.seriesName(series.kind)}, сначала. Время выберешь заново.", MamaType.SMALL, MamaColors.TextSecondary), kit.gap(2))
-    head.addView(t, kit.weight().apply { leftMargin = kit.dp(14) })
-    card.addView(head)
-    card.addView(kit.primaryButton("Начать заново") {
-        // A new launch: time first (a new draft from the current time), then "Цена слова", then payment.
-        beginRestart(series.kind)
-        render()
-    }, kit.gap(16))
-    b.addView(card, k.gap(26))
-    commitmentOutcome(series.id, night = true, zone = series.window.zone, sample = sampleCommitment)?.let { b.addView(it, k.gap(12)) }
-
-    val days = freeInDays
-    if (days > 0) {
-        b.addView(k.infoCard("Без Restart — бесплатно, телефон при этом не заблокирован.", Icon.CALENDAR, Tone.NEUTRAL, "Следующая бесплатная серия через ${Texts.days(days.toInt())}"), k.gap(12))
+    val d = design
+    val b = d.body(22)
+    b.addView(d.titleBlock(
+        "Этот путь продолжается",
+        "Ты уже сделал важное — начал. Один сложный вечер не отменяет твоего решения.",
+        narrow = true,
+        caption = "Серия завершена досрочно",
+    ))
+    b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap().apply { topMargin = d.dp(14) })
+    heroSpace(b, 96)
+    b.addView(d.offerCard(
+        Icon.REFRESH, "Попробовать снова", "Restart · ${Texts.price(series.kind.restartPriceRub)}",
+        "Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново.",
+        d.primaryButton("Начать заново") {
+            // A new launch: time first (a new draft from the current time), then "Цена слова", then payment.
+            beginRestart(series.kind)
+            render()
+        },
+    ), d.gap(Spacing.GUTTER))
+    commitmentOutcome(series.id, sampleCommitment)?.let { b.addView(it, d.gap(Spacing.GUTTER)) }
+    if (freeInDays > 0) {
+        b.addView(d.noteCard(
+            "Без Restart — бесплатно, телефон при этом не заблокирован.",
+            "Следующая бесплатная серия через ${Texts.days(freeInDays.toInt())}", icon = Icon.CALENDAR,
+        ), d.gap(Spacing.GUTTER))
     }
-    val footer = k.secondaryButton("Вернуться на главную") { closeDraft(); Mama.dismissSeries(this); render() }
-    return nightFrame(Scene.DUSK, b, footer)
+    b.addView(d.actionRow(Icon.HOME, "Вернуться на главную", "Продолжить, когда почувствуешь готовность.") {
+        closeDraft()
+        Mama.dismissSeries(this)
+        render()
+    }, d.gap(Spacing.GUTTER))
+    val phrase = MotivationRotation.of(this).phrase(Placement.RECOVERY, "${series.id}:ended").text
+    b.addView(d.text(phrase, Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(26))
+    return v1Frame(Scenery.RECOVERY, d.topBar(null), b, null, layout = SceneLayout.HERO)
 }
 
 // ---------------- 12. Success ----------------
 
+/**
+ * The series is done: the brightest screen of MAMA, a golden morning over
+ * the lake. A grown-up reward — no confetti: the result, «Цена слова»
+ * kept, and the way on.
+ */
 internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.mama.core.Commitment? = null): Pair<View, Boolean> {
-    val k = nightKit
-    val b = body(64).apply { gravity = Gravity.CENTER_HORIZONTAL }
-    b.addView(k.emblem(Icon.CHECK, MamaColors.Emerald, 88))
-    b.addView(k.text("Серия пройдена!", MamaType.DISPLAY, MamaColors.Night, center = true), k.gap(22))
-    b.addView(k.text("${series.completedPeriods} из ${series.kind.periods} — решение выдержано до конца.", MamaType.BODY, MamaColors.Graphite, center = true), k.gap(10))
-    b.addView(kit.dots(series.kind.periods, series.completedPeriods), k.gap(18))
-    commitmentOutcome(series.id, night = false, zone = series.window.zone, sample = sampleCommitment)?.let { b.addView(it, k.gap(18)) }
-    b.addView(k.text("Платить не нужно: Restart бывает только после срыва.", MamaType.CAPTION, MamaColors.TextSecondary, center = true), k.gap(18))
-    val footer = k.column().apply {
-        addView(k.primaryButton("Новая серия", Icon.ARROW_RIGHT) { closeDraft(); Mama.dismissSeries(this@successScreen); render() }, k.fill())
-    }
-    return nightFrame(Scene.DAWN, b, footer)
+    val d = design
+    val n = series.kind.periods
+    val done = series.completedPeriods
+    val unit = if (countsNights(series.window)) plural(done, "ночь", "ночи", "ночей") else plural(done, "день", "дня", "дней")
+    val b = d.body(22)
+    b.addView(d.titleBlock("Ты сделал это.", "$done $unit. $done ${plural(done, "решение", "решения", "решений")} в пользу себя.", narrow = true))
+    b.addView(d.badge("Серия пройдена", Icon.STAR), d.wrap().apply { topMargin = d.dp(14) })
+    heroSpace(b, 150)
+    // The result: every day of the series, done.
+    val result = d.card(paddingDp = 20)
+    result.addView(d.valueRow(Icon.SPROUT, "Твой результат · ${Texts.seriesName(series.kind)}", "$done из $n").view)
+    result.addView(d.segments(done, n), d.gap(18))
+    b.addView(result, d.gap(Spacing.GUTTER))
+    commitmentOutcome(series.id, sampleCommitment)?.let { b.addView(it, d.gap(Spacing.GUTTER)) }
+    val phrase = MotivationRotation.of(this).phrase(Placement.SUCCESS, "${series.id}:done").text
+    b.addView(d.text(phrase, Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(26))
+    b.addView(d.text("Платить не нужно: Restart бывает только после срыва.", Typo.CAPTION, Palette.InkMuted, center = true), d.gap(16))
+    val next = d.primaryButton("Новая серия", large = true) { closeDraft(); Mama.dismissSeries(this@successScreen); render() }
+    return v1Frame(Scenery.EVENING, d.topBar(null), b, d.bottomCta(next), layout = SceneLayout.HERO)
+}
+
+// ---------------- motivation ----------------
+
+/**
+ * One strong thought, large, over the photo of this stage of the series:
+ * "У меня получается. Я уже двигаюсь." Shown once after each night that
+ * is done, and when the phrase on the home screen is tapped. Phrases from
+ * [app.mama.motivation.MotivationCatalog]: no pressure, shame or comparison.
+ */
+internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> {
+    val d = design
+    val n = series.kind.periods
+    val done = series.completedPeriods
+    val b = d.body(26)
+    val phrase = MotivationRotation.of(this).phrase(Placement.SUCCESS, "${series.id}:night-$done", maxLength = 70).text
+    b.addView(d.text(phrase, Typo.QUOTE, Palette.Ink).apply {
+        textSize = 33f
+        maxWidth = (resources.displayMetrics.widthPixels * 0.82f).toInt()
+    }, d.wrap())
+    b.addView(d.text("— MAMA", Typo.TAG, Palette.InkSoft), d.wrap().apply { topMargin = d.dp(14) })
+    b.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f).apply { topMargin = d.dp(200) })
+    b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap())
+    b.addView(d.segments(done, n), d.gap(14))
+    val next = d.primaryButton("Продолжить", large = true) { closeMotivation(series) }
+    return v1Frame(progressScenery(series), d.topBar(null), b, d.bottomCta(next), layout = SceneLayout.HERO)
+}
+
+/** The motivation screen was seen for this night: back to the home screen. */
+internal fun MainActivity.closeMotivation(series: Series) {
+    prefs.edit().putString(MainActivity.MOTIVATION_SEEN, "${series.id}:${series.completedPeriods}").apply()
+    motivationOpen = false
+    render()
 }
 
 // ---------------- FLEX ----------------

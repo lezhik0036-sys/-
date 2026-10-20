@@ -17,6 +17,8 @@ import app.mama.core.Wallet
 import app.mama.lock.LockActions
 import app.mama.lock.LockModel
 import app.mama.lock.LockScreenView
+import app.mama.motivation.MotivationCatalog
+import app.mama.motivation.Placement
 import app.mama.platform.Calls
 import app.mama.ui.MainActivity.Choice
 import app.mama.ui.MainActivity.Step
@@ -37,7 +39,10 @@ object Previews {
         "dashboard", "lock", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
         "commitment", "restart_commitment", "dashboard_active", "edit", "cancel_launch",
         "needs_attention", "restart_scheduled", "emergency", "restart_time",
-    ) + app.mama.ui.design.DesignPreviews.names
+    ) + app.mama.ui.design.DesignPreviews.names + listOf(
+        // UI v1 group 2: the home of a 7-day series at its start, middle and end; the motivation screen.
+        "progress_early", "progress_middle", "progress_final", "motivation",
+    )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
     private val contact = TrustedContact("Жена", "+79856322062")
@@ -82,6 +87,19 @@ object Previews {
                 Commitment("preview", 5_000_00, now.minus(3, ChronoUnit.DAYS), CommitmentState.RESERVED, fixedAt = now.minus(2, ChronoUnit.DAYS)),
                 protectionMissing = emptyList(),
             ) { waiting }
+            "progress_early", "progress_middle", "progress_final" -> {
+                val done = when (name) {
+                    "progress_early" -> 0
+                    "progress_middle" -> 3
+                    else -> 6
+                }
+                a.seriesDashboard(
+                    series(done),
+                    Commitment("preview", 5_000_00, now.minus(3, ChronoUnit.DAYS), CommitmentState.RESERVED, fixedAt = now.minus(2, ChronoUnit.DAYS)),
+                    protectionMissing = emptyList(),
+                ) { waiting }
+            }
+            "motivation" -> a.motivationScreen(series(3))
             "needs_attention" -> a.seriesDashboard(
                 series(0, SeriesStatus.NEEDS_ATTENTION), scheduledCommitment(now), protectionMissing = listOf(Requirement.GUARD),
             ) { LockState.Free }
@@ -140,12 +158,16 @@ object Previews {
             override fun answer() = Unit
             override fun hangUp() = Unit
         })
-        val now = Instant.now()
+        // A night lock 23:00 → 07:00 with 6 h 12 min left.
+        val today = java.time.LocalDate.now(zone)
+        val morning = today.atTime(7, 0).atZone(zone).toInstant().let { if (it.isAfter(Instant.now())) it else it.plus(1, ChronoUnit.DAYS) }
+        val now = morning.minus(Duration.ofMinutes(6 * 60 + 12))
         view.bind(
             LockModel(
-                now = now, start = now.minus(Duration.ofMinutes(77)), end = now + Duration.ofSeconds(6 * 3600 + 42 * 60 + 17), zone = zone,
+                now = now, start = morning.minus(Duration.ofHours(8)), end = morning, zone = zone,
                 contactName = contact.name, contactPhone = Texts.phone(contact.phone), dayLabel = Texts.dayOf(3, 7),
-                phrase = Texts.lockPhrases[0], promise = "Хочу нормально высыпаться и чувствовать себя лучше утром.",
+                phrase = MotivationCatalog.pick(Placement.LOCK_NIGHT, "preview", maxLength = 60).text,
+                promise = "Хочу нормально высыпаться и чувствовать себя лучше утром.",
                 call = Calls.CallState.NONE, exitOpen = name == "exit" || name == "code", codeActive = name == "code",
                 attemptsLeft = 3, resendAt = if (name == "code") now + Duration.ofSeconds(57) else null, codeLength = 5,
                 input = if (name == "code") "47" else "", message = null, diagnostics = null,
@@ -153,6 +175,6 @@ object Previews {
                 emergencyServices = app.mama.core.EmergencyNumberCatalog.RUSSIA_FALLBACK,
             ),
         )
-        return view.root to (name == "exit" || name == "code")
+        return view.root to true
     }
 }

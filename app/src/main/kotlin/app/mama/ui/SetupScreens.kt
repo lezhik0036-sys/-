@@ -251,9 +251,13 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         b.addView(d.noteCard("Только для тестирования: бесплатно, не входит в серии, не тратит FLEX-дни.", icon = Icon.FLASK), d.gap(18))
     } else {
         b.addView(d.titleBlock(
-            "Выбери время",
-            (if (restartFlow) "Restart: ${Texts.seriesName(choice.series ?: app.mama.core.SeriesKind.SEVEN)}. " else "") +
-                "Одно спокойное окно, которое повторяется каждый день серии.",
+            // Restart: a new start of the same series, not a penalty.
+            if (restartFlow) "Новый старт" else "Выбери время",
+            if (restartFlow) {
+                "Restart: ${Texts.seriesName(choice.series ?: app.mama.core.SeriesKind.SEVEN)}. Путь продолжается с первого дня — выбери спокойное окно."
+            } else {
+                "Одно спокойное окно, которое повторяется каждый день серии."
+            },
             narrow = true,
         ))
         // AUTO_NOW (start untouched): the series starts at the confirmation, for the chosen length.
@@ -310,7 +314,7 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
     } else {
         stepBar(Step.TIME)
     }
-    return v1Frame(Scenery.DAY, header, b, d.bottomCta(cta))
+    return v1Frame(if (restartFlow) Scenery.RECOVERY else Scenery.DAY, header, b, d.bottomCta(cta))
 }
 
 /** Phrases of the setup references (04, 06, 08, 09) in [MotivationCatalog]. */

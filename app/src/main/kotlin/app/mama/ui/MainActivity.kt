@@ -80,6 +80,9 @@ class MainActivity : Activity() {
     /** "Всё готово": the full terms of the series are shown (they are one tap away otherwise). */
     internal var termsOpen = false
 
+    /** The motivation screen was opened from the home screen's phrase. */
+    internal var motivationOpen = false
+
     /** "Цена слова" chosen for the series about to start (kopecks), or null. Never carried forward. */
     internal var commitmentKop: Long? = null
 
@@ -283,6 +286,7 @@ class MainActivity : Activity() {
                 render()
             }
             editing -> back()
+            onMotivation != null -> closeMotivation(onMotivation!!)
             tab != 0 && onDashboard -> { tab = 0; render() }
             onWizard && step != Step.WELCOME -> back()
             else -> @Suppress("DEPRECATION") super.onBackPressed()
@@ -311,6 +315,13 @@ class MainActivity : Activity() {
     internal var onWizard = false
     internal var onDashboard = false
 
+    /** The series whose motivation screen is shown (Back closes it like "Продолжить"). */
+    private var onMotivation: app.mama.core.Series? = null
+
+    /** A night of [series] is done and its motivation screen was not seen yet: show it once. */
+    private fun motivationDue(series: app.mama.core.Series): Boolean =
+        series.completedPeriods > 0 && prefs.getString(MOTIVATION_SEEN, null) != "${series.id}:${series.completedPeriods}"
+
     internal fun render() {
         stopTicker()
         detach(contactName)
@@ -332,6 +343,7 @@ class MainActivity : Activity() {
         val session = Mama.session(this)
         onWizard = false
         onDashboard = false
+        onMotivation = null
         val (view, key) = when {
             series != null && series.status == SeriesStatus.BROKEN && restartFlow ->
                 if (restartStep == Step.COMMITMENT) {
@@ -346,6 +358,10 @@ class MainActivity : Activity() {
             editing && series != null -> {
                 onWizard = true
                 wizardScreen() to "edit-$step"
+            }
+            series != null && series.status == SeriesStatus.ACTIVE && tab == 0 && (motivationOpen || motivationDue(series)) -> {
+                onMotivation = series
+                motivationScreen(series) to "motivation"
             }
             series != null || flex != null || (session != null && state != LockState.Free) -> {
                 onDashboard = true
@@ -583,6 +599,9 @@ class MainActivity : Activity() {
         internal const val DRAFT_OPEN = "draft.open"
         internal const val DRAFT_TIME_SET = "draft.timeSet"
         internal const val DRAFT_START_MODE = "draft.startMode"
+
+        /** "<series id>:<nights done>" whose motivation screen was seen. */
+        internal const val MOTIVATION_SEEN = "motivation.seen"
         private const val PICK_CONTACT = 10
         private const val SETUP_ALL = 20
     }

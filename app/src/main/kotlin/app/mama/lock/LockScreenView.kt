@@ -13,15 +13,16 @@ import app.mama.core.EmergencyService
 import app.mama.platform.Calls
 import app.mama.ui.BrandButtonView
 import app.mama.ui.Icon
-import app.mama.ui.Kit
-import app.mama.ui.MamaColors
-import app.mama.ui.MamaFonts
-import app.mama.ui.MamaType
-import app.mama.ui.PhotoBackground
-import app.mama.ui.RingView
-import app.mama.ui.Scene
 import app.mama.ui.Texts
-import app.mama.ui.Tone
+import app.mama.ui.design.DesignKit
+import app.mama.ui.design.Palette
+import app.mama.ui.design.Radii
+import app.mama.ui.design.SceneLayout
+import app.mama.ui.design.ScenicBackground
+import app.mama.ui.design.Scenery
+import app.mama.ui.design.Spacing
+import app.mama.ui.design.TimerRing
+import app.mama.ui.design.Typo
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -82,26 +83,24 @@ interface LockActions {
 }
 
 /**
- * The active lock screen (design reference screens 8 and 9): dark night
- * landscape, phrase, glowing countdown ring, and only two actions —
- * "Экстренный звонок" and "Доверенный выход". The Trusted Exit page is a
- * light panel shown over it: first the user's reason and a pause, then the
- * 5-digit code entry. "Экстренный звонок" opens the "Экстренные службы"
- * page; Trusted Exit is a separate thing. Pure view code: all behaviour
- * goes through [LockActions].
+ * The active lock screen (UI v1, reference 16): the calmest screen of MAMA.
+ * A quiet dawn over the lake, "M A M A", one short phrase, the time the
+ * phone stays protected, the remaining time and the day of the series in a
+ * ring, and only two actions — "Экстренный звонок" and "Мне действительно
+ * нужно выйти" (Trusted Exit). No red, no warning signs. "Экстренный звонок"
+ * opens the "Экстренные службы" page; the Trusted Exit page shows the
+ * user's reason and a pause, then the code entry. Pure view code: all
+ * behaviour goes through [LockActions].
  */
 class LockScreenView(private val context: Context, private val actions: LockActions) {
-    private val night = Kit(context, night = true)
-    private val light = Kit(context)
+    private val d = DesignKit(context)
 
     val root: FrameLayout = FrameLayout(context)
 
     // Main page.
     private lateinit var phrase: TextView
-    private lateinit var subline: TextView
-    private lateinit var ring: RingView
-    private lateinit var countdown: TextView
-    private lateinit var dayLabel: TextView
+    private lateinit var until: TextView
+    private lateinit var ring: TimerRing
     private lateinit var callCard: LinearLayout
     private lateinit var callInfo: TextView
     private lateinit var answer: BrandButtonView
@@ -131,7 +130,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
     private lateinit var introMessage: TextView
 
     init {
-        root.background = PhotoBackground(context, Scene.NIGHT)
+        root.background = ScenicBackground(context, Scenery.DAWN, SceneLayout.FULL)
         root.addView(buildMain(), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         exitPage = buildExit()
         root.addView(exitPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -139,102 +138,90 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         root.addView(emergencyPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
-    private fun dp(v: Int) = night.dp(v)
+    private fun dp(v: Int) = d.dp(v)
+
+    private fun page(content: View, scenery: Scenery, layout: SceneLayout): View = ScrollView(context).apply {
+        isFillViewport = true
+        isVerticalScrollBarEnabled = false
+        background = ScenicBackground(context, scenery, layout)
+        addView(content)
+    }
 
     // ---------------- main page ----------------
 
     private fun buildMain(): View {
-        val k = night
-        val col = k.column().apply {
+        val col = d.column().apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(24), dp(52), dp(24), dp(28))
+            setPadding(dp(Spacing.SCREEN), dp(48), dp(Spacing.SCREEN), dp(26))
         }
-        col.addView(k.text("MAMA", MamaType.WORDMARK, MamaColors.OnNight, center = true), k.centered())
+        col.addView(d.wordmark(), d.centered())
 
-        callCard = k.card(16).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        callInfo = k.text("", MamaType.H2, MamaColors.OnNight, center = true).also { callCard.addView(it, k.fill()) }
-        answer = k.primaryButton("Ответить") { actions.answer() }
-        callCard.addView(answer, k.gap(12))
-        backToCall = k.primaryButton("Вернуться к звонку") { actions.returnToCall() }
-        callCard.addView(backToCall, k.gap(12))
-        callCard.addView(k.secondaryButton("Завершить звонок") { actions.hangUp() }, k.gap(10))
-        col.addView(callCard, k.gap(16))
+        callCard = d.card(Spacing.INNER).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        callInfo = d.text("", Typo.HEADLINE, Palette.Ink, center = true).also { callCard.addView(it, d.fill()) }
+        answer = d.primaryButton("Ответить", arrow = false) { actions.answer() }
+        callCard.addView(answer, d.gap(14))
+        backToCall = d.primaryButton("Вернуться к звонку", arrow = false) { actions.returnToCall() }
+        callCard.addView(backToCall, d.gap(12))
+        callCard.addView(d.secondaryButton("Завершить звонок") { actions.hangUp() }, d.gap(10))
+        col.addView(callCard, d.gap(18))
 
-        phrase = k.text("", MamaType.QUOTE, MamaColors.OnNight, center = true).also { col.addView(it, k.gap(22)) }
-        subline = k.text("", MamaType.BODY, MamaColors.OnNightMuted, center = true).also { col.addView(it, k.gap(10)) }
+        // One short line of support and when the phone is free again.
+        phrase = d.text("", Typo.QUOTE, Palette.Ink, center = true).apply { textSize = 25f }
+        col.addView(phrase, d.gap(40).apply { leftMargin = dp(8); rightMargin = dp(8) })
+        until = d.text("", Typo.SUBTITLE, Palette.InkMuted, center = true).apply { textSize = 15.5f }
+        col.addView(until, d.centered(14))
 
-        // Ring with lock icon, "До окончания", countdown, day, moon.
-        val dial = FrameLayout(context)
-        ring = RingView(context)
-        dial.addView(ring, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        val inner = k.column().apply { gravity = Gravity.CENTER_HORIZONTAL }
-        inner.addView(k.icon(Icon.LOCK, MamaColors.OnNight, 26), k.centered())
-        inner.addView(k.text("До окончания", MamaType.CAPTION, MamaColors.OnNightMuted, center = true), k.centered(10))
-        countdown = k.text("", MamaType.DIGITS_L, MamaColors.OnNight, center = true).also { inner.addView(it, k.centered(8)) }
-        dayLabel = k.text("", MamaType.CAPTION, MamaColors.OnNightMuted, center = true).also { inner.addView(it, k.centered(8)) }
-        inner.addView(k.icon(Icon.MOON, MamaColors.OnNight, 20), k.centered(14))
-        dial.addView(inner, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
-        col.addView(dial, LinearLayout.LayoutParams(dp(268), dp(268)).apply { topMargin = dp(26); gravity = Gravity.CENTER_HORIZONTAL })
+        // Remaining time and the day of the series.
+        ring = d.timerRing(214)
+        col.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(30) })
 
         col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
 
-        val actionsRow = k.row()
-        actionsRow.addView(actionButton(Icon.PHONE, "Экстренный\nзвонок") { actions.openEmergency() }, k.weight().apply { rightMargin = dp(6) })
-        actionsRow.addView(actionButton(Icon.LOCK, "Доверенный\nвыход") { actions.openExit() }, k.weight().apply { leftMargin = dp(6) })
-        col.addView(actionsRow, k.gap(26))
-        diagnostics = k.text("", MamaType.SMALL, Color.argb(0x80, 0xB4, 0xBF, 0xB5), center = true).also {
+        // Only two actions.
+        val actionsRow = d.row().apply { gravity = Gravity.TOP }
+        actionsRow.addView(d.actionTile(Icon.PHONE, "Экстренный звонок") { actions.openEmergency() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        actionsRow.addView(
+            d.actionTile(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = dp(12) },
+        )
+        col.addView(actionsRow, d.gap(30))
+        diagnostics = d.text("", Typo.CAPTION, Color.argb(0x99, 0x5E, 0x62, 0x66), center = true).also {
             it.textSize = 9.5f
-            col.addView(it, k.gap(14))
+            col.addView(it, d.gap(14))
         }
         return ScrollView(context).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
             addView(col)
         }
-    }
-
-    private fun actionButton(icon: Icon, label: String, onClick: () -> Unit): View = night.row().apply {
-        setPadding(dp(16), dp(14), dp(14), dp(14))
-        minimumHeight = dp(64)
-        background = night.pressable(night.shape(MamaColors.NightGlass, 18, MamaColors.NightLine), 18)
-        addView(night.icon(icon, MamaColors.OnNight, 22))
-        addView(night.text(label, MamaType.CAPTION, MamaColors.OnNight).apply { typeface = MamaFonts.ui(context, 700) }, night.weight().apply { leftMargin = dp(12) })
-        isClickable = true
-        setOnClickListener { onClick() }
     }
 
     // ---------------- Emergency services page ----------------
 
     private fun buildEmergency(): View {
-        val k = night
-        val col = k.column().apply { setPadding(dp(22), dp(52), dp(22), dp(28)) }
-        col.addView(k.text("Экстренные службы", MamaType.H1, MamaColors.OnNight, center = true), k.fill())
-        col.addView(k.text(
+        val col = d.column().apply { setPadding(dp(Spacing.SCREEN), dp(48), dp(Spacing.SCREEN), dp(26)) }
+        col.addView(d.wordmark(), d.centered())
+        col.addView(d.titleBlock(
+            "Экстренные службы",
             "Номер откроется в приложении «Телефон» — останется нажать вызов. Звонок не прерывает серию и ничего не стоит.",
-            MamaType.CAPTION, MamaColors.OnNightMuted, center = true,
-        ), k.gap(10))
-        serviceList = k.column()
-        col.addView(serviceList, k.gap(22))
-        emergencyNote = k.text("", MamaType.BODY, MamaColors.OnNight, center = true)
-        col.addView(emergencyNote, k.gap(16))
+        ), d.gap(30))
+        serviceList = d.column()
+        col.addView(serviceList, d.gap(24))
+        emergencyNote = d.text("", Typo.BODY, Palette.Ink)
+        col.addView(emergencyNote, d.gap(16))
         col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
-        col.addView(k.secondaryButton("Назад в MAMA") { actions.closeEmergency() }, k.gap(22))
-        return ScrollView(context).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-            background = PhotoBackground(context, Scene.NIGHT)
-            addView(col)
-        }
+        col.addView(d.secondaryButton("Назад в MAMA") { actions.closeEmergency() }, d.gap(24))
+        return page(col, Scenery.DAWN, SceneLayout.HEADER)
     }
 
-    private fun serviceRow(s: EmergencyService): View = night.row().apply {
-        gravity = Gravity.CENTER_VERTICAL
+    private fun serviceRow(s: EmergencyService): View = d.row().apply {
         setPadding(dp(18), dp(14), dp(16), dp(14))
         minimumHeight = dp(72)
-        background = night.pressable(night.shape(MamaColors.NightGlass, 18, MamaColors.NightLine), 18)
-        addView(night.text(s.number, MamaType.DIGITS, MamaColors.OnNight), LinearLayout.LayoutParams(dp(92), ViewGroup.LayoutParams.WRAP_CONTENT))
-        addView(night.text(s.name, MamaType.BODY, MamaColors.OnNight).apply { typeface = MamaFonts.ui(context, 600) }, night.weight())
-        addView(night.icon(Icon.PHONE, MamaColors.OnNight, 22))
+        background = d.pressable(d.surface(), Radii.CARD)
+        d.elevate(this, 2f)
+        addView(d.text(s.number, Typo.NUMBER), LinearLayout.LayoutParams(dp(92), ViewGroup.LayoutParams.WRAP_CONTENT))
+        addView(d.text(s.name, Typo.VALUE), d.weight().apply { rightMargin = dp(8) })
+        addView(d.iconCircle(Icon.PHONE, 40))
         isClickable = true
         contentDescription = "${s.name}, ${s.number}"
         setOnClickListener { actions.dialEmergency(s.number) }
@@ -243,73 +230,66 @@ class LockScreenView(private val context: Context, private val actions: LockActi
     // ---------------- Trusted Exit page ----------------
 
     private fun buildExit(): View {
-        val k = light
-        val col = k.column().apply { setPadding(dp(22), dp(40), dp(22), dp(28)) }
-        col.addView(k.stepHeader(null, 0) { actions.closeExit() })
+        val col = d.column().apply { setPadding(0, dp(36), 0, dp(26)) }
+        col.addView(d.topBar({ actions.closeExit() }))
+        val body = d.column().apply { setPadding(dp(Spacing.SCREEN), 0, dp(Spacing.SCREEN), 0) }
 
-        // Intro: reason + pause.
-        intro = k.column()
-        intro.addView(k.sectionHeader("Досрочный выход", null, center = true), k.gap(18))
-        promiseBlock = k.column()
-        promiseBlock.addView(k.text("Ты начал эту серию потому что:", MamaType.CAPTION, MamaColors.TextSecondary, center = true), k.fill())
-        promiseText = k.text("", MamaType.H2, MamaColors.Emerald, center = true).apply {
-            typeface = MamaFonts.wordmark(context, 600)
-            textSize = 23f
-        }
-        promiseBlock.addView(k.card(20).apply { addView(promiseText, k.fill()) }, k.gap(12))
-        intro.addView(promiseBlock, k.gap(20))
-        intro.addView(k.infoCard("Не принимай большое решение из-за минутного импульса.", Icon.HEART, Tone.BRAND), k.gap(16))
-        introMessage = k.text("", MamaType.CAPTION, MamaColors.Warning, center = true)
-        intro.addView(introMessage, k.gap(12))
-        intro.addView(k.primaryButton("Вернуться к блокировке") { actions.closeExit() }, k.gap(20))
-        requestButton = k.secondaryButton("Запросить код") { actions.requestCode() }
-        intro.addView(requestButton, k.gap(10))
-        callContactButton = k.textButton("Позвонить") { actions.callContact() }
-        intro.addView(callContactButton, k.gap(6))
-        col.addView(intro, k.fill())
+        // Intro: the user's own reason and a pause.
+        intro = d.column()
+        intro.addView(d.titleBlock("Досрочный выход", "Сначала — минута тишины. Решение всё ещё твоё."), d.gap(18))
+        promiseBlock = d.column()
+        promiseBlock.addView(d.text("Ты начал эту серию потому что:", Typo.LABEL, Palette.InkMuted), d.fill())
+        promiseText = d.text("", Typo.QUOTE_ITALIC, Palette.Ink)
+        promiseBlock.addView(d.quietCard().apply { addView(promiseText, d.fill()) }, d.gap(10))
+        intro.addView(promiseBlock, d.gap(26))
+        intro.addView(d.noteCard("Не принимай большое решение из-за минутного импульса.", icon = Icon.HEART), d.gap(Spacing.GUTTER))
+        introMessage = d.text("", Typo.LABEL, Palette.SandInk, center = true)
+        intro.addView(introMessage, d.gap(14))
+        intro.addView(d.primaryButton("Вернуться к блокировке", arrow = false, large = true) { actions.closeExit() }, d.gap(26))
+        requestButton = d.secondaryButton("Запросить код") { actions.requestCode() }
+        intro.addView(requestButton, d.gap(12))
+        callContactButton = d.linkButton("Позвонить") { actions.callContact() }
+        intro.addView(callContactButton, d.gap(6))
+        body.addView(intro, d.fill())
 
-        // Code entry (reference screen 9).
-        codePage = k.column()
-        codePage.addView(k.sectionHeader("Доверенный выход", null, center = true), k.gap(14))
-        codeHint = k.text("", MamaType.BODY, MamaColors.TextSecondary, center = true).also { codePage.addView(it, k.gap(10)) }
-        val boxRow = k.row().apply { gravity = Gravity.CENTER }
+        // Code entry.
+        codePage = d.column()
+        codePage.addView(d.title("Доверенный выход"), d.gap(18))
+        codeHint = d.text("", Typo.BODY, Palette.InkMuted).also { codePage.addView(it, d.gap(10)) }
+        val boxRow = d.row().apply { gravity = Gravity.CENTER }
         boxes = (0 until 5).map {
-            k.text("", MamaType.DIGITS, MamaColors.Graphite, center = true).apply {
+            d.text("", Typo.NUMBER, Palette.Ink, center = true).apply {
                 gravity = Gravity.CENTER
-                background = k.shape(MamaColors.PureCard, 12, MamaColors.Border, 1.5f)
-            }.also { boxRow.addView(it, LinearLayout.LayoutParams(dp(50), dp(60)).apply { setMargins(dp(4), 0, dp(4), 0) }) }
+                background = d.shape(Palette.Card, Radii.CHIP, Palette.Line, 1.5f)
+            }.also { boxRow.addView(it, LinearLayout.LayoutParams(dp(52), dp(62)).apply { setMargins(dp(4), 0, dp(4), 0) }) }
         }
-        codePage.addView(boxRow, k.gap(20))
-        attempts = k.text("", MamaType.CAPTION, MamaColors.TextSecondary, center = true).also { codePage.addView(it, k.gap(14)) }
-        message = k.text("", MamaType.CAPTION, MamaColors.Warning, center = true).also { codePage.addView(it, k.gap(8)) }
-        codePage.addView(keypad(k), k.centered(10))
-        confirm = k.primaryButton("Подтвердить") { actions.submit() }
-        codePage.addView(confirm, k.gap(16))
-        resend = k.textButton("Отправить код ещё раз") { actions.requestCode() }
-        codePage.addView(resend, k.gap(4))
-        codePage.addView(k.textButton("Отмена") { actions.closeExit() }, k.gap(0))
-        col.addView(codePage, k.fill())
+        codePage.addView(boxRow, d.gap(22))
+        attempts = d.text("", Typo.LABEL, Palette.InkMuted, center = true).also { codePage.addView(it, d.gap(14)) }
+        message = d.text("", Typo.LABEL, Palette.SandInk, center = true).also { codePage.addView(it, d.gap(8)) }
+        codePage.addView(keypad(), d.centered(12))
+        confirm = d.primaryButton("Подтвердить", arrow = false) { actions.submit() }
+        codePage.addView(confirm, d.gap(18))
+        resend = d.linkButton("Отправить код ещё раз") { actions.requestCode() }
+        codePage.addView(resend, d.gap(4))
+        codePage.addView(d.linkButton("Отмена", Palette.InkMuted) { actions.closeExit() }, d.gap(0))
+        body.addView(codePage, d.fill())
 
-        return ScrollView(context).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-            setBackgroundColor(MamaColors.WarmIvory)
-            addView(col)
-        }
+        col.addView(body, d.fill())
+        return page(col, Scenery.DAWN, SceneLayout.HEADER)
     }
 
-    private fun keypad(k: Kit): View {
-        val grid = k.column()
+    private fun keypad(): View {
+        val grid = d.column()
         listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("", "0", DEL)).forEach { r ->
-            val line = k.row()
+            val line = d.row()
             r.forEach { key ->
                 val cell: View = if (key.isEmpty()) {
                     View(context)
                 } else {
-                    k.text(key, MamaType.H2, MamaColors.Graphite, center = true).apply {
+                    d.text(key, Typo.HEADLINE, Palette.Ink, center = true).apply {
                         gravity = Gravity.CENTER
                         textSize = if (key == DEL) 20f else 24f
-                        background = k.pressable(k.shape(MamaColors.PureCard, 16, MamaColors.Border), 16)
+                        background = d.pressable(d.shape(Palette.Card, Radii.CARD_SMALL, Palette.Line), Radii.CARD_SMALL)
                         isClickable = true
                         setOnClickListener { actions.key(key) }
                     }
@@ -325,13 +305,13 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
     fun bind(m: LockModel) {
         val left = Duration.between(m.now, m.end)
-        val (h, mi, s) = Texts.hms(left)
-        countdown.text = "$h:$mi:$s"
+        // Minutes, rounded up: a calm figure, no ticking seconds.
+        val minutes = maxOf(0L, (left.toMillis() + 59_999) / 60_000)
         val total = Duration.between(m.start, m.end).toMillis().coerceAtLeast(1)
-        ring.progress = 1f - left.toMillis().coerceIn(0, total).toFloat() / total
-        dayLabel.text = m.dayLabel
+        val progress = 1f - left.toMillis().coerceIn(0, total).toFloat() / total
+        ring.set(minutes / 60, minutes % 60, progress, m.dayLabel)
         phrase.text = m.phrase
-        subline.text = if (m.promise.isNotBlank()) "«${m.promise}»" else Texts.LOCK_SUBLINE
+        until.text = "Телефон под защитой до ${Texts.time(m.end, m.zone)}"
 
         callCard.visibility = if (m.call != Calls.CallState.NONE) View.VISIBLE else View.GONE
         callInfo.text = if (m.call == Calls.CallState.RINGING) "Входящий звонок" else "Идёт звонок"
@@ -342,7 +322,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         if (m.emergencyServices != shownServices) {
             shownServices = m.emergencyServices
             serviceList.removeAllViews()
-            m.emergencyServices.forEachIndexed { i, s -> serviceList.addView(serviceRow(s), night.gap(if (i == 0) 0 else 10)) }
+            m.emergencyServices.forEachIndexed { i, s -> serviceList.addView(serviceRow(s), d.gap(if (i == 0) 0 else 10)) }
         }
         emergencyNote.text = m.emergencyNote.orEmpty()
         emergencyNote.visibility = if (m.emergencyNote.isNullOrEmpty()) View.GONE else View.VISIBLE
@@ -365,7 +345,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
             "${m.contactName} ${m.contactPhone}"
         boxes.forEachIndexed { i, b ->
             b.text = m.input.getOrNull(i)?.toString().orEmpty()
-            b.background = light.shape(MamaColors.PureCard, 12, if (i == m.input.length) MamaColors.Emerald else MamaColors.Border, 1.5f)
+            b.background = d.shape(Palette.Card, Radii.CHIP, if (i == m.input.length) Palette.EmeraldBorder else Palette.Line, 1.5f)
         }
         attempts.text = "Осталось попыток: ${m.attemptsLeft}"
         message.text = m.message.orEmpty()
