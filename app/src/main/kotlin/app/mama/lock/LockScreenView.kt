@@ -177,20 +177,15 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         until = d.text("", Typo.SUBTITLE, Palette.InkMuted, center = true).apply { textSize = 15.5f }
         col.addView(until, d.centered(14))
 
-        // Remaining time and the day of the series.
-        ring = d.timerRing(214)
+        // Remaining time and the day of the series: the anchor of the screen.
+        ring = d.timerRing(232)
         col.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(30) })
 
         col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
 
-        // Only two actions.
-        val actionsRow = d.row().apply { gravity = Gravity.TOP }
-        actionsRow.addView(d.actionTile(Icon.PHONE, "Экстренный звонок") { actions.openEmergency() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        actionsRow.addView(
-            d.actionTile(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = dp(12) },
-        )
-        col.addView(actionsRow, d.gap(30))
+        // Only two actions, both quiet: always at hand, never the main thing on the screen.
+        col.addView(d.quietAction(Icon.PHONE, "Экстренный звонок") { actions.openEmergency() }, d.centered(30))
+        col.addView(d.quietAction(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() }, d.centered(8))
         diagnostics = d.text("", Typo.CAPTION, Color.argb(0x99, 0x5E, 0x62, 0x66), center = true).also {
             it.textSize = 9.5f
             col.addView(it, d.gap(14))

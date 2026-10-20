@@ -211,7 +211,7 @@ class SamsungFixesTest {
         )
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         val shown = texts(content(a))
-        assertTrue(shown.toString(), "Серия завершена досрочно" in shown)
+        assertTrue(shown.toString(), "Этот путь продолжается" in shown)
         assertTrue(shown.toString(), "Цена слова: 500 ₽" in shown)
         assertTrue(shown.toString(), "Цена слова применена." in shown)
         assertNoAnnouncement("failure screen", shown)

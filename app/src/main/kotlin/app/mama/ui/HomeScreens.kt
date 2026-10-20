@@ -388,11 +388,11 @@ internal fun MainActivity.failureScreen(
     val d = design
     val b = d.body(22)
     // The supportive line in ink: it is the main message, it must read over the photo.
+    // No verdict line: the title and the support go first, the facts follow quietly.
     b.addView(d.titleBlock(
         "Этот путь продолжается",
         narrow = true,
         lead = "Ты уже сделал важное — начал. Один сложный вечер не отменяет твоего решения.",
-        caption = "Серия завершена досрочно",
     ))
     b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap().apply { topMargin = d.dp(14) })
     heroSpace(b, 96)
@@ -437,8 +437,8 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     val b = d.body(22)
     // The result in ink, one thought per line: it is the reward of the screen.
     b.addView(d.titleBlock("Ты сделал это.", narrow = true, lead = "$done $unit.\n$done ${plural(done, "решение", "решения", "решений")} в пользу себя."))
-    b.addView(d.badge("Серия пройдена", Icon.STAR), d.wrap().apply { topMargin = d.dp(14) })
-    heroSpace(b, 150)
+    // No badges: the title is the reward, the photo carries the light.
+    heroSpace(b, 198)
     // The result: every day of the series, done.
     val result = d.card(paddingDp = 20)
     result.addView(d.valueRow(Icon.SPROUT, "Твой результат · ${Texts.seriesName(series.kind)}", "$done из $n").view)

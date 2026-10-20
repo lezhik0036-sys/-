@@ -178,7 +178,7 @@ class ScheduledSeriesTest {
         assertEquals("old", Mama.series(context)!!.id)
         assertEquals(SeriesStatus.BROKEN, Mama.series(context)!!.status)
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        assertTrue("Серия завершена досрочно" in texts(activity.findViewById<ViewGroup>(android.R.id.content)!!))
+        assertTrue("Этот путь продолжается" in texts(activity.findViewById<ViewGroup>(android.R.id.content)!!))
     }
 
     @Test

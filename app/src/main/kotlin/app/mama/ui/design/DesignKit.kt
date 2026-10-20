@@ -270,6 +270,26 @@ class DesignKit(val context: Context) {
         clickable(this, onClick)
     }
 
+    /**
+     * A secondary action that stays at hand but never leads the screen: a
+     * translucent milky pill, a small icon, a muted label, no shadow (lock).
+     */
+    fun quietAction(icon: Icon, label: String, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
+        text = label
+        Typo.LABEL.applyTo(this)
+        textSize = 15f
+        setTextColor(Palette.InkMuted)
+        gravity = Gravity.CENTER
+        minHeight = dp(46)
+        minimumHeight = dp(46)
+        setPadding(dp(18), dp(10), dp(20), dp(10))
+        background = pressable(shape(Color.argb(0x99, 0xFE, 0xFD, 0xF9), 23), 23)
+        val d = IconDrawable(icon, Palette.InkMuted, 1.8f, solid = true).apply { setBounds(0, 0, dp(18), dp(18)) }
+        setCompoundDrawables(d, null, null, null)
+        compoundDrawablePadding = dp(10)
+        clickable(this, onClick)
+    }
+
     // ---------------- top bar, progress ----------------
 
     /** "M A M A". */
