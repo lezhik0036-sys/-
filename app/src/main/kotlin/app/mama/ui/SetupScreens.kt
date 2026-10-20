@@ -7,6 +7,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
 import app.mama.billing.Product
@@ -167,16 +168,31 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
             .apply { tag = WELCOME_HERO },
         LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
     )
+    // A short screen (a small phone) gets slightly more compact type, so more of the welcome is in view.
+    val compact = resources.configuration.screenHeightDp < 780
     val text = d.column().apply { setPadding(d.dp(Spacing.SCREEN), d.dp(4), d.dp(Spacing.SCREEN), d.dp(14)) }
-    text.addView(d.text("Добро пожаловать в MAMA", Typo.DISPLAY).apply { textSize = 30f }, d.fill())
-    text.addView(d.text("Ты уже сделал главное — решил изменить вечер.", Typo.SUBTITLE, Palette.Ink), d.gap(12))
-    text.addView(d.text("MAMA поможет сохранить это решение, когда силы воли станет меньше.", Typo.BODY, Palette.InkMuted), d.gap(10))
-    text.addView(d.text("Сегодня не нужно быть идеальным. Достаточно сделать один спокойный шаг.", Typo.BODY, Palette.InkMuted), d.gap(8))
+    // Non-breaking spaces keep "в MAMA" and "главное —" together.
+    text.addView(d.text("Добро пожаловать в\u00A0MAMA", Typo.DISPLAY).apply { textSize = if (compact) 26f else 30f }, d.fill())
+    text.addView(d.text("Ты уже сделал главное\u00A0— решил изменить вечер.", Typo.SUBTITLE, Palette.Ink).apply {
+        if (compact) textSize = 16f
+    }, d.gap(if (compact) 10 else 12))
+    for ((i, line) in listOf(
+        "MAMA поможет сохранить это решение, когда силы воли станет меньше.",
+        "Сегодня не нужно быть идеальным. Достаточно сделать один спокойный шаг.",
+    ).withIndex()) {
+        text.addView(d.text(line, Typo.BODY, Palette.InkMuted).apply { if (compact) textSize = 14.5f }, d.gap(if (i == 0) (if (compact) 8 else 10) else (if (compact) 6 else 8)))
+    }
     body.addView(text, d.fill())
     val start = d.primaryButton("Начать свой путь", large = true) { beginDraft(); go(Step.PERMISSIONS) }
     // A quiet way to everything already done, at any time between series (3A.1).
     val path = d.linkButton("Мой путь") { openPath() }.apply { tag = OPEN_PATH }
-    return d.screen(null, header = null, body = body, cta = d.bottomCta(start, path)) to true
+    val screen = d.screen(null, header = null, body = body, cta = d.bottomCta(start, path))
+    // Text that does not fit fades into a scroll above the button instead of being cut mid-line.
+    (body.parent as? ScrollView)?.apply {
+        isVerticalFadingEdgeEnabled = true
+        setFadingEdgeLength(d.dp(32))
+    }
+    return screen to true
 }
 
 // ---------------- 2. Permissions ----------------

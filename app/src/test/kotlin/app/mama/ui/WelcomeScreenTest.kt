@@ -44,7 +44,8 @@ class WelcomeScreenTest {
     private fun content(a: MainActivity) = a.findViewById<ViewGroup>(android.R.id.content)!!
 
     private fun texts(v: View): List<String> = when (v) {
-        is TextView -> listOf(v.text.toString())
+        // Non-breaking spaces read as spaces.
+        is TextView -> listOf(v.text.toString().replace('\u00A0', ' '))
         is ViewGroup -> (0 until v.childCount).flatMap { texts(v.getChildAt(it)) }
         else -> emptyList()
     }
