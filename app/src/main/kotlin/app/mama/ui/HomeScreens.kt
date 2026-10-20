@@ -387,10 +387,11 @@ internal fun MainActivity.failureScreen(
 ): Pair<View, Boolean> {
     val d = design
     val b = d.body(22)
+    // The supportive line in ink: it is the main message, it must read over the photo.
     b.addView(d.titleBlock(
         "Этот путь продолжается",
-        "Ты уже сделал важное — начал. Один сложный вечер не отменяет твоего решения.",
         narrow = true,
+        lead = "Ты уже сделал важное — начал. Один сложный вечер не отменяет твоего решения.",
         caption = "Серия завершена досрочно",
     ))
     b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap().apply { topMargin = d.dp(14) })
