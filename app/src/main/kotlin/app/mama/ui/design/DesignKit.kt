@@ -551,7 +551,11 @@ class DesignKit(val context: Context) {
     /** One card of rows divided by hairlines that start after the icon circles. */
     fun rowsCard(rows: List<View>, paddingDp: Int = 0, dividerInsetDp: Int = 16 + 36 + 14): LinearLayout = card(paddingDp = 0).apply {
         rows.forEachIndexed { i, r ->
-            if (i > 0) addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply { leftMargin = dp(dividerInsetDp); rightMargin = dp(16) })
+            if (i > 0) {
+                addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+                    leftMargin = dp(dividerInsetDp); rightMargin = dp(16); topMargin = dp(paddingDp); bottomMargin = dp(paddingDp)
+                })
+            }
             addView(r, fill().apply { setMargins(dp(paddingDp), if (i == 0) dp(paddingDp) else 0, dp(paddingDp), if (i == rows.lastIndex) dp(paddingDp) else 0) })
         }
     }
@@ -562,7 +566,7 @@ class DesignKit(val context: Context) {
         minimumHeight = dp(58)
         addView(iconCircle(icon, 36))
         val texts = column()
-        texts.addView(if (strong) text(value, Typo.VALUE) else text(value, Typo.BODY, Palette.InkMuted))
+        texts.addView(if (strong) text(value, Typo.VALUE) else text(value, Typo.LABEL, Palette.InkMuted))
         note?.let { texts.addView(text(it, Typo.CAPTION, Palette.InkMuted), gap(2)) }
         addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(if (trailing != null) 4 else 0) })
         trailing?.let { addView(it) }
@@ -570,10 +574,11 @@ class DesignKit(val context: Context) {
 
     /**
      * Time of a window (reference 04): label and "›" on top, icon circle,
-     * the time in large digits and its part of day ("ВЕЧЕРОМ"); a landscape
-     * on the right. Without [onClick] it is only shown (test mode).
+     * the time in large digits, its part of day ("ВЕЧЕРОМ") and a [note]
+     * beside it ("сегодня"); a landscape on the right. Without [onClick] it
+     * is only shown (test mode).
      */
-    fun timeCard(label: String, time: String, part: String?, icon: Icon, scenery: Scenery?, onClick: (() -> Unit)?): View = column().apply {
+    fun timeCard(label: String, time: String, part: String?, icon: Icon, scenery: Scenery?, note: String? = null, onClick: (() -> Unit)?): View = column().apply {
         val radius = dpf(Radii.CARD.toFloat())
         val fill: Drawable = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.Card, radius, vignette = 0.5f) } ?: surface()
         background = if (onClick != null) RippleDrawable(ColorStateList.valueOf(Palette.Ripple), fill, shape(Color.WHITE, Radii.CARD)) else fill
@@ -587,8 +592,12 @@ class DesignKit(val context: Context) {
         val main = row()
         main.addView(iconCircle(icon, 62))
         val texts = column()
-        texts.addView(text(time, Typo.AMOUNT).apply { maxLines = 1 })
-        part?.let { texts.addView(tag(it).apply { maxLines = 1; setPadding(dp(12), dp(5), dp(12), dp(5)) }, wrap().apply { topMargin = dp(4) }) }
+        // One line that never wraps: negative tracking can make a measured "23:00" a hair too narrow.
+        texts.addView(text(time, Typo.AMOUNT).apply { isSingleLine = true; setPadding(0, 0, dp(2), 0) })
+        val under = row()
+        part?.let { under.addView(tag(it).apply { maxLines = 1; setPadding(dp(12), dp(5), dp(12), dp(5)) }) }
+        note?.let { under.addView(text(it, Typo.LABEL, Palette.InkMuted).apply { isSingleLine = true }, wrap().apply { leftMargin = dp(if (part != null) 10 else 0) }) }
+        texts.addView(under, wrap().apply { topMargin = dp(4) })
         main.addView(texts, wrap().apply { leftMargin = dp(18) })
         addView(main, gap(8))
         onClick?.let { clickable(this, it) }

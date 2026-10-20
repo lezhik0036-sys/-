@@ -12,8 +12,9 @@
 - Дизайн-система — `docs/DESIGN_SYSTEM_V1.md`.
 
 Статусы: **—** нет референса (делается в общем стиле референсов) ·
-**реф** референс утверждён и сохранён · **готово** экран переделан и
-проверен · **FUTURE** не входит в пилот.
+**реф** референс утверждён и сохранён · **G1** экран переделан в PHASE 2,
+Группа 1 (ждёт утверждения) · **готово** экран переделан и утверждён ·
+**FUTURE** не входит в пилот.
 
 ## Итоговое соответствие «референс → экран»
 
@@ -30,6 +31,28 @@
 | `new-role.webp` | `role` — FUTURE |
 | `new-motivation.webp` | `motivation` — FUTURE (стиль цитат — в карточках-цитатах экранов) |
 
+## PHASE 2 · Группа 1 и production-фоны
+
+Группа 1 — главный экран и мастер до старта: `dashboard_active` (и все
+состояния главной: `dashboard`, `needs_attention`, `restart_scheduled`,
+`flex`, `test_session`), `time` (`restart_time`, `time_test`), `contact`,
+`commitment` (`restart_commitment`), `review` (`edit`). Без изменений
+пока: `welcome`, `permissions`, `series`, `promise` и экраны Группы 2
+(прогресс, блокировка, мотивация, срыв, Restart).
+
+| Сцена (`assets/scenes/v1/`) | Экраны |
+|---|---|
+| `morning.webp` | главная: серия идёт, ACTIVATING, тест 15 минут, FLEX |
+| `evening.webp` | главная: серия запланирована, Restart запланирован, «Серия не началась» |
+| `day.webp` | время, контакт, «Цена слова», «Всё готово», «Изменить условия»; карточки шагов |
+| `dawn.webp` | блокировка (`ds_lock_shell`, Группа 2); карточка «Окончание · утром» |
+| `recovery.webp` | срыв / Restart (`ds_recovery`, Группа 2) |
+
+CI кладёт рядом с скриншотами сравнения с референсами (`vs-<ключ>.jpg`:
+`dashboard_active`, `time`, `contact`, `commitment`, `review`) и с фото
+сцены (`scene-<ключ>.jpg`: `dashboard_active`, `time`, `dashboard`,
+`ds_lock_shell`, `ds_recovery`).
+
 ## До мастера (без счётчика шагов)
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
@@ -42,11 +65,11 @@
 | № | Ключ | Шаг | Экран | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
 | 03 | `series` | 1 из 6 | Выбор серии: 3 · 5 · 7 дней · FLEX | `SetupScreens.seriesScreen` | `03-series.webp` | реф |
-| 04 | `time` | 2 из 6 | Время (AUTO_NOW / MANUAL) | `SetupScreens.timeScreen` | `04-time.webp` | реф |
-| 06 | `contact` | 3 из 6 | Доверенный контакт | `SetupScreens.contactScreen` | `06-contact.webp` | реф |
+| 04 | `time` | 2 из 6 | Время (AUTO_NOW / MANUAL) | `SetupScreens.timeScreen` | `04-time.webp` | G1 |
+| 06 | `contact` | 3 из 6 | Доверенный контакт | `SetupScreens.contactScreen` | `06-contact.webp` | G1 |
 | 07 | `promise` | 4 из 6 | Личная причина | `SetupScreens.promiseScreen` | `06-contact.webp` («Моя причина») | реф |
-| 08 | `commitment` | 5 из 6 | «Цена слова»: 500 / 1 000 / 3 000 / 5 000 ₽, своя сумма, «Продолжить без цены слова» | `CommitmentScreens.commitmentScreen` | `08-commitment.webp` | реф |
-| 09 | `review` | 6 из 6 | Проверка / «Всё готово» | `SetupScreens.reviewScreen` | `09-review.webp` | реф |
+| 08 | `commitment` | 5 из 6 | «Цена слова»: 500 / 1 000 / 3 000 / 5 000 ₽, своя сумма, «Продолжить без цены слова» | `CommitmentScreens.commitmentScreen` | `08-commitment.webp` | G1 |
+| 09 | `review` | 6 из 6 | Проверка / «Всё готово» | `SetupScreens.reviewScreen` | `09-review.webp` | G1 |
 
 FLEX: 1 Выбор · 2 Контакт · 3 Причина · 4 Проверка (время — у каждого
 периода). Тест 15 минут (из «Настройки → Тестирование»): 1 Время · 2
@@ -56,12 +79,12 @@ FLEX: 1 Выбор · 2 Контакт · 3 Причина · 4 Проверка
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
-| 10 | `dashboard` | Серия запланирована (SCHEDULED) | После «Начать» | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | — |
-| 11 | `edit` | Изменить условия | До ACTIVE: контакт, причина, «Цена слова» | `ScheduledScreens.editScreen` | стиль `09-review.webp` | — |
+| 10 | `dashboard` | Серия запланирована (SCHEDULED) | После «Начать» | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | G1 (в стиле) |
+| 11 | `edit` | Изменить условия | До ACTIVE: контакт, причина, «Цена слова» | `ScheduledScreens.editScreen` | стиль `09-review.webp` | G1 (в стиле) |
 | 12 | `cancel_launch` | Отменить запуск (подтверждение) | До ACTIVE | `ScheduledScreens.confirmCancelLaunch` | — | — |
-| 13 | `dashboard_active` | Серия идёт (ACTIVE) | После подтверждения защиты | `HomeScreens.seriesDashboard` | `13-dashboard_active.webp` | реф |
-| 14 | `needs_attention` | Серия не началась (NEEDS_ATTENTION) | Защита не включилась | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | — |
-| 15 | `restart_scheduled` | Restart запланирован | После оплаты Restart | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | — |
+| 13 | `dashboard_active` | Серия идёт (ACTIVE) | После подтверждения защиты | `HomeScreens.seriesDashboard` | `13-dashboard_active.webp` | G1 |
+| 14 | `needs_attention` | Серия не началась (NEEDS_ATTENTION) | Защита не включилась | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | G1 (в стиле) |
+| 15 | `restart_scheduled` | Restart запланирован | После оплаты Restart | `HomeScreens.seriesDashboard` | стиль `13-dashboard_active.webp` | G1 (в стиле) |
 
 `dashboard_active`: только реальные данные (§12.6) — «День N из M»,
 прогресс по дням, время до конца / начала блокировки, окно, «Цена слова»,
@@ -87,8 +110,8 @@ FLEX: 1 Выбор · 2 Контакт · 3 Причина · 4 Проверка
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
 | 20 | `failure` | «Этот путь продолжается»; небольшим текстом «Серия завершилась раньше · N из M»; «Попробовать снова · Restart · 299 ₽», «Начать заново» | Срыв ACTIVE-серии | `HomeScreens.failureScreen` | `20-failure.webp` | реф |
-| 21 | `restart_time` | Restart: время | «Начать заново», шаг 1 из 2 | `SetupScreens.timeScreen` | стиль `04-time.webp` | — |
-| 22 | `restart_commitment` | Restart: «Цена слова» (не ниже цены Restart) | «Начать заново», шаг 2 из 2 | `CommitmentScreens.commitmentScreen` | стиль `08-commitment.webp` | — |
+| 21 | `restart_time` | Restart: время | «Начать заново», шаг 1 из 2 | `SetupScreens.timeScreen` | стиль `04-time.webp` | G1 (в стиле) |
+| 22 | `restart_commitment` | Restart: «Цена слова» (не ниже цены Restart) | «Начать заново», шаг 2 из 2 | `CommitmentScreens.commitmentScreen` | стиль `08-commitment.webp` | G1 (в стиле) |
 | 23 | `success` | Серия пройдена | Все дни серии | `HomeScreens.successScreen` | стиль `20-failure.webp` | — |
 
 `failure`: светлая сцена `RECOVERY`, без красного, «!», «Неудача», «Провал»,
@@ -99,7 +122,7 @@ FLEX: 1 Выбор · 2 Контакт · 3 Причина · 4 Проверка
 
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
-| 24 | `flex` | FLEX: пакет и дни | Активный пакет FLEX | `HomeScreens.flexDashboard` | стиль `13-dashboard_active.webp` | — |
+| 24 | `flex` | FLEX: пакет и дни | Активный пакет FLEX | `HomeScreens.flexDashboard` | стиль `13-dashboard_active.webp` | G1 (в стиле) |
 | 25 | `flex_plan` | FLEX: даты и время периода | «Запланировать FLEX-период» | `HomeScreens.flexPlannerScreen` | стиль `04-time.webp` | — |
 | — | `flex_result` | Итог FLEX | Пакет закончился | `HomeScreens.flexResultScreen` | стиль `20-failure.webp` | — |
 
@@ -110,7 +133,7 @@ FLEX: 1 Выбор · 2 Контакт · 3 Причина · 4 Проверка
 | 26 | `stats` | Статистика (пока без выдуманных цифр) | Вкладка «Статистика» | `HomeScreens.statisticsScreen` | — | — |
 | 27 | `settings` | Настройки: баланс MAMA, история, разрешения, «Тестирование» | Вкладка «Настройки»; шестерёнка на приветствии | `HomeScreens.settingsScreen` | — | — |
 | — | `settings_testing` | Настройки → Тестирование (PHASE 2) | Только debug/pilot-сборка | `HomeScreens.testingScreen` | стиль `ds_test` | — |
-| 05 | `time_test` | Тестовая блокировка 15 минут: время (шаг 1 из 4) | «Тестовая блокировка · 15 минут» | `SetupScreens.timeScreen` | стиль `04-time.webp` | — |
+| 05 | `time_test` | Тестовая блокировка 15 минут: время (шаг 1 из 4) | «Тестовая блокировка · 15 минут» | `SetupScreens.timeScreen` | стиль `04-time.webp` | G1 (в стиле) |
 
 **Настройки → Тестирование** (только при `PILOT_TEST_CREDITS` /
 `TEST_MODE_ENABLED`):
@@ -144,7 +167,7 @@ FLEX: 1 Выбор · 2 Контакт · 3 Причина · 4 Проверка
 
 | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|
-| `test_session` | Идёт тестовая блокировка 15 минут | Тест запущен | `HomeScreens.sessionDashboard` | стиль `13-dashboard_active.webp` | — |
+| `test_session` | Идёт тестовая блокировка 15 минут | Тест запущен | `HomeScreens.sessionDashboard` | стиль `13-dashboard_active.webp` | G1 (в стиле) |
 | `checkout` | Оплата Restart / FLEX: «Оплатить с баланса MAMA», «+1 000 ₽ · тест» при нехватке | Restart, FLEX | `billing/Payments.kt` (`Checkout`) | — | — |
 | `return_notice` | «MAMA вернула тебе …» (возврат 50 %) | После фактического начисления | `CommitmentScreens.showReturnNoticeIfAny` | — | — |
 | `time_picker` | Цифровой выбор времени | Поля времени | `DigitalTimePicker` | — | — |

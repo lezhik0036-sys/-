@@ -242,11 +242,14 @@ class AutoNowDraftTest {
         val before = minute()
         val shown = texts(content(Robolectric.buildActivity(MainActivity::class.java).setup().get()))
         val after = minute()
-        assertTrue(shown.toString(), Texts.hhmm(before) in shown || Texts.hhmm(after) in shown)
-        assertFalse(shown.toString(), Texts.hhmm(old) in shown)
+        assertTrue(shown.toString(), shown.showsWindowFrom(before) || shown.showsWindowFrom(after))
+        assertFalse(shown.toString(), shown.showsWindowFrom(old))
 
         waiting(autoNow = false)
         val manual = texts(content(Robolectric.buildActivity(MainActivity::class.java).setup().get()))
-        assertTrue(manual.toString(), Texts.hhmm(old) in manual)
+        assertTrue(manual.toString(), manual.showsWindowFrom(old))
     }
+
+    /** The window is shown as "23:00 → 07:00". */
+    private fun List<String>.showsWindowFrom(start: LocalTime) = any { it.startsWith("${Texts.hhmm(start)} →") }
 }

@@ -136,6 +136,18 @@ internal fun stepPhrase(id: String, fallback: Placement): String = (MotivationCa
 /** "Сегодня в 23:00" → "сегодня в 23:00". */
 private fun String.lowerFirst() = replaceFirstChar { it.lowercase() }
 
+/** "8 ч", "8 ч 30 мин", "45 мин": the length of a window in one short line. */
+private fun shortDuration(d: Duration): String {
+    val total = maxOf(0L, d.toMinutes())
+    val h = total / 60
+    val m = total % 60
+    return when {
+        h == 0L -> "$m мин"
+        m == 0L -> "$h ч"
+        else -> "$h ч $m мин"
+    }
+}
+
 // ---------------- 1. Welcome ----------------
 
 internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
@@ -237,8 +249,8 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
         b.addView(d.titleBlock("Тестовый режим", "Блокировка начнётся сразу после запуска и продлится ровно 15 минут.", narrow = true))
         val from = LocalDateTime.ofInstant(now, zone).toLocalTime()
         val to = LocalDateTime.ofInstant(now + TestMode.DURATION, zone).toLocalTime()
-        b.addView(d.timeCard("Начало · сразу после запуска", Texts.time(now, zone), dayPart(from), partIcon(from), partScene(from), null), d.gap(26))
-        b.addView(d.timeCard("Окончание · через 15 минут", Texts.time(now + TestMode.DURATION, zone), dayPart(to), partIcon(to), partScene(to), null), d.gap(Spacing.GUTTER))
+        b.addView(d.timeCard("Начало · сразу после запуска", Texts.time(now, zone), dayPart(from), partIcon(from), partScene(from), onClick = null), d.gap(26))
+        b.addView(d.timeCard("Окончание · через 15 минут", Texts.time(now + TestMode.DURATION, zone), dayPart(to), partIcon(to), partScene(to), onClick = null), d.gap(Spacing.GUTTER))
         b.addView(d.noteCard("Только для тестирования: бесплатно, не входит в серии, не тратит FLEX-дни.", icon = Icon.FLASK), d.gap(Spacing.GUTTER))
     } else {
         b.addView(d.titleBlock(
@@ -256,21 +268,22 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
             plan != null -> Duration.between(plan.start, plan.end)
             else -> Duration.ZERO // not a window yet: the note below says so
         }
-        b.addView(d.timeCard("Начало", Texts.hhmm(start), dayPart(start), partIcon(start), partScene(start)) {
+        // MANUAL: the days of the first lock beside the times ("сегодня", "завтра").
+        val today = LocalDateTime.ofInstant(now, zone).toLocalDate()
+        fun day(at: java.time.Instant) = Texts.dayName(LocalDateTime.ofInstant(at, zone).toLocalDate(), today).lowerFirst()
+        b.addView(d.timeCard("Начало", Texts.hhmm(start), dayPart(start), partIcon(start), partScene(start), plan?.let { day(it.start) }) {
             DigitalTimePicker.show(this, "Начало блокировки", start) { pickStart(it); render() }
         }, d.gap(26))
-        b.addView(d.timeCard("Окончание", Texts.hhmm(end), dayPart(end), partIcon(end), partScene(end)) {
+        b.addView(d.timeCard("Окончание", Texts.hhmm(end), dayPart(end), partIcon(end), partScene(end), plan?.let { day(it.end) }) {
             DigitalTimePicker.show(this, "Окончание блокировки", end) { pickEnd(it); render() }
         }, d.gap(Spacing.GUTTER))
-        val rows = mutableListOf(d.infoRow(Icon.CLOCK, "${Texts.hhmm(start)} → ${Texts.hhmm(end)} · каждый день · ${Texts.flexDuration(length)}", strong = true))
-        when {
-            auto -> rows += d.infoRow(Icon.CALENDAR, "Начать после подтверждения", note = "Начало уточнится в момент запуска.")
-            plan != null -> rows += d.infoRow(
-                Icon.CALENDAR,
-                "Первая блокировка: ${Texts.firstLock(plan.start, zone, now).lowerFirst()} → ${Texts.firstLock(plan.end, zone, now).lowerFirst()}",
-            )
+        val rows = mutableListOf(d.infoRow(Icon.CLOCK, "${Texts.hhmm(start)} → ${Texts.hhmm(end)} · каждый день · ${shortDuration(length)}", strong = true))
+        if (auto) rows += d.infoRow(Icon.CALENDAR, "Начать после подтверждения", note = "Начало уточнится в момент запуска.")
+        val change = d.linkButton("Изменить") { pickZone() }.apply {
+            textSize = 14f
+            setPadding(d.dp(10), d.dp(8), d.dp(10), d.dp(8))
         }
-        rows += d.infoRow(Icon.GLOBE, "Часовой пояс: ${Texts.zone(zone)}", trailing = d.linkButton("Изменить") { pickZone() })
+        rows += d.infoRow(Icon.GLOBE, "Часовой пояс: ${Texts.zone(zone)}", trailing = change)
         b.addView(d.rowsCard(rows), d.gap(Spacing.GUTTER))
         if (start == end) {
             b.addView(d.noteCard("Выбери другое время окончания.", "Начало и окончание совпадают", NoteTone.CARE, Icon.CLOCK), d.gap(Spacing.GUTTER))

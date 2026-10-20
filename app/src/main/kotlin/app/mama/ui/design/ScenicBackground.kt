@@ -281,15 +281,19 @@ internal object ScenePainter {
             SceneLayout.HEADER, SceneLayout.HERO -> {
                 val hero = layout == SceneLayout.HERO
                 val H = w * if (hero) 1.22f else 1.0f
-                // Photo: its sun right of the subtitle (wizard) or under the title (home).
-                if (photo != null) drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, if (hero) 0.52f else 0.42f) else landscape(canvas, w, H, l, H)
+                // Photo: its sun right of the subtitle (wizard) or under the subtitle (home, a little closer).
+                if (photo != null) {
+                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, if (hero) 0.58f else 0.42f, if (hero) 1.12f else 1f)
+                } else {
+                    landscape(canvas, w, H, l, H)
+                }
                 // Fade into the page under the cards, then the page itself.
                 val fade = if (hero) 0.84f else if (photo != null) 0.62f else 0.76f
                 gradientRect(canvas, 0f, H * fade, w, H, alpha(base, 0), base, mid = alpha(base, 170), midAt = 0.5f)
                 p.color = base
                 canvas.drawRect(0f, H, w, h, p)
                 if (photo != null) {
-                    textVeil(canvas, w, w * if (hero) 0.475f else 0.51f, w * 0.12f, base)
+                    textVeil(canvas, w, w * if (hero) 0.52f else 0.55f, w * 0.12f, base)
                 } else {
                     titleVeil(canvas, w, H * if (hero) 0.40f else 0.82f, base)
                     grain(canvas, w, h)
@@ -889,8 +893,8 @@ internal object ScenePainter {
         val layer = c.saveLayer(0f, 0f, w, bottom, null)
         p.maskFilter = null
         p.shader = LinearGradient(
-            0f, 0f, w, 0f, intArrayOf(alpha(base, 200), alpha(base, 150), alpha(base, 0), alpha(base, 0)),
-            floatArrayOf(0f, 0.5f, 0.85f, 1f), Shader.TileMode.CLAMP,
+            0f, 0f, w, 0f, intArrayOf(alpha(base, 215), alpha(base, 175), alpha(base, 0), alpha(base, 0)),
+            floatArrayOf(0f, 0.55f, 0.9f, 1f), Shader.TileMode.CLAMP,
         )
         c.drawRect(0f, 0f, w, bottom, p)
         p.shader = LinearGradient(0f, textBottom, 0f, bottom, Color.BLACK, Color.TRANSPARENT, Shader.TileMode.CLAMP)
@@ -913,12 +917,13 @@ internal object ScenePainter {
 
     /**
      * A production photo covering the box ([left], [top], [bw] × [bh]),
-     * placed so that its sun lands at ([tx], [ty]) of the box as far as the
-     * photo reaches. Scaled as a whole, never stretched or redrawn.
+     * [zoom] times closer, placed so that its sun lands at ([tx], [ty]) of
+     * the box as far as the photo reaches. Scaled as a whole, never
+     * stretched or redrawn.
      */
-    private fun drawPhoto(c: Canvas, bitmap: Bitmap, scenery: Scenery, left: Float, top: Float, bw: Float, bh: Float, tx: Float, ty: Float) {
+    private fun drawPhoto(c: Canvas, bitmap: Bitmap, scenery: Scenery, left: Float, top: Float, bw: Float, bh: Float, tx: Float, ty: Float, zoom: Float = 1f) {
         val (fx, fy) = focus(scenery)
-        val scale = max(bw / bitmap.width, bh / bitmap.height)
+        val scale = max(bw / bitmap.width, bh / bitmap.height) * zoom
         val dw = bitmap.width * scale
         val dh = bitmap.height * scale
         val x = min(left, max(left + bw - dw, left + tx * bw - fx * dw))

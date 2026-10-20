@@ -13,6 +13,7 @@ import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
 import app.mama.core.TrustedContact
+import app.mama.core.Wallet
 import app.mama.lock.LockActions
 import app.mama.lock.LockModel
 import app.mama.lock.LockScreenView
@@ -49,6 +50,9 @@ object Previews {
     )
 
     private fun scheduledCommitment(now: Instant) = Commitment("preview", 5_000_00, now, CommitmentState.SCHEDULED)
+
+    /** A sample balance of MAMA, so "Цена слова" shows its usual state. */
+    private val sampleWallet = Wallet(availableKop = 6_000_00)
 
     fun render(a: MainActivity, name: String): Pair<View, Boolean> {
         // UI v1 foundation (PHASE 1): components on sample screens.
@@ -102,7 +106,7 @@ object Previews {
                 series(7, SeriesStatus.COMPLETED),
                 Commitment("preview", 5_000_00, now.minus(7, ChronoUnit.DAYS), CommitmentState.RELEASED, now),
             )
-            "commitment" -> { a.commitmentKop = 5_000_00; a.choice = Choice.THREE; a.commitmentScreen(false, SeriesKind.THREE) }
+            "commitment" -> { a.commitmentKop = 500_00; a.choice = Choice.SEVEN; a.commitmentScreen(false, SeriesKind.SEVEN, sampleWallet) }
             "restart_time" -> {
                 // Restart 7/7 after a failure at 15:46: a new time draft from "now" (16:20).
                 a.restartFlow = true
@@ -111,7 +115,7 @@ object Previews {
                 a.end = LocalTime.of(0, 20)
                 a.timeScreen()
             }
-            "restart_commitment" -> { a.commitmentKop = null; a.commitmentScreen(true, SeriesKind.THREE) }
+            "restart_commitment" -> { a.commitmentKop = null; a.commitmentScreen(true, SeriesKind.THREE, sampleWallet) }
             "flex" -> a.flexDashboard(FlexPackage("p", now.minus(6, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 5, successful = 5)) { LockState.Free }
             "flex_plan" -> { a.flexStartNow = false; a.flexPlannerScreen(FlexPackage("p", now, GrantSource.TEST_NO_PAYMENT)) }
             "stats" -> { a.tab = 1; a.statisticsScreen() }

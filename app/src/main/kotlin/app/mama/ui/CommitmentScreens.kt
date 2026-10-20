@@ -50,9 +50,8 @@ private fun minAmountKop(restart: Boolean, kind: SeriesKind): Long =
  * true). Optional: "Продолжить без цены слова" starts the series without it.
  * Never added to the Restart price.
  */
-internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): Pair<View, Boolean> {
+internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind, wallet: Wallet = Mama.wallet(this)): Pair<View, Boolean> {
     val d = design
-    val wallet = Mama.wallet(this)
     // While editing a scheduled series its own reserve can be reused: it comes back in full first.
     val ownReserve = if (editing) scheduledReserveOfCurrentSeries(wallet) else 0L
     val usable = wallet.availableKop + ownReserve

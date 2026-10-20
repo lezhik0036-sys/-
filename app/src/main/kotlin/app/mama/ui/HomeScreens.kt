@@ -95,7 +95,7 @@ private fun MainActivity.countdownRow(state: () -> LockState, zone: ZoneId, wait
 }
 
 /** Countdown and the daily window in one card. */
-private fun MainActivity.timeCard(state: () -> LockState, window: app.mama.core.DailyWindow, waiting: String = "До начала блокировки"): View {
+private fun MainActivity.lockTimeCard(state: () -> LockState, window: app.mama.core.DailyWindow, waiting: String = "До начала блокировки"): View {
     val d = design
     val windowRow = d.valueRow(
         Icon.CALENDAR, "Окно блокировки", "${Texts.hhmm(window.start)} → ${Texts.hhmm(window.end)}",
@@ -138,7 +138,7 @@ internal fun MainActivity.seriesDashboard(
         ), d.gap(Spacing.GUTTER))
         b.addView(d.secondaryButton("Исправить защиту", Icon.SHIELD) { startSetupAll(Protection.strict) }, d.gap(10))
     }
-    b.addView(timeCard(state, series.window), d.gap(Spacing.GUTTER))
+    b.addView(lockTimeCard(state, series.window), d.gap(Spacing.GUTTER))
     b.addView(d.summaryCard(null, seriesDetails(series, sampleCommitment, sampleRestart)), d.gap(Spacing.GUTTER))
     val placement = if (series.committed) Placement.ACTIVE else Placement.SCHEDULED
     val phrase = MotivationRotation.of(this).phrase(placement, "${series.id}:${series.status}:$day").text
@@ -154,7 +154,8 @@ internal fun MainActivity.seriesDashboard(
         ), d.gap(16))
     }
     val scenery = if (series.status == SeriesStatus.SCHEDULED) Scenery.EVENING else Scenery.MORNING
-    val header = homeHeader(if (series.committed) "$day из $n" else null, if (series.committed) day else 0, n)
+    // Days as segments once the series runs; before that only the wordmark.
+    val header = if (series.committed) homeHeader("$day из $n", day, n) else homeHeader(null, 0, 0)
     return v1Frame(scenery, header, b, null, nav(), SceneLayout.HERO)
 }
 
@@ -208,12 +209,12 @@ private fun MainActivity.needsAttentionScreen(
 ): Pair<View, Boolean> {
     val d = design
     val b = d.body(22)
-    b.addView(d.titleBlock(
-        "Серия не началась",
+    b.addView(d.titleBlock("Серия не началась", lead = "MAMA не смогла включить защиту.", narrow = true))
+    heroSpace(b, 120)
+    b.addView(d.noteCard(
         "Поэтому день не засчитан, ничего не списано и ничего не потеряно. Блокировка не включится сама — только после того, как ты подтвердишь новый запуск.",
-        lead = "MAMA не смогла включить защиту.",
-    ))
-    heroSpace(b, 96)
+        "Ничего не потеряно", icon = Icon.HEART,
+    ), d.gap(Spacing.GUTTER))
     if (missing.isNotEmpty()) {
         b.addView(d.noteCard(missingList(missing), "Не работает защита", NoteTone.CARE, Icon.SHIELD), d.gap(Spacing.GUTTER))
         b.addView(d.primaryButton("Исправить защиту", arrow = false) { startSetupAll(Protection.strict) }, d.gap(14))
@@ -237,7 +238,7 @@ private fun MainActivity.needsAttentionScreen(
         d.text("каждый день · ${window.zone.id}", Typo.CAPTION, Palette.InkMuted),
     ), d.gap(18))
     b.addView(d.summaryCard(null, seriesDetails(series, sampleCommitment, sampleRestart)), d.gap(Spacing.GUTTER))
-    return v1Frame(Scenery.EVENING, homeHeader(null, 0, series.kind.periods), b, null, nav(), SceneLayout.HERO)
+    return v1Frame(Scenery.EVENING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO)
 }
 
 private fun MainActivity.relaunch() {
