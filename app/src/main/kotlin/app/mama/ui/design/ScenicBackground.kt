@@ -17,7 +17,6 @@ import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
-import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
@@ -31,21 +30,25 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-/** Which landscape a v1 screen or card shows (DESIGN_SYSTEM_V1 §7). */
+/**
+ * Which landscape a v1 screen or card shows (DESIGN_SYSTEM_V1 §7). Each is a
+ * production photo in `assets/scenes/v1/<name>.webp`; without the file the
+ * landscape is painted in code (fallback).
+ */
 enum class Scenery {
-    /** Warm sunrise: setup steps, review. */
+    /** Quiet alpine lake at sunrise: ACTIVE and the lock, calm states, the first days of a series. */
     DAWN,
 
-    /** Brighter morning: home of a running series. */
+    /** Lake and mountains in the morning: home, welcome, a positive start. */
     MORNING,
 
-    /** Quiet: almost only sky and leaves (settings, statistics, long lists). */
+    /** Alpine valley at sunrise: the setup wizard (series, time, contact, «Цена слова», review). */
     DAY,
 
-    /** Soft twilight, still light: the lock at night. */
+    /** Golden sunrise over the lake: a scheduled series, waiting for the start, warm evening states. */
     EVENING,
 
-    /** Sunrise with a road up the hill: failure / recovery, success. */
+    /** Golden path to the lake: a series ended early, Restart, a second chance. */
     RECOVERY,
 }
 
@@ -68,12 +71,12 @@ enum class SceneLayout {
 }
 
 /**
- * The one background of UI v1. Phase 1 paints a light landscape in code
- * (controlled gradients and soft shapes: sky, sun, hazy mountains, lake,
- * hills, conifers, meadow, a leafy branch). A production image replaces it
- * without any layout change: put `assets/scenes/v1/<scenery>.webp` (or
- * `.jpg`), e.g. `scenes/v1/dawn.webp`; it is drawn in the same place with
- * the same fades. Never a screenshot of a reference.
+ * The one background of UI v1. Draws the production photo of the scenery
+ * (`assets/scenes/v1/<scenery>.webp`), cropped around its sun for the
+ * layout, with only light ivory veils where text sits; the photo itself is
+ * never redrawn or darkened. Without the file, a light landscape is painted
+ * in code instead (fallback), in the same place with the same fades. Never
+ * a screenshot of a reference.
  *
  * Rendered once per size into a cached bitmap, then only drawn.
  */
@@ -125,15 +128,21 @@ class ScenicBackground(
 
 /** Rendered scenes, by scenery, layout, base colour and size. */
 internal object SceneCache {
-    private val cache = object : LruCache<String, Bitmap>(24 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(32 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
     }
-    private val photos = HashMap<Scenery, Bitmap?>()
+
+    /** Decoded production photos (≈ 6 MB each): the last few used. */
+    private val photos = object : LruCache<Scenery, Bitmap>(20 * 1024) {
+        override fun sizeOf(key: Scenery, value: Bitmap) = value.byteCount / 1024
+    }
+    private var bundled: Map<Scenery, String>? = null
 
     @Synchronized
     fun get(context: Context, scenery: Scenery, layout: SceneLayout, base: Int, w: Int, h: Int, vignette: Float = 0.42f): Bitmap? {
-        // Screen backgrounds are soft: half resolution is enough. Cards are small: full.
-        val q = if (layout == SceneLayout.CARD_BOTTOM || layout == SceneLayout.CARD_RIGHT) 1f else 0.5f
+        // A painted screen background is soft: half resolution is enough. Photos and cards: full.
+        val photo = file(context, scenery) != null
+        val q = if (photo || layout == SceneLayout.CARD_BOTTOM || layout == SceneLayout.CARD_RIGHT) 1f else 0.5f
         val bw = max(1, (w * q).roundToInt())
         val bh = max(1, (h * q).roundToInt())
         val key = "$scenery/$layout/$base/$vignette/$bw x $bh"
@@ -147,12 +156,25 @@ internal object SceneCache {
         return bitmap
     }
 
-    /** A production image for [scenery], if one is bundled. */
-    private fun photo(context: Context, scenery: Scenery): Bitmap? = photos.getOrPut(scenery) {
-        val name = scenery.name.lowercase()
-        listOf("webp", "jpg", "png").firstNotNullOfOrNull { ext ->
-            runCatching { context.assets.open("scenes/v1/$name.$ext").use { BitmapFactory.decodeStream(it) } }.getOrNull()
+    /** The production photo of [scenery], if one is bundled. */
+    private fun photo(context: Context, scenery: Scenery): Bitmap? {
+        photos.get(scenery)?.let { return it }
+        val path = file(context, scenery) ?: return null
+        val bitmap = runCatching { context.assets.open(path).use { BitmapFactory.decodeStream(it) } }.getOrNull() ?: return null
+        photos.put(scenery, bitmap)
+        return bitmap
+    }
+
+    /** `scenes/v1/<scenery>.webp` (or `.jpg`, `.png`), looked up once. */
+    private fun file(context: Context, scenery: Scenery): String? {
+        val files = bundled ?: run {
+            val names = runCatching { context.assets.list("scenes/v1")?.toSet() }.getOrNull().orEmpty()
+            Scenery.entries.mapNotNull { s ->
+                val name = s.name.lowercase()
+                listOf("webp", "jpg", "png").map { "$name.$it" }.firstOrNull { it in names }?.let { s to "scenes/v1/$it" }
+            }.toMap().also { bundled = it }
         }
+        return files[scenery]
     }
 }
 
@@ -259,13 +281,17 @@ internal object ScenePainter {
             SceneLayout.HEADER, SceneLayout.HERO -> {
                 val hero = layout == SceneLayout.HERO
                 val H = w * if (hero) 1.22f else 1.0f
-                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, H) else landscape(canvas, w, H, l, H)
+                // Photo: its sun right of the subtitle (wizard) or under the title (home).
+                if (photo != null) drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, if (hero) 0.52f else 0.42f) else landscape(canvas, w, H, l, H)
                 // Fade into the page under the cards, then the page itself.
-                gradientRect(canvas, 0f, H * (if (hero) 0.84f else 0.76f), w, H, alpha(base, 0), base, mid = alpha(base, 170), midAt = 0.5f)
+                val fade = if (hero) 0.84f else if (photo != null) 0.62f else 0.76f
+                gradientRect(canvas, 0f, H * fade, w, H, alpha(base, 0), base, mid = alpha(base, 170), midAt = 0.5f)
                 p.color = base
                 canvas.drawRect(0f, H, w, h, p)
-                titleVeil(canvas, w, H * if (hero) 0.40f else 0.82f, base)
-                if (photo == null) {
+                if (photo != null) {
+                    textVeil(canvas, w, w * if (hero) 0.475f else 0.51f, w * 0.12f, base)
+                } else {
+                    titleVeil(canvas, w, H * if (hero) 0.40f else 0.82f, base)
                     grain(canvas, w, h)
                     leaves(canvas, w, H * 0.34f)
                     bokeh(canvas, w, h)
@@ -273,7 +299,12 @@ internal object ScenePainter {
             }
             SceneLayout.FULL -> {
                 val H = h * 0.86f
-                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, h) else landscape(canvas, w, H, l, h)
+                if (photo != null) {
+                    val (fx, fy) = focus(scenery)
+                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, h, fx, fy)
+                } else {
+                    landscape(canvas, w, H, l, h)
+                }
                 // Light veils: the title at the top and the cards below stay readable.
                 gradientRect(canvas, 0f, 0f, w, H * 0.40f, alpha(base, 150), alpha(base, 0))
                 gradientRect(canvas, 0f, H * 0.70f, w, h, alpha(base, 0), alpha(base, 200), mid = alpha(base, 120), midAt = 0.5f)
@@ -287,10 +318,14 @@ internal object ScenePainter {
                 // A band of landscape along the bottom, its height set by the card width, so taller text never runs into it.
                 val band = min(h * 0.6f, w * 0.50f)
                 val H = band * 1.9f
-                canvas.save()
-                canvas.translate(0f, h + band * 0.1f - H)
-                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, w, H) else landscape(canvas, w, H, l, H)
-                canvas.restore()
+                if (photo != null) {
+                    drawPhoto(canvas, photo, scenery, 0f, h - band, w, band, focus(scenery).first, 0.45f)
+                } else {
+                    canvas.save()
+                    canvas.translate(0f, h + band * 0.1f - H)
+                    landscape(canvas, w, H, l, H)
+                    canvas.restore()
+                }
                 p.color = base
                 canvas.drawRect(0f, 0f, w, h - band, p)
                 gradientRect(canvas, 0f, h - band - 1f, w, h - band * 0.55f, base, alpha(base, 0), mid = alpha(base, 150), midAt = 0.45f)
@@ -299,10 +334,14 @@ internal object ScenePainter {
                 // Landscape on the right [vignette] of the card; the text side stays the card colour.
                 val bw = w * vignette
                 val H = max(h * 1.5f, bw * 0.95f)
-                canvas.save()
-                canvas.translate(w - bw, h * 1.12f - H)
-                if (photo != null) drawPhoto(canvas, photo, 0f, 0f, bw, H) else landscape(canvas, bw, H, l, H)
-                canvas.restore()
+                if (photo != null) {
+                    drawPhoto(canvas, photo, scenery, w - bw, 0f, bw, h, 0.6f, 0.42f)
+                } else {
+                    canvas.save()
+                    canvas.translate(w - bw, h * 1.12f - H)
+                    landscape(canvas, bw, H, l, H)
+                    canvas.restore()
+                }
                 p.color = base
                 canvas.drawRect(0f, 0f, w - bw, h, p)
                 p.shader = LinearGradient(w - bw - 1f, 0f, w - bw * 0.5f, 0f, base, alpha(base, 0), Shader.TileMode.CLAMP)
@@ -840,16 +879,70 @@ internal object ScenePainter {
         c.restoreToCount(layer)
     }
 
-    /** A production image in the landscape box: width-filling, top-aligned (centre-cropped if taller boxes need it). */
-    private fun drawPhoto(c: Canvas, bitmap: Bitmap, left: Float, top: Float, w: Float, H: Float) {
-        val scale = max(w / bitmap.width, H / bitmap.height)
-        val sw = min(bitmap.width.toFloat(), w / scale)
-        val sh = min(bitmap.height.toFloat(), H / scale)
-        val sl = ((bitmap.width - sw) / 2f).roundToInt()
-        val src = Rect(sl, 0, (sl + sw).roundToInt(), sh.roundToInt())
+    /**
+     * Light ivory veil behind the title and subtitle of a photo screen:
+     * milky on the left where the text is, clear over the sun on the right,
+     * fading out below [textBottom]; and a light band under the top bar.
+     */
+    private fun textVeil(c: Canvas, w: Float, textBottom: Float, fade: Float, base: Int) {
+        val bottom = textBottom + fade
+        val layer = c.saveLayer(0f, 0f, w, bottom, null)
         p.maskFilter = null
+        p.shader = LinearGradient(
+            0f, 0f, w, 0f, intArrayOf(alpha(base, 200), alpha(base, 150), alpha(base, 0), alpha(base, 0)),
+            floatArrayOf(0f, 0.5f, 0.85f, 1f), Shader.TileMode.CLAMP,
+        )
+        c.drawRect(0f, 0f, w, bottom, p)
+        p.shader = LinearGradient(0f, textBottom, 0f, bottom, Color.BLACK, Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        p.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+        c.drawRect(0f, 0f, w, bottom, p)
+        p.xfermode = null
+        p.shader = null
+        c.restoreToCount(layer)
+        gradientRect(c, 0f, 0f, w, w * 0.30f, alpha(base, 110), alpha(base, 0))
+    }
+
+    /** Where the sun is on the bundled production photo of [s] (fractions of its width and height). */
+    private fun focus(s: Scenery): Pair<Float, Float> = when (s) {
+        Scenery.DAWN -> 0.26f to 0.37f
+        Scenery.MORNING -> 0.22f to 0.35f
+        Scenery.DAY -> 0.76f to 0.365f
+        Scenery.EVENING -> 0.78f to 0.33f
+        Scenery.RECOVERY -> 0.16f to 0.29f
+    }
+
+    /**
+     * A production photo covering the box ([left], [top], [bw] × [bh]),
+     * placed so that its sun lands at ([tx], [ty]) of the box as far as the
+     * photo reaches. Scaled as a whole, never stretched or redrawn.
+     */
+    private fun drawPhoto(c: Canvas, bitmap: Bitmap, scenery: Scenery, left: Float, top: Float, bw: Float, bh: Float, tx: Float, ty: Float) {
+        val (fx, fy) = focus(scenery)
+        val scale = max(bw / bitmap.width, bh / bitmap.height)
+        val dw = bitmap.width * scale
+        val dh = bitmap.height * scale
+        val x = min(left, max(left + bw - dw, left + tx * bw - fx * dw))
+        val y = min(top, max(top + bh - dh, top + ty * bh - fy * dh))
+        c.save()
+        c.clipRect(left, top, left + bw, top + bh)
+        p.maskFilter = null
+        p.shader = null
         p.isFilterBitmap = true
-        c.drawBitmap(bitmap, src, RectF(left, top, left + w, top + H), p)
+        val source = reduced(bitmap, dw)
+        c.drawBitmap(source, null, RectF(x, y, x + dw, y + dh), p)
+        if (source !== bitmap) source.recycle()
+        c.restore()
+    }
+
+    /** Halves [bitmap] while it stays at least [width] wide: small cards get a clean downscale, not aliasing. */
+    private fun reduced(bitmap: Bitmap, width: Float): Bitmap {
+        var b = bitmap
+        while (b.width / 2f >= width && b.width >= 4) {
+            val half = Bitmap.createScaledBitmap(b, b.width / 2, b.height / 2, true)
+            if (b !== bitmap) b.recycle()
+            b = half
+        }
+        return b
     }
 
     /** The same pseudo-random sequence on every device, so a scene never changes between draws. */

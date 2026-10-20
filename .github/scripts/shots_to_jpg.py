@@ -1,7 +1,9 @@
 """Converts shots/*.png to compact JPGs (720 px wide) in shots_jpg/.
 
-UI v1 example screens also get a side-by-side image with their approved
-reference from docs/design-reference/ (vs-<screen>.jpg), for visual review.
+UI v1 screens also get a side-by-side image with their approved reference
+from docs/design-reference/ (vs-<screen>.jpg), and screens on a production
+scene a side-by-side image with that scene asset (scene-<screen>.jpg), for
+visual review.
 """
 import glob
 import os
@@ -10,11 +12,37 @@ from PIL import Image
 
 # Screenshot key -> reference file it should be compared with.
 REFERENCES = {
+    "dashboard_active": "13-dashboard_active.webp",
+    "time": "04-time.webp",
+    "contact": "06-contact.webp",
+    "commitment": "08-commitment.webp",
+    "review": "09-review.webp",
     "ds_light": "09-review.webp",
     "ds_scenic": "13-dashboard_active.webp",
     "ds_recovery": "20-failure.webp",
     "ds_lock_shell": "16-lock.webp",
 }
+
+# Screenshot key -> production scene it is drawn on (app/src/main/assets/scenes/v1/).
+SCENES = {
+    "dashboard_active": "morning",
+    "time": "day",
+    "dashboard": "evening",
+    "ds_lock_shell": "dawn",
+    "ds_recovery": "recovery",
+}
+
+
+def side_by_side(left_path, img, out):
+    left = Image.open(left_path).convert("RGB")
+    h = img.height
+    left = left.resize((int(left.width * h / left.height), h), Image.LANCZOS)
+    pair = Image.new("RGB", (left.width + img.width + 24, h), (255, 255, 255))
+    pair.paste(left, (0, 0))
+    pair.paste(img, (left.width + 24, 0))
+    pair.save(out, quality=84, optimize=True)
+    print(out, os.path.getsize(out))
+
 
 os.makedirs("shots_jpg", exist_ok=True)
 for path in sorted(glob.glob("shots/*.png")):
@@ -30,12 +58,8 @@ for path in sorted(glob.glob("shots/*.png")):
     ref_name = REFERENCES.get(key)
     ref_path = os.path.join("docs", "design-reference", ref_name) if ref_name else None
     if ref_path and os.path.exists(ref_path):
-        ref = Image.open(ref_path).convert("RGB")
-        h = img.height
-        ref = ref.resize((int(ref.width * h / ref.height), h), Image.LANCZOS)
-        pair = Image.new("RGB", (ref.width + img.width + 24, h), (255, 255, 255))
-        pair.paste(ref, (0, 0))
-        pair.paste(img, (ref.width + 24, 0))
-        cmp_out = os.path.join("shots_jpg", "vs-" + key + ".jpg")
-        pair.save(cmp_out, quality=84, optimize=True)
-        print(cmp_out, os.path.getsize(cmp_out))
+        side_by_side(ref_path, img, os.path.join("shots_jpg", "vs-" + key + ".jpg"))
+    scene = SCENES.get(key)
+    scene_path = os.path.join("app", "src", "main", "assets", "scenes", "v1", scene + ".webp") if scene else None
+    if scene_path and os.path.exists(scene_path):
+        side_by_side(scene_path, img, os.path.join("shots_jpg", "scene-" + key + ".jpg"))

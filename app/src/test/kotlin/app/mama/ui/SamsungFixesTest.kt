@@ -180,7 +180,7 @@ class SamsungFixesTest {
 
         // Confirmed: SCHEDULED with the chosen time and the failed series' length, fixed from now on.
         find(content(b), "Далее")!!.performClick()
-        find(content(b), "Пропустить")!!.performClick()
+        find(content(b), "Продолжить без цены слова")!!.performClick()
         find(dialogRoot(), "Оплатить с баланса MAMA")!!.performClick()
         val restarted = Mama.series(context)!!
         assertEquals(SeriesStatus.SCHEDULED, restarted.status)
@@ -252,7 +252,7 @@ class SamsungFixesTest {
         find(content(a), "Начать заново")!!.performClick()
         a.pickStart(LocalTime.now(zone).plusHours(2).withSecond(0).withNano(0))
         find(content(a), "Далее")!!.performClick()
-        find(content(a), "Пропустить")!!.performClick()
+        find(content(a), "Продолжить без цены слова")!!.performClick()
         val pay = find(dialogRoot(), "Оплатить с баланса MAMA")
         assertNotNull("pay from balance is offered", pay)
         pay!!.performClick()
@@ -277,7 +277,7 @@ class SamsungFixesTest {
         find(content(a), "Начать заново")!!.performClick()
         a.pickStart(LocalTime.now(zone).plusHours(2).withSecond(0).withNano(0))
         find(content(a), "Далее")!!.performClick()
-        find(content(a), "Пропустить")!!.performClick()
+        find(content(a), "Продолжить без цены слова")!!.performClick()
         val first = texts(dialogRoot())
         assertTrue(first.toString(), "На балансе MAMA недостаточно средств." in first)
         assertNull(find(dialogRoot(), "Оплатить с баланса MAMA"))

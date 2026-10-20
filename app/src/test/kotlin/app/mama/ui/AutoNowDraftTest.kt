@@ -209,7 +209,7 @@ class AutoNowDraftTest {
         ageDraft(a, 4) // opened at 16:48, paid at 16:52
         val stale = a.start
         find(content(a), "Далее")!!.performClick()
-        find(content(a), "Пропустить")!!.performClick()
+        find(content(a), "Продолжить без цены слова")!!.performClick()
         val from = Mama.trustedNow(context)
         val before = minute()
         find(ShadowDialog.getLatestDialog()!!.window!!.decorView, "Оплатить с баланса MAMA")!!.performClick()

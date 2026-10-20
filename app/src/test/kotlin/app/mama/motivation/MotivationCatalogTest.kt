@@ -106,6 +106,17 @@ class MotivationCatalogTest {
     }
 
     @Test
+    fun `phrases shown on the setup and recovery screens keep their ids`() {
+        mapOf(
+            "sleep-13" to "Ночь — время восстановить себя.",
+            "confidence-13" to "Когда есть опора, держаться курса легче.",
+            "discipline-13" to "Когда решение имеет вес, его легче удержать.",
+            "long-term-10" to "Ты не ограничиваешь себя — ты выбираешь себя.",
+            "recovery-02" to "Одна попытка ничего не решает.",
+        ).forEach { (id, text) -> assertEquals(id, text, MotivationCatalog.byId(id)?.text) }
+    }
+
+    @Test
     fun `rotation survives a damaged stored value`() {
         val store = MemoryStore().apply { map["slot.LOCK_DAY"] = "garbage"; map["recent"] = ",,," }
         val p = MotivationRotation(store).phrase(Placement.LOCK_DAY, "x")

@@ -284,7 +284,7 @@ object DesignPreviews {
     // ---------------- sceneries ----------------
 
     private fun scenes(k: DesignKit) = page(k, "Фоны") {
-        addView(k.text("Временные фоны фазы 1 — нарисованы в коде. Замена на фото без изменения разметки.", Typo.LABEL, Palette.InkMuted))
+        addView(k.text("Production-фоны MAMA (assets/scenes/v1). Если файла нет, фон рисуется в коде — запасной вариант.", Typo.LABEL, Palette.InkMuted))
         Scenery.entries.chunked(2).forEachIndexed { r, line ->
             val row = k.row().apply { gravity = Gravity.TOP }
             line.forEachIndexed { i, s ->

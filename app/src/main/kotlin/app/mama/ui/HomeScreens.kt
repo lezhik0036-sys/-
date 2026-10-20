@@ -2,7 +2,6 @@ package app.mama.ui
 
 import android.view.Gravity
 import android.view.View
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
@@ -19,86 +18,90 @@ import app.mama.core.Series
 import app.mama.core.SeriesStatus
 import app.mama.core.Session
 import app.mama.core.StandardRules
+import app.mama.motivation.MotivationRotation
+import app.mama.motivation.Placement
 import app.mama.platform.Mama
 import app.mama.platform.Protection
+import app.mama.ui.design.NoteTone
+import app.mama.ui.design.Palette
+import app.mama.ui.design.QuoteAccent
+import app.mama.ui.design.SceneLayout
+import app.mama.ui.design.Scenery
+import app.mama.ui.design.Spacing
+import app.mama.ui.design.SummaryItem
+import app.mama.ui.design.Typo
 import java.time.Duration
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
-// Dashboards (night), statistics/settings tabs, failure, success, FLEX.
+// Dashboards (UI v1, reference 13), statistics/settings tabs, failure, success, FLEX.
 
-/** Top bar of night dashboards: MAMA wordmark, settings gear (reference screen 7). */
-private fun MainActivity.nightTop(): View = FrameLayout(this).apply {
-    val k = nightKit
-    addView(k.text("MAMA", MamaType.WORDMARK, MamaColors.OnNight), FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-    addView(FrameLayout(context).apply {
-        background = k.pressable(k.oval(android.graphics.Color.TRANSPARENT), 22)
-        addView(k.icon(Icon.GEAR, MamaColors.OnNight, 24), FrameLayout.LayoutParams(k.dp(24), k.dp(24), Gravity.CENTER))
-        isClickable = true
-        contentDescription = "Настройки"
-        setOnClickListener { tab = 2; render() }
-    }, FrameLayout.LayoutParams(k.dp(44), k.dp(44), Gravity.END or Gravity.CENTER_VERTICAL))
+private fun MainActivity.nav() = design.bottomNav(tab) { tab = it; editSaved = false; render() }
+
+/** Top of a dashboard: M A M A, an optional "N из M" and the days as segments. */
+private fun MainActivity.homeHeader(counter: String?, done: Int, total: Int): View = design.column().apply {
+    addView(design.topBar(null, counter))
+    if (total > 0) addView(design.segments(done, total), design.gap(4).apply { leftMargin = design.dp(Spacing.SCREEN); rightMargin = design.dp(Spacing.SCREEN) })
 }
 
-private fun MainActivity.nav() = kit.bottomNav(tab) { tab = it; editSaved = false; render() }
+/** Room under the title where the landscape shows (reference 13). */
+private fun MainActivity.heroSpace(b: LinearLayout, heightDp: Int = 150) = b.addView(View(this), LinearLayout.LayoutParams(1, design.dp(heightDp)))
+
+private fun countdownLabel(st: LockState, waiting: String) = when (st) {
+    is LockState.Waiting -> waiting
+    is LockState.Locked -> "До конца блокировки"
+    is LockState.EmergencyPass -> "Блокировка вернётся через"
+    LockState.Free -> "Следующий период планируется…"
+}
 
 /**
- * Countdown card: caption, then HH : MM : SS with ЧАСОВ / МИНУТ / СЕКУНД
- * labels. Re-reads [state] every second; when the state kind changes
- * (waiting → locked …) the whole screen is redrawn.
+ * Time to the start or the end of the lock, in hours and minutes, with the
+ * real moment as a note ("Сегодня в 23:00"). Re-reads [state] every second;
+ * when the state kind changes (waiting → locked …) the whole screen is redrawn.
  */
-private fun MainActivity.countdownCard(b: LinearLayout, state: () -> LockState, waiting: String) =
-    countdownCard(b, state) { waiting }
-
-private fun MainActivity.countdownCard(b: LinearLayout, state: () -> LockState, waiting: (LockState.Waiting) -> String) {
-    val k = nightKit
-    val caption = k.text("", MamaType.CAPTION, MamaColors.OnNightMuted, center = true)
-    val digits = listOf(
-        k.text("00", MamaType.DIGITS_L, MamaColors.OnNight, center = true),
-        k.text("00", MamaType.DIGITS_L, MamaColors.OnNight, center = true),
-        k.text("00", MamaType.DIGITS_L, MamaColors.OnNight, center = true),
-    )
-    val card = k.card(18, 20)
-    card.addView(caption, k.fill())
-    val labels = k.row()
-    val nums = k.row().apply { gravity = Gravity.CENTER }
-    listOf("ЧАСОВ", "МИНУТ", "СЕКУНД").forEachIndexed { i, l ->
-        labels.addView(k.text(l, MamaType.OVERLINE, MamaColors.OnNightMuted, center = true).apply { gravity = Gravity.CENTER }, k.weight())
-        if (i > 0) nums.addView(k.text(":", MamaType.DIGITS_L, MamaColors.OnNightMuted).apply { gravity = Gravity.CENTER }, k.wrap())
-        nums.addView(digits[i].apply { gravity = Gravity.CENTER }, k.weight())
+private fun MainActivity.countdownRow(state: () -> LockState, zone: ZoneId, waiting: String = "До начала блокировки"): View {
+    val d = design
+    val now = Mama.trustedNow(this)
+    val first = state()
+    val note = when (first) {
+        is LockState.Waiting -> Texts.firstLock(first.startsAt, zone, now)
+        is LockState.Locked -> "До ${Texts.time(first.endsAt, zone)}"
+        is LockState.EmergencyPass -> "Экстренный доступ до ${Texts.time(first.until, zone)}"
+        LockState.Free -> null
     }
-    card.addView(labels, k.gap(14))
-    card.addView(nums, k.gap(6))
-    b.addView(card, k.gap(22))
+    val row = d.valueRow(Icon.CLOCK, countdownLabel(first, waiting), "—", note?.let { d.badge(it) })
     var shown: Class<*>? = null
     startTicker {
-        val now = Mama.trustedNow(this)
         val st = state()
         if (shown != null && shown != st.javaClass) {
             render()
             return@startTicker
         }
         shown = st.javaClass
-        val (target, text) = when (st) {
-            is LockState.Waiting -> st.startsAt to waiting(st)
-            is LockState.Locked -> st.endsAt to "Блокировка идёт. До окончания"
-            is LockState.EmergencyPass -> st.until to "Экстренный доступ. Блокировка вернётся через"
-            LockState.Free -> null to "Следующий период планируется…"
+        val target = when (st) {
+            is LockState.Waiting -> st.startsAt
+            is LockState.Locked -> st.endsAt
+            is LockState.EmergencyPass -> st.until
+            LockState.Free -> null
         }
-        caption.text = text
-        val (h, m, s) = Texts.hms(if (target != null) Duration.between(now, target) else Duration.ZERO)
-        digits[0].text = h; digits[1].text = m; digits[2].text = s
+        row.label.text = countdownLabel(st, waiting)
+        row.value.text = if (target == null) "—" else {
+            val minutes = maxOf(0L, (Duration.between(Mama.trustedNow(this), target).toMillis() + 59_999) / 60_000)
+            d.hoursMinutes(minutes / 60, minutes % 60)
+        }
     }
+    return row.view
 }
 
-private fun MainActivity.infoTiles(b: LinearLayout, vararg tiles: Triple<Icon, String, String>) {
-    val k = nightKit
-    val row = k.row().apply { background = k.shape(MamaColors.NightGlass, 18, MamaColors.NightLine) }
-    tiles.forEachIndexed { i, (icon, label, value) ->
-        if (i > 0) row.addView(View(this).apply { setBackgroundColor(MamaColors.NightLine) }, LinearLayout.LayoutParams(1, k.dp(36)))
-        row.addView(k.miniTile(icon, label, value), k.weight())
-    }
-    b.addView(row, k.gap(12))
+/** Countdown and the daily window in one card. */
+private fun MainActivity.timeCard(state: () -> LockState, window: app.mama.core.DailyWindow, waiting: String = "До начала блокировки"): View {
+    val d = design
+    val windowRow = d.valueRow(
+        Icon.CALENDAR, "Окно блокировки", "${Texts.hhmm(window.start)} → ${Texts.hhmm(window.end)}",
+        d.text("каждый день · ${window.zone.id}", Typo.CAPTION, Palette.InkMuted), Typo.HEADLINE,
+    )
+    return d.rowsCard(listOf(countdownRow(state, window.zone, waiting), windowRow.view), paddingDp = 18, dividerInsetDp = 18)
 }
 
 // ---------------- 8. Series dashboard: scheduled / activating / active ----------------
@@ -111,91 +114,73 @@ internal fun MainActivity.seriesDashboard(
     state: () -> LockState,
 ): Pair<View, Boolean> {
     if (series.status == SeriesStatus.NEEDS_ATTENTION) return needsAttentionScreen(series, sampleCommitment, sampleRestart, protectionMissing)
-    val k = nightKit
-    val b = body(8)
-    b.addView(nightTop(), LinearLayout.LayoutParams(-1, k.dp(52)))
+    val d = design
     val n = series.kind.periods
-    val title = when (series.status) {
-        SeriesStatus.SCHEDULED -> "Серия запланирована"
-        SeriesStatus.ACTIVATING -> "MAMA включает защиту"
-        else -> "Твоя серия активна"
+    val day = minOf(series.completedPeriods + 1, n)
+    val b = d.body(22)
+    when {
+        series.committed -> b.addView(d.titleBlock(Texts.dayOf(day, n), "Ты держишь курс.", narrow = true))
+        series.status == SeriesStatus.ACTIVATING -> b.addView(d.titleBlock("MAMA включает защиту", "Проверяем строгую защиту. Это займёт несколько секунд.", narrow = true))
+        else -> b.addView(d.titleBlock(
+            "Серия запланирована",
+            if (series.isRestart) "Restart: серия начнётся с первой блокировкой." else "Серия начнётся с первой блокировкой.",
+            narrow = true,
+        ))
     }
-    b.addView(k.text(title, MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
-    val subtitle = when {
-        series.committed -> Texts.dayOf(minOf(series.completedPeriods + 1, n), n)
-        series.isRestart -> "Restart: серия начнётся с первой блокировкой"
-        else -> "Серия начнётся с первой блокировкой"
-    }
-    b.addView(k.text(subtitle, MamaType.BODY, MamaColors.OnNightMuted, center = true), k.gap(6))
-    b.addView(k.dots(n, series.completedPeriods), k.gap(14))
+    heroSpace(b)
     if (editSaved && series.status == SeriesStatus.SCHEDULED) {
-        b.addView(k.infoCard("Время и длина серии остались прежними.", Icon.CHECK, Tone.SUCCESS, "Изменения сохранены"), k.gap(14))
+        b.addView(d.noteCard("Время и длина серии остались прежними.", "Изменения сохранены", icon = Icon.CHECK), d.gap(Spacing.GUTTER))
     }
     if (series.status == SeriesStatus.SCHEDULED && protectionMissing.isNotEmpty()) {
-        b.addView(k.infoCard(
+        b.addView(d.noteCard(
             missingList(protectionMissing) + "\nБез этого серия не начнётся. Включи до начала блокировки.",
-            Icon.ALERT, Tone.WARNING, "Защита не готова",
-        ), k.gap(14))
-        b.addView(k.secondaryButton("Исправить защиту") { startSetupAll(Protection.strict) }, k.gap(10))
+            "Защита не готова", NoteTone.CARE, Icon.SHIELD,
+        ), d.gap(Spacing.GUTTER))
+        b.addView(d.secondaryButton("Исправить защиту", Icon.SHIELD) { startSetupAll(Protection.strict) }, d.gap(10))
     }
-    val zone = series.window.zone
-    countdownCard(b, state) { w ->
-        val now = Mama.trustedNow(this)
-        when (w.startsAt.atZone(zone).toLocalDate()) {
-            now.atZone(zone).toLocalDate() -> "Сегодня MAMA включится через"
-            now.atZone(zone).toLocalDate().plusDays(1) -> "MAMA включится завтра в ${Texts.time(w.startsAt, zone)}. Осталось"
-            else -> "MAMA включится через"
-        }
-    }
-    seriesParameters(b, series, sampleCommitment, sampleRestart)
+    b.addView(timeCard(state, series.window), d.gap(Spacing.GUTTER))
+    b.addView(d.summaryCard(null, seriesDetails(series, sampleCommitment, sampleRestart)), d.gap(Spacing.GUTTER))
+    val placement = if (series.committed) Placement.ACTIVE else Placement.SCHEDULED
+    val phrase = MotivationRotation.of(this).phrase(placement, "${series.id}:${series.status}:$day").text
+    b.addView(d.quoteCard(phrase, QuoteAccent.SAND, serif = false, markInCircle = true), d.gap(Spacing.GUTTER))
     when (series.status) {
         SeriesStatus.SCHEDULED -> {
-            b.addView(k.primaryButton("Изменить условия") { beginEditing(series) }, k.gap(18))
-            b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
+            b.addView(d.secondaryButton("Изменить условия", Icon.CALENDAR) { beginEditing(series) }, d.gap(18))
+            b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(4))
         }
-        SeriesStatus.ACTIVATING -> {
-            b.addView(k.caption("Проверяем строгую защиту. Это займёт несколько секунд.", center = true), k.gap(14))
-            b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
-        }
-        else -> b.addView(k.caption("Условия серии зафиксированы. Досрочный выход — только через доверенный контакт.", center = true), k.gap(14))
+        SeriesStatus.ACTIVATING -> b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(12))
+        else -> b.addView(d.text(
+            "Условия серии зафиксированы. Досрочный выход — только через доверенный контакт.", Typo.CAPTION, Palette.InkMuted, center = true,
+        ), d.gap(16))
     }
-    b.addView(k.caption("Окно ${Texts.hhmm(series.window.start)} → ${Texts.hhmm(series.window.end)} каждый день · ${series.window.zone.id}", center = true), k.gap(8))
-    return nightFrame(Scene.NIGHT, b, null, nav())
+    val scenery = if (series.status == SeriesStatus.SCHEDULED) Scenery.EVENING else Scenery.MORNING
+    val header = homeHeader(if (series.committed) "$day из $n" else null, if (series.committed) day else 0, n)
+    return v1Frame(scenery, header, b, null, nav(), SceneLayout.HERO)
 }
 
-/** Time, length, contact, "Цена слова" and a held Restart of a series. */
-private fun MainActivity.seriesParameters(b: LinearLayout, series: Series, sampleCommitment: Commitment?, sampleRestart: RestartHold?) {
-    val k = nightKit
-    val window = shownWindow(series)
-    infoTiles(
-        b,
-        Triple(Icon.CALENDAR, "Начало", Texts.hhmm(window.start)),
-        Triple(Icon.MOON, "Окончание", Texts.hhmm(window.end)),
-        Triple(Icon.REFRESH, "Серия", Texts.seriesName(series.kind)),
-    )
-    b.addView(k.contactCard(series.contact.name, Texts.phone(series.contact.phone), "Доверенный контакт", null), k.gap(12))
+/** Trusted contact, "Цена слова" and a held Restart of a series: real values only. */
+private fun MainActivity.seriesDetails(series: Series, sampleCommitment: Commitment?, sampleRestart: RestartHold?): List<SummaryItem> {
+    val items = mutableListOf(SummaryItem(Icon.PERSON, "Доверенный контакт", series.contact.name, Texts.phone(series.contact.phone)))
     val wallet = Mama.wallet(this)
     val commitment = sampleCommitment ?: wallet.commitmentFor(series.id)
     when {
-        commitment != null && commitment.state == CommitmentState.SCHEDULED -> b.addView(k.infoCard(
-            "Зарезервировано до начала.\nМожно изменить до первой блокировки.",
-            Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(commitment.amountKop)}",
-        ), k.gap(12))
-        commitment != null && commitment.state == CommitmentState.RESERVED -> b.addView(k.infoCard(
+        commitment != null && commitment.state == CommitmentState.SCHEDULED -> items += SummaryItem(
+            Icon.COINS, "Цена слова", Texts.money(commitment.amountKop), "Зарезервировано до начала. Можно изменить до первой блокировки.",
+        )
+        commitment != null && commitment.state == CommitmentState.RESERVED -> items += SummaryItem(
+            Icon.COINS, "Цена слова", Texts.money(commitment.amountKop),
             "В резерве до конца серии. Пройдёшь серию — сумма снова будет доступна на балансе MAMA.",
-            Icon.SHIELD, Tone.NEUTRAL, "Цена слова: ${Texts.money(commitment.amountKop)}",
-        ), k.gap(12))
-        else -> if (FeatureFlags.WALLET_ENABLED && !series.committed) {
-            b.addView(k.infoCard("Без цены слова", Icon.SHIELD, Tone.NEUTRAL, "Цена слова"), k.gap(12))
-        }
+        )
+        else -> if (FeatureFlags.WALLET_ENABLED && !series.committed) items += SummaryItem(Icon.COINS, "Цена слова", "Без цены слова")
     }
     val hold = sampleRestart ?: wallet.restartHoldFor(series.id)
     if (hold != null && hold.state == RestartHoldState.HELD) {
-        b.addView(k.infoCard(
+        items += SummaryItem(
+            Icon.REFRESH, "Restart", Texts.money(hold.amountKop),
             "Зарезервирован до начала серии. Если отменить запуск до первой блокировки, вернётся на баланс MAMA.",
-            Icon.REFRESH, Tone.NEUTRAL, "Restart: ${Texts.money(hold.amountKop)}",
-        ), k.gap(12))
+        )
     }
+    return items
 }
 
 private fun missingList(missing: List<Requirement>) = missing.joinToString("\n") { "• ${it.title}" }
@@ -221,18 +206,17 @@ private fun MainActivity.needsAttentionScreen(
     sampleRestart: RestartHold?,
     missing: List<Requirement>,
 ): Pair<View, Boolean> {
-    val k = nightKit
-    val b = body(8)
-    b.addView(nightTop(), LinearLayout.LayoutParams(-1, k.dp(52)))
-    b.addView(k.text("Серия не началась", MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
-    b.addView(k.text("MAMA не смогла включить защиту.", MamaType.BODY, MamaColors.OnNight, center = true), k.gap(8))
-    b.addView(k.caption(
+    val d = design
+    val b = d.body(22)
+    b.addView(d.titleBlock(
+        "Серия не началась",
         "Поэтому день не засчитан, ничего не списано и ничего не потеряно. Блокировка не включится сама — только после того, как ты подтвердишь новый запуск.",
-        center = true,
-    ), k.gap(8))
+        lead = "MAMA не смогла включить защиту.",
+    ))
+    heroSpace(b, 96)
     if (missing.isNotEmpty()) {
-        b.addView(k.infoCard(missingList(missing), Icon.ALERT, Tone.WARNING, "Не работает защита"), k.gap(18))
-        b.addView(k.primaryButton("Исправить защиту") { startSetupAll(Protection.strict) }, k.gap(14))
+        b.addView(d.noteCard(missingList(missing), "Не работает защита", NoteTone.CARE, Icon.SHIELD), d.gap(Spacing.GUTTER))
+        b.addView(d.primaryButton("Исправить защиту", arrow = false) { startSetupAll(Protection.strict) }, d.gap(14))
     } else {
         val text = if (series.autoNow) {
             "Подтверди новый запуск. Блокировка начнётся сразу после подтверждения и продлится " +
@@ -242,13 +226,18 @@ private fun MainActivity.needsAttentionScreen(
             val first = series.window.nextFullPlan(now, series.mode)
             "Подтверди новый запуск. Первая блокировка: ${Texts.firstLock(first.start, series.window.zone, now)}."
         }
-        b.addView(k.infoCard(text, Icon.CHECK, Tone.SUCCESS, "Защита готова"), k.gap(18))
-        b.addView(k.primaryButton("Подтвердить запуск") { relaunch() }, k.gap(14))
+        b.addView(d.noteCard(text, "Защита готова", icon = Icon.CHECK), d.gap(Spacing.GUTTER))
+        b.addView(d.primaryButton("Подтвердить запуск", arrow = false) { relaunch() }, d.gap(14))
     }
-    b.addView(k.secondaryButton("Изменить условия") { beginEditing(series) }, k.gap(10))
-    b.addView(k.textButton("Отменить запуск") { confirmCancelLaunch(series) }, k.gap(4))
-    seriesParameters(b, series, sampleCommitment, sampleRestart)
-    return nightFrame(Scene.NIGHT, b, null, nav())
+    b.addView(d.secondaryButton("Изменить условия", Icon.CALENDAR) { beginEditing(series) }, d.gap(10))
+    b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(4))
+    val window = shownWindow(series)
+    b.addView(d.valueCard(
+        Icon.CALENDAR, "Окно блокировки", "${Texts.hhmm(window.start)} → ${Texts.hhmm(window.end)}",
+        d.text("каждый день · ${window.zone.id}", Typo.CAPTION, Palette.InkMuted),
+    ), d.gap(18))
+    b.addView(d.summaryCard(null, seriesDetails(series, sampleCommitment, sampleRestart)), d.gap(Spacing.GUTTER))
+    return v1Frame(Scenery.EVENING, homeHeader(null, 0, series.kind.periods), b, null, nav(), SceneLayout.HERO)
 }
 
 private fun MainActivity.relaunch() {
@@ -266,25 +255,26 @@ private fun MainActivity.relaunch() {
 // ---------------- test mode / single session ----------------
 
 internal fun MainActivity.sessionDashboard(session: Session, state: () -> LockState): Pair<View, Boolean> {
-    val k = nightKit
-    val b = body(8)
-    b.addView(nightTop(), LinearLayout.LayoutParams(-1, k.dp(52)))
+    val d = design
+    val b = d.body(22)
     val isTest = Duration.between(session.plan.start, session.plan.end) == app.mama.core.TestMode.DURATION
-    b.addView(k.text(if (isTest) "Тестовый режим" else "Блокировка", MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
-    b.addView(k.text(if (isTest) "15 минут · только для тестирования" else Texts.mode(session.plan.mode), MamaType.BODY, MamaColors.OnNightMuted, center = true), k.gap(6))
-    countdownCard(b, state, "Блокировка начнётся через")
+    b.addView(d.titleBlock(
+        if (isTest) "Тестовый режим" else "Блокировка",
+        if (isTest) "15 минут · только для тестирования" else Texts.mode(session.plan.mode),
+        narrow = true,
+    ))
+    heroSpace(b)
     val z = session.plan.zone
-    infoTiles(
-        b,
-        Triple(Icon.CALENDAR, "Начало", Texts.time(session.plan.start, z)),
-        Triple(Icon.MOON, "Окончание", Texts.time(session.plan.end, z)),
-        Triple(Icon.FLASK, "Режим", if (isTest) "Тест" else "—"),
+    val times = d.valueRow(
+        Icon.CALENDAR, "Время блокировки", "${Texts.time(session.plan.start, z)} → ${Texts.time(session.plan.end, z)}",
+        if (isTest) d.testBadge("Тест") else null, Typo.HEADLINE,
     )
-    b.addView(k.contactCard(session.contact.name, Texts.phone(session.contact.phone), "Доверенный контакт", null), k.gap(12))
+    b.addView(d.rowsCard(listOf(countdownRow(state, z), times.view), paddingDp = 18, dividerInsetDp = 18), d.gap(Spacing.GUTTER))
+    b.addView(d.summaryCard(null, listOf(SummaryItem(Icon.PERSON, "Доверенный контакт", session.contact.name, Texts.phone(session.contact.phone)))), d.gap(Spacing.GUTTER))
     if (state() is LockState.Waiting) {
-        b.addView(k.textButton("Отменить до начала") { Mama.cancelBeforeStart(this); render() }, k.gap(10))
+        b.addView(d.linkButton("Отменить до начала") { Mama.cancelBeforeStart(this); render() }, d.gap(10))
     }
-    return nightFrame(Scene.NIGHT, b, null, nav())
+    return v1Frame(Scenery.MORNING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO)
 }
 
 // ---------------- tabs ----------------
@@ -388,41 +378,38 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
 // ---------------- FLEX ----------------
 
 internal fun MainActivity.flexDashboard(flex: FlexPackage, state: () -> LockState): Pair<View, Boolean> {
-    val k = nightKit
+    val d = design
     val now = Mama.trustedNow(this)
-    val b = body(8)
-    b.addView(nightTop(), LinearLayout.LayoutParams(-1, k.dp(52)))
-    b.addView(k.text("MAMA FLEX", MamaType.H1, MamaColors.OnNight, center = true), k.gap(18))
-    b.addView(k.text("${flex.successful} из ${FlexPackage.PERIODS} выполнено", MamaType.BODY, MamaColors.OnNightMuted, center = true), k.gap(6))
-    b.addView(k.dots(FlexPackage.PERIODS, flex.successful, flex.failed), k.gap(14))
-    b.addView(k.infoCard(
+    val b = d.body(22)
+    b.addView(d.titleBlock("MAMA FLEX", "${flex.successful} из ${FlexPackage.PERIODS} выполнено", narrow = true))
+    heroSpace(b)
+    b.addView(d.noteCard(
         if (flex.rewardStillPossible) "Каждый успешный период приближает к бесплатному пакету." else "Следующий бесплатный FLEX доступен только при результате 7 из 7.",
-        Icon.INFINITY, Tone.NEUTRAL,
         if (flex.rewardStillPossible) "Пройди 7 из 7 — следующий FLEX бесплатно" else "Успешно: ${flex.successful} из ${FlexPackage.PERIODS}",
-    ), k.gap(18))
+        icon = Icon.INFINITY,
+    ), d.gap(Spacing.GUTTER))
     flex.lastBurntAt?.takeIf { Duration.between(it, now) < Duration.ofHours(18) }?.let {
-        b.addView(k.infoCard(
+        b.addView(d.noteCard(
             "Успешно: ${flex.successful} из ${FlexPackage.PERIODS}. Остальные дни FLEX остаются доступны.",
-            Icon.ALERT, Tone.NEUTRAL, "Сегодняшний FLEX-день завершён досрочно.",
-        ), k.gap(10))
+            "Сегодняшний FLEX-день завершён досрочно.", NoteTone.CARE, Icon.HEART,
+        ), d.gap(Spacing.GUTTER))
+    }
+    if (flex.currentSessionId != null && state() != LockState.Free) {
+        b.addView(d.rowsCard(listOf(countdownRow(state, zone, "До начала FLEX-периода")), paddingDp = 18), d.gap(Spacing.GUTTER))
+        if (state() is LockState.Waiting) {
+            b.addView(d.linkButton("Отменить период (день не тратится)") { Mama.cancelBeforeStart(this); render() }, d.gap(6))
+        }
     }
     val daysLeft = maxOf(0L, Duration.between(now, flex.expiresAt).toDays())
-    infoTiles(
-        b,
-        Triple(Icon.INFINITY, "Осталось", "${flex.remaining} из ${FlexPackage.PERIODS}"),
-        Triple(Icon.CHECK, "Успешно", "${flex.successful}"),
-        Triple(Icon.CALENDAR, "Действует", Texts.days(daysLeft.toInt())),
-    )
-    if (flex.currentSessionId != null && state() != LockState.Free) {
-        countdownCard(b, state, "FLEX-период начнётся через")
-        if (state() is LockState.Waiting) {
-            b.addView(k.textButton("Отменить период (день не тратится)") { Mama.cancelBeforeStart(this); render() }, k.gap(8))
-        }
-    } else {
-        b.addView(k.primaryButton("Запланировать FLEX-период", Icon.ARROW_RIGHT) { flexPlanning = true; render() }, k.gap(22))
+    b.addView(d.summaryCard(null, listOf(
+        SummaryItem(Icon.INFINITY, "Осталось", "${flex.remaining} из ${FlexPackage.PERIODS}"),
+        SummaryItem(Icon.CHECK, "Успешно", "${flex.successful}"),
+        SummaryItem(Icon.CALENDAR, "Действует", Texts.days(daysLeft.toInt()), "до ${Texts.dayTime(flex.expiresAt, zone)} · неиспользованные дни сгорают"),
+    )), d.gap(Spacing.GUTTER))
+    if (flex.currentSessionId == null || state() == LockState.Free) {
+        b.addView(d.primaryButton("Запланировать FLEX-период") { flexPlanning = true; render() }, d.gap(18))
     }
-    b.addView(k.caption("Пакет действует до ${Texts.dayTime(flex.expiresAt, zone)}. Неиспользованные дни сгорают.", center = true), k.gap(12))
-    return nightFrame(Scene.NIGHT, b, null, nav())
+    return v1Frame(Scenery.MORNING, homeHeader("${flex.successful} из ${FlexPackage.PERIODS}", flex.successful, FlexPackage.PERIODS), b, null, nav(), SceneLayout.HERO)
 }
 
 /** FLEX period planner: explicit dates and 24-hour times (reference screen 4). */

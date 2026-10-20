@@ -28,6 +28,9 @@ import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
 import app.mama.platform.Mama
+import app.mama.ui.design.DesignKit
+import app.mama.ui.design.SceneLayout
+import app.mama.ui.design.Scenery
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -58,6 +61,9 @@ class MainActivity : Activity() {
     internal val prefs by lazy { getSharedPreferences("mama_setup", Context.MODE_PRIVATE) }
     internal val kit by lazy { Kit(this) }
     internal val nightKit by lazy { Kit(this, night = true) }
+
+    /** UI v1 components (docs/DESIGN_SYSTEM_V1.md); screens move to it group by group. */
+    internal val design by lazy { DesignKit(this) }
 
     internal var mode = SessionMode.SLEEP
     internal var choice = Choice.SEVEN
@@ -437,6 +443,16 @@ class MainActivity : Activity() {
         nav?.let { root.addView(it, kit.fill()) }
         return root to false
     }
+
+    /** UI v1 frame: photo background ([scenery]), header, scrolling body, sticky bottom action, navigation. Light status bar. */
+    internal fun v1Frame(
+        scenery: Scenery,
+        header: View?,
+        body: View,
+        footer: View?,
+        nav: View? = null,
+        layout: SceneLayout = SceneLayout.HEADER,
+    ): Pair<View, Boolean> = design.screen(scenery, layout, header, body, footer, nav) to true
 
     internal fun body(paddingTopDp: Int = 18) = kit.column().apply {
         setPadding(kit.dp(20), kit.dp(paddingTopDp), kit.dp(20), kit.dp(24))

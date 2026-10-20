@@ -4,6 +4,8 @@ import android.text.InputFilter
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
 import app.mama.billing.Product
@@ -15,120 +17,134 @@ import app.mama.core.LedgerType
 import app.mama.core.SeriesKind
 import app.mama.core.Wallet
 import app.mama.core.WalletEngine
+import app.mama.motivation.Placement
 import app.mama.platform.Mama
 import app.mama.ui.MainActivity.Step
+import app.mama.ui.design.NoteTone
+import app.mama.ui.design.Palette
+import app.mama.ui.design.Scenery
+import app.mama.ui.design.Spacing
+import app.mama.ui.design.Typo
 import java.time.ZoneId
 
 // "Цена слова" (optional commitment before every standard series) and the
 // internal MAMA balance. Pilot: test credits only, internal only.
 
-/** Quick amounts on the "Цена слова" screen, in kopecks (from [CommitmentConfig]). */
-private val QUICK get() = CommitmentConfig.QUICK_AMOUNTS_RUB.map { it * 100L }
+/**
+ * Quick amounts on the "Цена слова" screen, in kopecks: 500 · 1 000 · 3 000 ·
+ * 5 000 ₽ (DESIGN_SYSTEM_V1 §12.3). The core's limits ([CommitmentConfig])
+ * apply to every amount.
+ */
+private val QUICK = listOf(500L, 1_000L, 3_000L, 5_000L).map { it * 100 }
 
 /**
- * "Цена слова". Shown before every standard series: the wizard (first or
- * later free series) and the paid Restart ([restart] = true). Optional:
- * "Пропустить" starts the series without it. Never added to the Restart price.
+ * Smallest own amount: the core minimum, and at a Restart never below the
+ * Restart price (§12.3, checked here, in the interface).
+ */
+private fun minAmountKop(restart: Boolean, kind: SeriesKind): Long =
+    if (restart) maxOf(CommitmentConfig.MIN_KOP, kind.restartPriceRub * 100L) else CommitmentConfig.MIN_KOP
+
+/**
+ * "Цена слова" (reference 08). Shown before every standard series: the
+ * wizard (first or later free series) and the paid Restart ([restart] =
+ * true). Optional: "Продолжить без цены слова" starts the series without it.
+ * Never added to the Restart price.
  */
 internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind): Pair<View, Boolean> {
+    val d = design
     val wallet = Mama.wallet(this)
     // While editing a scheduled series its own reserve can be reused: it comes back in full first.
     val ownReserve = if (editing) scheduledReserveOfCurrentSeries(wallet) else 0L
     val usable = wallet.availableKop + ownReserve
-    val b = body()
-    b.addView(kit.sectionHeader("Цена слова", "Хочешь усилить своё обещание?"))
-    b.addView(kit.text(
-        "Это необязательно.\nТы сам выбираешь сумму, которую готов поставить на своё решение.",
-        MamaType.BODY, MamaColors.Graphite,
-    ), kit.gap(14))
-
-    // Amount choice: 500 / 1 000 / 5 000 / custom.
-    val custom = commitmentKop?.takeIf { it !in QUICK }
-    val options = QUICK.map { Texts.money(it) to it } + ((custom?.let { "Своя: ${Texts.money(it)}" } ?: "Своя сумма") to -1L)
-    options.chunked(2).forEachIndexed { r, pair ->
-        val row = kit.row()
-        pair.forEachIndexed { i, (label, value) ->
-            val on = if (value == -1L) custom != null else commitmentKop == value
-            row.addView(amountPill(label, on) {
-                if (value == -1L) customAmount() else { commitmentKop = value; render() }
-            }, kit.weight().apply { if (i > 0) leftMargin = kit.dp(10) })
-        }
-        b.addView(row, kit.gap(if (r == 0) 20 else 10))
-    }
-
-    // Internal balance.
-    b.addView(balanceCard(wallet, compact = true), kit.gap(18))
-    if (ownReserve > 0) {
-        b.addView(kit.hintRow(
-            Icon.SHIELD,
-            "Сейчас в резерве для этой серии: ${Texts.money(ownReserve)}. Новая сумма заменит её без потерь.",
-        ), kit.gap(12))
-    }
     val chosen = commitmentKop
+    val b = d.body(22)
+    b.addView(d.titleBlock(
+        "Цена слова",
+        (if (restart) "Restart: ${Texts.seriesName(kind)}. " else "") + "Это не наказание, а вес твоего решения.",
+        narrow = true,
+    ))
+
+    // The amount: what is chosen, the quick amounts and "Своя сумма", what it is for.
+    val card = d.card(paddingDp = 18)
+    val head = d.row()
+    head.addView(d.iconCircle(Icon.COINS, 72))
+    val texts = d.column()
+    texts.addView(d.text(if (chosen != null) "Выбранная сумма" else "Сумма не выбрана", Typo.LABEL, Palette.InkMuted))
+    texts.addView(d.text(if (chosen != null) Texts.money(chosen) else "—", Typo.AMOUNT).apply { maxLines = 1 }, d.gap(2))
+    texts.addView(d.text("На балансе MAMA: ${Texts.money(usable)}", Typo.CAPTION, Palette.InkMuted), d.gap(4))
+    head.addView(texts, d.weight().apply { leftMargin = d.dp(18) })
+    card.addView(head)
+    val custom = chosen?.takeIf { it !in QUICK }
+    val labels = QUICK.map { Texts.money(it) } + (custom?.let { "Своя: ${Texts.money(it)}" } ?: "Своя сумма")
+    val selected = if (custom != null) QUICK.size else QUICK.indexOf(chosen)
+    card.addView(d.chipGrid(labels, selected) { i ->
+        if (i == QUICK.size) customAmount(minAmountKop(restart, kind)) else { commitmentKop = QUICK[i]; render() }
+    }, d.gap(18))
+    card.addView(d.divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d.dp(1)).apply { topMargin = d.dp(18) })
+    val why = d.row()
+    why.addView(d.iconCircle(Icon.SHIELD, 42))
+    why.addView(d.text("Сумма помогает удержать слово и возвращает внимание к цели.", Typo.LABEL, Palette.InkMuted).apply { textSize = 14.5f }, d.weight().apply { leftMargin = d.dp(14) })
+    card.addView(why, d.gap(14))
+    b.addView(card, d.gap(26))
+
+    if (ownReserve > 0) {
+        b.addView(d.noteCard("Новая сумма заменит её без потерь.", "Сейчас в резерве для этой серии: ${Texts.money(ownReserve)}"), d.gap(Spacing.GUTTER))
+    }
     if (chosen != null && chosen > usable) {
-        b.addView(kit.infoCard(
-            "Выбрано ${Texts.money(chosen)}, доступно ${Texts.money(usable)}.",
-            Icon.INFO, Tone.NEUTRAL, NOT_ENOUGH,
-        ), kit.gap(10))
-        val choices = kit.row()
-        choices.addView(kit.secondaryButton("Изменить сумму") { commitmentKop = null; render() }, kit.weight())
-        choices.addView(kit.secondaryButton("Без Цены слова") { commitmentKop = null; proceedCommitment(restart, kind) }, kit.weight().apply { leftMargin = kit.dp(10) })
-        b.addView(choices, kit.gap(10))
+        // Not enough on the balance: a calm choice, never a warning.
+        val note = d.column()
+        note.addView(d.noteCard("Выбрано ${Texts.money(chosen)}, доступно ${Texts.money(usable)}.", NOT_ENOUGH, NoteTone.CARE, Icon.COINS))
+        val choices = d.row().apply { gravity = Gravity.CENTER_HORIZONTAL }
+        choices.addView(d.linkButton("Изменить сумму") { commitmentKop = null; render() })
+        choices.addView(d.linkButton("Без Цены слова") { commitmentKop = null; proceedCommitment(restart, kind) })
+        note.addView(choices, d.gap(4))
+        if (FeatureFlags.WALLET_TEST_TOPUP_ENABLED) {
+            // Test build only, as at a payment with too little on the balance.
+            val top = d.row()
+            listOf(1_000_00L, 5_000_00L).forEachIndexed { i, amount ->
+                top.addView(d.testButton("+${Texts.money(amount)} · тест") {
+                    Mama.topUpTest(this, amount)
+                    render()
+                }, d.weight().apply { if (i > 0) leftMargin = d.dp(10) })
+            }
+            note.addView(top, d.gap(4))
+        }
+        b.addView(note, d.gap(Spacing.GUTTER))
     }
 
-    b.addView(kit.infoCard(
+    b.addView(d.quoteCard(stepPhrase(WEIGHT_PHRASE, Placement.COMMITMENT), scenery = Scenery.DAY), d.gap(Spacing.GUTTER))
+    b.addView(d.noteCard(
         "Если серия пройдена — вся сумма снова доступна на твоём балансе MAMA.\n" +
             "Если серия будет завершена досрочно, она считается сорванной, и Цена слова применяется.\n" +
-            "Баланс MAMA — только внутри приложения: его нельзя вывести или перевести.",
-        Icon.SHIELD, Tone.NEUTRAL, "Как это работает",
-    ), kit.gap(14))
+            "Баланс MAMA — только внутри приложения: его нельзя вывести или перевести.\n" +
+            "Restart при срыве — отдельно: ${Texts.price(kind.restartPriceRub)}. Цена слова к нему не прибавляется." +
+            if (restart) "" else " Сама серия остаётся бесплатной.",
+        "Как это работает", icon = Icon.SHIELD,
+    ), d.gap(Spacing.GUTTER))
     if (restart) {
-        b.addView(kit.hintRow(
-            Icon.LOCK,
+        b.addView(d.noteCard(
             "После Restart серия будет запланирована: длина та же, время — выбранное. До первой блокировки можно изменить " +
                 "доверенный контакт, личную причину и Цену слова. Restart с баланса MAMA засчитывается, только когда серия начнётся: " +
                 "если отменить запуск, он вернётся на баланс.",
-        ), kit.gap(14))
+            icon = Icon.LOCK,
+        ), d.gap(Spacing.GUTTER))
     }
-    b.addView(kit.hintRow(
-        Icon.REFRESH,
-        "Restart при срыве — отдельно: ${Texts.price(kind.restartPriceRub)}. Цена слова к нему не прибавляется." +
-            if (restart) "" else " Сама серия остаётся бесплатной.",
-    ), kit.gap(14))
 
-    val footer = kit.column()
-    val go = kit.primaryButton(if (chosen != null) "Поставить ${Texts.money(chosen)}" else "Выбери сумму") { proceedCommitment(restart, kind) }
+    val go = d.primaryButton("Продолжить") { proceedCommitment(restart, kind) }
     go.isEnabled = chosen != null && chosen <= usable
-    footer.addView(go, kit.fill())
-    footer.addView(kit.textButton(if (editing) "Без Цены слова" else "Пропустить") { commitmentKop = null; proceedCommitment(restart, kind) }, kit.gap(4))
-
+    val skip = d.linkButton(if (editing) "Без цены слова" else "Продолжить без цены слова") { commitmentKop = null; proceedCommitment(restart, kind) }
     val header = when {
-        restart -> kit.stepHeader(2, 2) { restartStep = Step.TIME; render() }
-        editing -> kit.stepHeader(null, 0) { back() }
-        else -> kit.stepHeader(steps().indexOf(Step.COMMITMENT) + 1, steps().size) { back() }
+        restart -> d.stepHeader(2, 2) { restartStep = Step.TIME; render() }
+        else -> stepBar(Step.COMMITMENT)
     }
-    return lightFrame(header, b, footer)
+    return v1Frame(Scenery.DAY, header, b, d.bottomCta(go, skip))
 }
 
-private fun MainActivity.amountPill(label: String, on: Boolean, onClick: () -> Unit): View =
-    kit.text(label, MamaType.TITLE, if (on) MamaColors.White else MamaColors.Graphite, center = true).apply {
-        gravity = Gravity.CENTER
-        minHeight = kit.dp(54)
-        background = if (on) {
-            kit.pressable(kit.gradient(MamaColors.EmeraldActive, MamaColors.Emerald, 16), 16, MamaColors.RippleOnDark)
-        } else {
-            kit.pressable(kit.shape(MamaColors.PureCard, 16, MamaColors.Border), 16)
-        }
-        isClickable = true
-        setOnClickListener { onClick() }
-    }
-
-private fun MainActivity.customAmount() {
+private fun MainActivity.customAmount(min: Long) {
     val field = kit.textField("Например, 2000", InputType.TYPE_CLASS_NUMBER).apply {
         filters = arrayOf(InputFilter.LengthFilter(6))
         commitmentKop?.let { setText((it / 100).toString()) }
     }
-    val min = CommitmentConfig.MIN_KOP
     val max = CommitmentConfig.MAX_KOP
     val error = kit.text("", MamaType.CAPTION, MamaColors.Warning).apply { visibility = View.GONE }
     val content = kit.column().apply {

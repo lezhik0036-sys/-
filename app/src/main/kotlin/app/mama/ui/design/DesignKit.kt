@@ -14,6 +14,7 @@ import android.os.Build
 import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextUtils
 import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.View
@@ -42,8 +43,17 @@ enum class NoteTone { INFO, CARE }
 /** Colour of the quote mark: emerald on setup screens, warm sand on home and recovery. */
 enum class QuoteAccent { EMERALD, SAND }
 
-/** One row of a [DesignKit.summaryCard] ("Твой план"). */
-data class SummaryItem(val icon: Icon, val label: String, val value: CharSequence, val onClick: (() -> Unit)? = null)
+/** One row of a [DesignKit.summaryCard] ("Твой план"); [note] is a small line under the value. */
+data class SummaryItem(
+    val icon: Icon,
+    val label: String,
+    val value: CharSequence,
+    val note: CharSequence? = null,
+    val onClick: (() -> Unit)? = null,
+)
+
+/** Handle of [DesignKit.valueRow]: its label and value can change (a live countdown). */
+class ValueRow(val view: LinearLayout, val label: TextView, val value: TextView)
 
 /**
  * UI v1 components (DESIGN_SYSTEM_V1 §5), built from [Palette], [Typo],
@@ -448,7 +458,8 @@ class DesignKit(val context: Context) {
         addView(iconCircle(item.icon, 40))
         val texts = column()
         texts.addView(text(item.label, Typo.LABEL, Palette.InkMuted))
-        texts.addView(text(item.value, Typo.VALUE), gap(2))
+        texts.addView(text(item.value, Typo.VALUE).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END }, gap(2))
+        item.note?.let { texts.addView(text(it, Typo.CAPTION, Palette.InkMuted), gap(3)) }
         addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(8) })
         item.onClick?.let {
             addView(chevron())
@@ -517,16 +528,106 @@ class DesignKit(val context: Context) {
     }
 
     /** A real value on the home screen: icon circle, label, big number, optional note (never invented data). */
-    fun valueCard(icon: Icon, label: String, value: CharSequence, note: View? = null): View = row().apply {
+    fun valueCard(icon: Icon, label: String, value: CharSequence, note: View? = null): View = valueRow(icon, label, value, note).view.apply {
         setPadding(dp(18), dp(18), dp(18), dp(18))
         background = surface()
         elevate(this, 2.5f)
-        addView(iconCircle(icon, 62))
+    }
+
+    /** The row of a [valueCard], for several values in one card ([rowsCard]). */
+    fun valueRow(icon: Icon, label: String, value: CharSequence, note: View? = null, style: Typo = Typo.NUMBER): ValueRow {
+        val row = row()
+        row.addView(iconCircle(icon, 62))
+        val texts = column()
+        val l = text(label, Typo.LABEL, Palette.InkMuted)
+        texts.addView(l)
+        val v = text(value, style)
+        texts.addView(v, gap(6))
+        note?.let { texts.addView(it, wrap().apply { topMargin = dp(8) }) }
+        row.addView(texts, weight().apply { leftMargin = dp(16) })
+        return ValueRow(row, l, v)
+    }
+
+    /** One card of rows divided by hairlines that start after the icon circles. */
+    fun rowsCard(rows: List<View>, paddingDp: Int = 0, dividerInsetDp: Int = 16 + 36 + 14): LinearLayout = card(paddingDp = 0).apply {
+        rows.forEachIndexed { i, r ->
+            if (i > 0) addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply { leftMargin = dp(dividerInsetDp); rightMargin = dp(16) })
+            addView(r, fill().apply { setMargins(dp(paddingDp), if (i == 0) dp(paddingDp) else 0, dp(paddingDp), if (i == rows.lastIndex) dp(paddingDp) else 0) })
+        }
+    }
+
+    /** A line of information in a [rowsCard]: small icon circle, text (and a [note] under it), an optional action at the end ("Изменить"). */
+    fun infoRow(icon: Icon, value: CharSequence, strong: Boolean = false, trailing: View? = null, note: CharSequence? = null): View = row().apply {
+        setPadding(dp(16), dp(10), dp(if (trailing != null) 4 else 16), dp(10))
+        minimumHeight = dp(58)
+        addView(iconCircle(icon, 36))
+        val texts = column()
+        texts.addView(if (strong) text(value, Typo.VALUE) else text(value, Typo.BODY, Palette.InkMuted))
+        note?.let { texts.addView(text(it, Typo.CAPTION, Palette.InkMuted), gap(2)) }
+        addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(if (trailing != null) 4 else 0) })
+        trailing?.let { addView(it) }
+    }
+
+    /**
+     * Time of a window (reference 04): label and "›" on top, icon circle,
+     * the time in large digits and its part of day ("ВЕЧЕРОМ"); a landscape
+     * on the right. Without [onClick] it is only shown (test mode).
+     */
+    fun timeCard(label: String, time: String, part: String?, icon: Icon, scenery: Scenery?, onClick: (() -> Unit)?): View = column().apply {
+        val radius = dpf(Radii.CARD.toFloat())
+        val fill: Drawable = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.Card, radius, vignette = 0.5f) } ?: surface()
+        background = if (onClick != null) RippleDrawable(ColorStateList.valueOf(Palette.Ripple), fill, shape(Color.WHITE, Radii.CARD)) else fill
+        outlineProvider = roundOutline(radius)
+        elevate(this, 2.5f)
+        setPadding(dp(18), dp(14), dp(12), dp(18))
+        val top = row()
+        top.addView(text(label, Typo.BODY, Palette.InkMuted).apply { textSize = 16f }, weight())
+        if (onClick != null) top.addView(chevron())
+        addView(top, fill())
+        val main = row()
+        main.addView(iconCircle(icon, 62))
+        val texts = column()
+        texts.addView(text(time, Typo.AMOUNT).apply { maxLines = 1 })
+        part?.let { texts.addView(tag(it).apply { maxLines = 1; setPadding(dp(12), dp(5), dp(12), dp(5)) }, wrap().apply { topMargin = dp(4) }) }
+        main.addView(texts, wrap().apply { leftMargin = dp(18) })
+        addView(main, gap(8))
+        onClick?.let { clickable(this, it) }
+    }
+
+    /**
+     * A person (reference 06): large circle, label, name, phone, "›", a
+     * landscape along the bottom of the card.
+     */
+    fun contactCard(label: String, name: String, phone: String?, scenery: Scenery? = Scenery.DAY, onClick: (() -> Unit)?): View = column().apply {
+        val radius = dpf(Radii.CARD.toFloat())
+        val fill: Drawable = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_BOTTOM, Palette.Card, radius) } ?: surface()
+        background = if (onClick != null) RippleDrawable(ColorStateList.valueOf(Palette.Ripple), fill, shape(Color.WHITE, Radii.CARD)) else fill
+        outlineProvider = roundOutline(radius)
+        elevate(this, 2.5f)
+        setPadding(dp(16), dp(18), dp(12), dp(14))
+        val head = row().apply { gravity = Gravity.TOP }
+        head.addView(iconCircle(Icon.PERSON, 80))
         val texts = column()
         texts.addView(text(label, Typo.LABEL, Palette.InkMuted))
-        texts.addView(text(value, Typo.NUMBER), gap(6))
-        note?.let { texts.addView(it, wrap().apply { topMargin = dp(8) }) }
-        addView(texts, weight().apply { leftMargin = dp(16) })
+        texts.addView(text(name, Typo.HEADLINE).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, gap(4))
+        phone?.let { texts.addView(text(it, Typo.SUBTITLE, Palette.InkMuted), gap(6)) }
+        head.addView(texts, weight().apply { leftMargin = dp(18); topMargin = dp(6); rightMargin = dp(6) })
+        if (onClick != null) head.addView(chevron(), wrap().apply { topMargin = dp(24) })
+        addView(head)
+        // Room for the landscape.
+        if (scenery != null) addView(View(context), LinearLayout.LayoutParams(1, dp(96)))
+        onClick?.let { clickable(this, it) }
+    }
+
+    /** A short supportive line on a setup step (references 04, 06): sprout circle, text, landscape on the right. */
+    fun phraseCard(phrase: String, icon: Icon = Icon.SPROUT, scenery: Scenery? = Scenery.DAY): View = row().apply {
+        val radius = dpf(Radii.CARD.toFloat())
+        background = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_RIGHT, Palette.CardQuiet, radius, vignette = 0.38f) } ?: surface(Palette.CardQuiet)
+        outlineProvider = roundOutline(radius)
+        elevate(this, 1.5f)
+        setPadding(dp(16), dp(16), dp(if (scenery != null) 112 else 18), dp(16))
+        addView(iconCircle(icon, 48))
+        addView(text(phrase, Typo.SUBTITLE, Palette.Ink), weight().apply { leftMargin = dp(16) })
     }
 
     /** Calm notice. [NoteTone.CARE] (protection not ready, not enough balance) is warm sand, never red. */
