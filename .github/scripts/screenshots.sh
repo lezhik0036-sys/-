@@ -6,7 +6,7 @@ mkdir -p shots
 i=0
 for name in welcome permissions series time time_test contact promise commitment review dashboard edit cancel_launch dashboard_active needs_attention restart_scheduled lock emergency exit code failure restart_time restart_commitment success flex flex_plan stats settings \
     ds_palette ds_type ds_buttons ds_cards ds_notes ds_light ds_scenic ds_recovery ds_lock_shell ds_sheet ds_test ds_scenes \
-    progress_early progress_middle progress_final motivation stats_history stats_empty; do
+    progress_early progress_middle progress_final motivation stats_history stats_empty failure_path path; do
   i=$((i + 1))
   adb shell am start -W -S -n app.mama/.ui.MainActivity --es mama.preview "$name" > /dev/null
   sleep 3

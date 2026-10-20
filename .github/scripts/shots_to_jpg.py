@@ -42,6 +42,7 @@ SCENES = {
     "ds_recovery": "recovery",
     "stats": "evening",
     "stats_empty": "morning",
+    "path": "evening",
 }
 
 

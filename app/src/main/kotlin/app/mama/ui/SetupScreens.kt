@@ -163,6 +163,8 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
     val footer = k.column().apply {
         addView(k.primaryButton("Начать", Icon.ARROW_RIGHT) { beginDraft(); go(Step.PERMISSIONS) }, k.fill())
         addView(k.text("Решение принято. Осталось его выдержать.", MamaType.CAPTION, MamaColors.OnNightMuted, center = true), k.gap(14))
+        // A quiet way to everything already done, at any time between series.
+        addView(k.textButton("Мой путь") { openPath() }.apply { tag = OPEN_PATH }, k.gap(4))
     }
     return nightFrame(Scene.DAWN, b, footer)
 }

@@ -83,6 +83,9 @@ class MainActivity : Activity() {
     /** The motivation screen was opened from the home screen's phrase. */
     internal var motivationOpen = false
 
+    /** "Мой путь" (the statistics) was opened from the welcome, success or recovery screen, which have no tab bar. */
+    internal var pathOpen = false
+
     /** "Цена слова" chosen for the series about to start (kopecks), or null. Never carried forward. */
     internal var commitmentKop: Long? = null
 
@@ -280,6 +283,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         when {
             preview != null -> super.onBackPressed()
+            pathOpen -> closePath()
             flexPlanning -> { flexPlanning = false; render() }
             restartFlow -> {
                 if (restartStep == Step.COMMITMENT) restartStep = Step.TIME else restartFlow = false
@@ -345,6 +349,8 @@ class MainActivity : Activity() {
         onDashboard = false
         onMotivation = null
         val (view, key) = when {
+            // "Мой путь" from a screen without the tab bar: the same statistics, with a way back.
+            pathOpen -> statisticsScreen(standalone = true) to "path"
             series != null && series.status == SeriesStatus.BROKEN && restartFlow ->
                 if (restartStep == Step.COMMITMENT) {
                     commitmentScreen(restart = true, kind = series.kind) to "restartCommitment"

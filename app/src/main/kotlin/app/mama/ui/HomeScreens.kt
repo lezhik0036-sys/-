@@ -344,22 +344,35 @@ internal const val STATISTICS_SCREEN = "statistics_screen"
 internal const val STATISTICS_EMPTY = "statistics_empty"
 internal const val PATH_ITEM = "path_item"
 
+/** Tag of every quiet "Мой путь" entry (welcome, success, recovery). */
+internal const val OPEN_PATH = "open_path"
+
+/** Opens "Мой путь" from a screen without the tab bar; back returns there. */
+internal fun MainActivity.openPath() { pathOpen = true; render() }
+
+internal fun MainActivity.closePath() { pathOpen = false; render() }
+
 /**
  * "Статистика" (UI v1, 3A): the decisions already made, from the history of
  * finished series and FLEX packages ([History]) and the series running now.
  * Only real numbers; no hours "without the phone", streaks, percentages,
  * ratings, comparisons or money. Before anything is done: an empty state,
- * never zeros. [showPath]: previews open the screen at "Твой путь".
+ * never zeros. [standalone]: opened as "Мой путь" from a screen without the
+ * tab bar, so a back arrow instead of the tabs. [showPath]: previews open the
+ * screen at "Твой путь".
  */
 internal fun MainActivity.statisticsScreen(
     records: List<HistoryRecord> = History.records(this),
     running: Series? = Mama.series(this),
     flex: FlexPackage? = Mama.entitlements(this).flex,
     showPath: Boolean = false,
+    standalone: Boolean = false,
 ): Pair<View, Boolean> {
     val d = design
     val stats = Statistics.of(records, running, flex)
-    if (stats.isEmpty) return statisticsEmpty()
+    val header = d.topBar(if (standalone) ({ closePath() }) else null)
+    val tabs = if (standalone) null else nav()
+    if (stats.isEmpty) return statisticsEmpty(header, tabs)
     val b = d.body(18)
 
     // The main number over the golden photo: the nights already chosen.
@@ -403,11 +416,11 @@ internal fun MainActivity.statisticsScreen(
             }
         })
     }
-    return v1Frame(Scenery.EVENING, d.topBar(null), b, null, nav()).also { it.first.tag = STATISTICS_SCREEN }
+    return v1Frame(Scenery.EVENING, header, b, null, tabs).also { it.first.tag = STATISTICS_SCREEN }
 }
 
 /** No history yet: the beginning of the path, a morning photo, no numbers. */
-private fun MainActivity.statisticsEmpty(): Pair<View, Boolean> {
+private fun MainActivity.statisticsEmpty(header: View, tabs: View?): Pair<View, Boolean> {
     val d = design
     val b = d.body(26)
     b.addView(d.titleBlock(
@@ -415,7 +428,7 @@ private fun MainActivity.statisticsEmpty(): Pair<View, Boolean> {
         narrow = true,
         lead = "Здесь появятся решения, которыми ты будешь гордиться.",
     ))
-    return v1Frame(Scenery.MORNING, d.topBar(null), b, null, nav(), layout = SceneLayout.FULL).also { it.first.tag = STATISTICS_EMPTY }
+    return v1Frame(Scenery.MORNING, header, b, null, tabs, layout = SceneLayout.FULL).also { it.first.tag = STATISTICS_EMPTY }
 }
 
 /** One card of "Твой путь": calm facts, never a verdict. */
@@ -567,6 +580,7 @@ internal fun MainActivity.failureScreen(
         Mama.dismissSeries(this)
         render()
     }, d.gap(Spacing.GUTTER))
+    b.addView(d.linkButton("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }, d.gap(8))
     val phrase = MotivationRotation.of(this).phrase(Placement.RECOVERY, "${series.id}:ended").text
     b.addView(d.text(phrase, Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(26))
     return v1Frame(Scenery.RECOVERY, d.topBar(null), b, null, layout = SceneLayout.HERO).also { it.first.tag = RECOVERY_SCREEN }
@@ -599,7 +613,8 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     b.addView(d.text(phrase, Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(26))
     b.addView(d.text("Платить не нужно: Restart бывает только после срыва.", Typo.CAPTION, Palette.InkMuted, center = true), d.gap(16))
     val next = d.primaryButton("Новая серия", large = true) { closeDraft(); Mama.dismissSeries(this@successScreen); render() }
-    return v1Frame(Scenery.EVENING, d.topBar(null), b, d.bottomCta(next), layout = SceneLayout.HERO)
+    val path = d.linkButton("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }
+    return v1Frame(Scenery.EVENING, d.topBar(null), b, d.bottomCta(next, path), layout = SceneLayout.HERO)
 }
 
 // ---------------- motivation ----------------

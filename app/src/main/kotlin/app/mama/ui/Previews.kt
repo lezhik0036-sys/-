@@ -47,6 +47,8 @@ object Previews {
         "progress_early", "progress_middle", "progress_final", "motivation",
         // UI v1 3A: statistics with a sample history, opened at "Твой путь", and before any history.
         "stats_history", "stats_empty",
+        // UI v1 3A.1: the recovery screen at its "Посмотреть мой путь"; "Мой путь" opened after a completed series.
+        "failure_path", "path",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -120,13 +122,14 @@ object Previews {
                 a.window.decorView.post { a.confirmCancelLaunch(s) }
                 a.seriesDashboard(s, scheduledCommitment(now), protectionMissing = emptyList()) { waiting }
             }
-            "failure" -> a.failureScreen(
+            "failure", "failure_path" -> a.failureScreen(
                 series(4, SeriesStatus.BROKEN), freeInDays = 30,
                 sampleCommitment = Commitment(
                     "preview", 5_000_00, now.minus(4, ChronoUnit.DAYS), CommitmentState.FORFEITED, now,
                     returnKop = 2_500_00, returnDueAt = now.plus(24, ChronoUnit.HOURS),
                 ),
-            )
+            ).also { if (name == "failure_path") scrollTo(it.first, OPEN_PATH) }
+            "path" -> a.statisticsScreen(sampleHistory(), null, null, standalone = true)
             "success" -> a.successScreen(
                 series(7, SeriesStatus.COMPLETED),
                 Commitment("preview", 5_000_00, now.minus(7, ChronoUnit.DAYS), CommitmentState.RELEASED, now),
@@ -149,6 +152,22 @@ object Previews {
             "lock", "exit", "code", "emergency" -> lock(a, name)
             else -> a.welcomeScreen()
         }
+    }
+
+    /** Once laid out, scrolls [root] so the view tagged [tag] is in the middle of the screen. */
+    private fun scrollTo(root: View, tag: String) {
+        root.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                val target = root.findViewWithTag<View>(tag) ?: return
+                val scroll = generateSequence(target.parent) { it.parent }.filterIsInstance<android.widget.ScrollView>().firstOrNull() ?: return
+                if (scroll.height == 0) return
+                root.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                var y = 0
+                var v: View = target
+                while (v.parent !== scroll) { y += v.top; v = v.parent as View }
+                scroll.scrollTo(0, y + v.top - (scroll.height - target.height) / 2)
+            }
+        })
     }
 
     /**
