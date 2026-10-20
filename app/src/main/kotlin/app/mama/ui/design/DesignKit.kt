@@ -592,8 +592,8 @@ class DesignKit(val context: Context) {
         val main = row()
         main.addView(iconCircle(icon, 62))
         val texts = column()
-        // One line that never wraps: negative tracking can make a measured "23:00" a hair too narrow.
-        texts.addView(text(time, Typo.AMOUNT).apply { isSingleLine = true; setPadding(0, 0, dp(2), 0) })
+        // Its own width (a match-parent child would not widen this wrap-content column) and one line.
+        texts.addView(text(time, Typo.AMOUNT).apply { isSingleLine = true }, wrap())
         val under = row()
         part?.let { under.addView(tag(it).apply { maxLines = 1; setPadding(dp(12), dp(5), dp(12), dp(5)) }) }
         note?.let { under.addView(text(it, Typo.LABEL, Palette.InkMuted).apply { isSingleLine = true }, wrap().apply { leftMargin = dp(if (part != null) 10 else 0) }) }
