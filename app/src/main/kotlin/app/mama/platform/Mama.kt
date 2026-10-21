@@ -172,6 +172,9 @@ object Mama {
 
     fun entitlements(context: Context): Entitlements = (cached ?: reconcile(context)).snapshot.entitlements
 
+    /** Earned free series of [kind] in the копилка (completing a paid Restart of that length earns one). */
+    fun standardCredits(context: Context, kind: SeriesKind): Int = entitlements(context).standardCreditsFor(kind)
+
     /** Nothing running: no scheduled or active series, no FLEX period planned, no session. */
     private fun idle(r: Reconciliation) =
         r.state == LockState.Free && r.snapshot.series?.inProgress != true &&
@@ -222,11 +225,15 @@ object Mama {
         val r = reconcile(context)
         if (!idle(r)) return SeriesStart.Busy
         val ent = r.snapshot.entitlements
-        if (!StandardRules.canStartFree(ent, r.trustedNow)) {
+        val canFree = StandardRules.canStartFree(ent, r.trustedNow)
+        // A free start is blocked by the cooldown unless the копилка has an earned series of this length:
+        // that one starts free at once, spending the credit. Only then fall back to the paid-Restart gate.
+        val useCredit = !canFree && ent.standardCreditsFor(kind) > 0
+        if (!canFree && !useCredit) {
             return SeriesStart.Waiting(StandardRules.daysUntilFreeStart(ent, r.trustedNow))
         }
         val result = flow.schedule(
-            r.snapshot, UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, time, contact, mode, commitmentKop, r.trustedNow,
+            r.snapshot, UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, time, contact, mode, commitmentKop, r.trustedNow, fromCredit = useCredit,
         )
         return saveStart(context, result)
     }

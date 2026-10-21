@@ -643,6 +643,13 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     commitmentOutcome(series.id, sampleCommitment)?.let { b.addView(it, d.gap(Spacing.GUTTER)) }
     val phrase = MotivationRotation.of(this).phrase(Placement.SUCCESS, "${series.id}:done").text
     b.addView(d.text(phrase, Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(26))
+    // A completed paid Restart earns one free series of the same length (копилка).
+    if (series.origin == app.mama.core.SeriesOrigin.PAID_RESTART) {
+        b.addView(d.noteCard(
+            "Ты оплатил этот рестарт и прошёл его целиком — следующая серия ${Texts.seriesName(series.kind)} уже в копилке, бесплатно.",
+            "Бесплатная серия в копилке", icon = Icon.SPROUT,
+        ), d.gap(Spacing.GUTTER))
+    }
     b.addView(d.text("Платить не нужно: Restart бывает только после срыва.", Typo.CAPTION, Palette.InkMuted, center = true), d.gap(16))
     val next = d.primaryButton("Новая серия", large = true) { closeDraft(); Mama.dismissSeries(this@successScreen); render() }
     val path = d.linkButton("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }

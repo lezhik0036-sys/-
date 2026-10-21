@@ -658,6 +658,9 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
                 items += SummaryItem(Icon.COINS, "Цена слова", if (c != null) Texts.money(c) else "Без цены слова", null, open(Step.COMMITMENT))
             }
             fact(Icon.REFRESH, "Restart при срыве — ${Texts.price(kind.restartPriceRub)}. Старт серии бесплатный.")
+            // During the 30-day cooldown a copilka credit of this length starts the series free.
+            val usingCredit = !StandardRules.canStartFree(Mama.entitlements(this), now) && Mama.standardCredits(this, kind) > 0
+            if (usingCredit) fact(Icon.SPROUT, "Это бесплатная серия из копилки — спишется одна, 30-дневное ожидание останется.")
             fact(Icon.HEART, reasonLine, open(Step.PROMISE))
             ctaLabel = "Начать ${Texts.seriesName(kind)}"
             needsAgreement = true

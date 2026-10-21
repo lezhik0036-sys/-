@@ -20,6 +20,7 @@ import app.mama.core.Wallet
 import app.mama.platform.Mama
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -201,5 +202,38 @@ class RestartGateTest {
         assertEquals(SeriesStatus.BROKEN, r.snapshot.series!!.status)
         assertNotEquals("the clock no longer sits on the old failure", oldFailure, r.snapshot.entitlements.standardFailedAt)
         assertTrue(StandardRules.daysUntilFreeStart(r.snapshot.entitlements, Mama.trustedNow(context)) in 29..30)
+    }
+
+    // A копилка credit of the chosen length starts the series free during the cooldown, bypassing the wait.
+    @Test
+    fun `a copilka credit starts the series free during cooldown and spends one`() {
+        seed(
+            Snapshot(
+                series = null,
+                entitlements = Entitlements(standardFailedAt = Instant.now().minus(Duration.ofDays(3)), standardCredits = mapOf(SeriesKind.THREE to 1)),
+                wallet = Wallet(availableKop = 0), // no money: the credit alone starts it
+            ),
+        )
+        Mama.reconcile(context)
+        assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP))
+        assertEquals(SeriesStatus.SCHEDULED, Mama.series(context)!!.status)
+        assertEquals(0, Mama.standardCredits(context, SeriesKind.THREE))
+        assertEquals(0L, Mama.wallet(context).availableKop)
+        assertNotNull("the 30-day cooldown is untouched", Mama.entitlements(context).standardFailedAt)
+    }
+
+    // A credit for one length does not cover another: a different length still hits the Restart/wait gate.
+    @Test
+    fun `a credit for one length does not cover another`() {
+        seed(
+            Snapshot(
+                series = null,
+                entitlements = Entitlements(standardFailedAt = Instant.now().minus(Duration.ofDays(3)), standardCredits = mapOf(SeriesKind.THREE to 1)),
+                wallet = Wallet(availableKop = 44_000_00),
+            ),
+        )
+        Mama.reconcile(context)
+        assertTrue(Mama.startSeries(context, SeriesKind.FIVE, windowIn(4), mom, SessionMode.SLEEP) is Mama.SeriesStart.Waiting)
+        assertEquals("the 3-day credit is untouched", 1, Mama.standardCredits(context, SeriesKind.THREE))
     }
 }

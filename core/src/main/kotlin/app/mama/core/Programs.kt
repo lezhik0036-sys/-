@@ -119,7 +119,22 @@ data class Entitlements(
     val flex: FlexPackage? = null,
     /** Earned free FLEX packages not yet activated. */
     val freeFlexCredits: Int = 0,
-)
+    /**
+     * The копилка: free standard series earned by completing a paid Restart,
+     * by length. One such credit starts a series of that length at once,
+     * regardless of the 30-day free-start wait. Counts are always > 0 here.
+     */
+    val standardCredits: Map<SeriesKind, Int> = emptyMap(),
+) {
+    /** Earned free series of [kind] waiting in the копилка. */
+    fun standardCreditsFor(kind: SeriesKind): Int = standardCredits[kind] ?: 0
+
+    /** [standardCredits] with [kind] changed by [delta], dropping it when it reaches zero. */
+    fun withStandardCredit(kind: SeriesKind, delta: Int): Entitlements {
+        val next = (standardCreditsFor(kind) + delta).coerceAtLeast(0)
+        return copy(standardCredits = if (next == 0) standardCredits - kind else standardCredits + (kind to next))
+    }
+}
 
 /** Pure FLEX rules on top of [LockEngine]. */
 class FlexEngine(private val engine: LockEngine, private val policy: CorePolicy = CorePolicy()) {

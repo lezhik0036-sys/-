@@ -20,6 +20,23 @@ enum class SeriesKind(
 }
 
 /**
+ * How a standard series was started. Decides the cooldown reward: only a
+ * [PAID_RESTART] that is completed earns one free same-length series into the
+ * копилка ([Entitlements.standardCredits]); a [FROM_CREDIT] series spends one
+ * of those and is given back on a cancel before it begins.
+ */
+enum class SeriesOrigin {
+    /** A free start: the first series, or one after the 30-day wait or a success. */
+    FREE,
+
+    /** Paid with the length's Restart price (from the failure screen or the cooldown gate). */
+    PAID_RESTART,
+
+    /** Started free from the копилка, spending one earned same-length series. */
+    FROM_CREDIT,
+}
+
+/**
  * Where a series is. Pressing "Начать серию" only schedules it: the series
  * becomes binding (ACTIVE) when its first lock has started AND strict
  * protection is confirmed on the device. Only an ACTIVE series can fail.
@@ -86,6 +103,8 @@ data class Series(
      * other. A MANUAL window never moves.
      */
     val autoNow: Boolean = false,
+    /** How this series was started: it decides the cooldown reward and credit refund. */
+    val origin: SeriesOrigin = SeriesOrigin.FREE,
 ) {
     /** Not over yet. */
     val inProgress: Boolean get() = beforeCommitment || status == SeriesStatus.ACTIVE
@@ -110,7 +129,8 @@ data class Series(
  */
 class SeriesEngine(private val engine: LockEngine, private val policy: CorePolicy = CorePolicy()) {
 
-    data class Update(val series: Series, val session: Session?)
+    /** [rewardKind] is set only on the one transition where a paid series is completed: one free same-length series is earned. */
+    data class Update(val series: Series, val session: Session?, val rewardKind: SeriesKind? = null)
 
     /**
      * The user pressed "Начать серию" (or a Restart was granted): the series
@@ -130,8 +150,9 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
         now: Instant,
         restartOf: String? = null,
         startNow: Boolean = false,
+        origin: SeriesOrigin = SeriesOrigin.FREE,
     ): Update {
-        val series = Series(seriesId, kind, window, contact, mode, startedAt = now, restartOf = restartOf, autoNow = startNow)
+        val series = Series(seriesId, kind, window, contact, mode, startedAt = now, restartOf = restartOf, autoNow = startNow, origin = origin)
         val session = if (startNow) planNow(series, sessionId, now) else planFirst(series, sessionId, now)
         return Update(enter(series, session, now), session)
     }
@@ -298,7 +319,9 @@ class SeriesEngine(private val engine: LockEngine, private val policy: CorePolic
             FinishReason.COMPLETED -> {
                 val done = counted.completedPeriods + 1
                 if (done >= series.kind.periods) {
-                    Update(counted.copy(completedPeriods = done, status = SeriesStatus.COMPLETED, endedAt = endedAt), session)
+                    // A completed paid Restart earns one free same-length series (копилка); granted once, here.
+                    val reward = series.kind.takeIf { series.origin == SeriesOrigin.PAID_RESTART }
+                    Update(counted.copy(completedPeriods = done, status = SeriesStatus.COMPLETED, endedAt = endedAt), session, rewardKind = reward)
                 } else {
                     val next = counted.copy(completedPeriods = done)
                     Update(next, planNext(next, nextSessionId, now) ?: session)

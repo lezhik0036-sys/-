@@ -41,6 +41,7 @@ object StateCodec {
         val e = snapshot.entitlements
         e.standardFailedAt?.let { put("en.stdFailedAt", it.toString()) }
         put("en.freeFlex", e.freeFlexCredits.toString())
+        e.standardCredits.forEach { (k, v) -> if (v > 0) put("en.credit.${k.name}", v.toString()) }
         e.flex?.let {
             put("fx.id", it.id)
             put("fx.activatedAt", it.activatedAt.toString())
@@ -167,6 +168,7 @@ object StateCodec {
             standardFailedAt = map["en.stdFailedAt"]?.let(Instant::parse),
             flex = flex,
             freeFlexCredits = map["en.freeFlex"]?.toInt() ?: 0,
+            standardCredits = SeriesKind.entries.mapNotNull { k -> map["en.credit.${k.name}"]?.toInt()?.takeIf { it > 0 }?.let { k to it } }.toMap(),
         )
         val legacy = series != null && map["sr.model"] == null
         val snapshot = Snapshot(session, anchor, lastTrusted, series, entitlements, decodeWallet(map), restartedFrom = map.series("rf."))
@@ -192,6 +194,7 @@ object StateCodec {
         it.activatingSince?.let { a -> put("${p}activatingSince", a.toString()) }
         it.restartOf?.let { r -> put("${p}restartOf", r) }
         if (it.autoNow) put("${p}autoNow", "1")
+        if (it.origin != SeriesOrigin.FREE) put("${p}origin", it.origin.name)
     }
 
     private fun Map<String, String>.series(p: String): Series? = this["${p}id"]?.let { id ->
@@ -215,6 +218,7 @@ object StateCodec {
             activatingSince = this["${p}activatingSince"]?.let(Instant::parse),
             restartOf = this["${p}restartOf"],
             autoNow = this["${p}autoNow"] == "1",
+            origin = this["${p}origin"]?.let(SeriesOrigin::valueOf) ?: SeriesOrigin.FREE,
         )
     }
 

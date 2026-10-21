@@ -36,12 +36,16 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         mode: SessionMode,
         commitmentKop: Long?,
         now: Instant,
-    ): Result = schedule(s, seriesId, sessionId, kind, LaunchTime.Fixed(window), contact, mode, commitmentKop, now)
+        fromCredit: Boolean = false,
+    ): Result = schedule(s, seriesId, sessionId, kind, LaunchTime.Fixed(window), contact, mode, commitmentKop, now, fromCredit)
 
     /**
      * "Начать серию" for a free series. Busy and 30-day checks are the
      * caller's. [time] is resolved here, at the confirmation: AUTO_NOW starts
-     * now for the draft's length, MANUAL keeps its window.
+     * now for the draft's length, MANUAL keeps its window. With [fromCredit]
+     * the start spends one earned same-length series from the копилка
+     * ([Entitlements.standardCredits]) and is free regardless of the wait; a
+     * cancel before the series begins gives that credit back (see [cancel]).
      */
     fun schedule(
         s: Snapshot,
@@ -53,15 +57,19 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         mode: SessionMode,
         commitmentKop: Long?,
         now: Instant,
+        fromCredit: Boolean = false,
     ): Result {
+        if (fromCredit && s.entitlements.standardCreditsFor(kind) <= 0) return Result.Rejected
         val launch = SeriesDraft.resolve(time, now)
-        val u = series.start(seriesId, sessionId, kind, launch.window, contact, mode, now, startNow = launch.startNow)
+        val origin = if (fromCredit) SeriesOrigin.FROM_CREDIT else SeriesOrigin.FREE
+        val u = series.start(seriesId, sessionId, kind, launch.window, contact, mode, now, startNow = launch.startNow, origin = origin)
         val wallet = when (val r = reserveCommitment(s.wallet, seriesId, commitmentKop, now)) {
             is WalletEngine.Result.Ok -> r.wallet
             is WalletEngine.Result.Insufficient -> return Result.NotEnoughBalance(r.availableKop)
             is WalletEngine.Result.Invalid -> return Result.Rejected
         }
-        return Result.Done(s.copy(series = u.series, session = u.session, wallet = wallet))
+        val entitlements = if (fromCredit) s.entitlements.withStandardCredit(kind, -1) else s.entitlements
+        return Result.Done(s.copy(series = u.series, session = u.session, wallet = wallet, entitlements = entitlements))
     }
 
     /**
@@ -107,7 +115,7 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
             }
         }
         val launch = SeriesDraft.resolve(time, now)
-        val u = series.start(seriesId, sessionId, failed.kind, launch.window, failed.contact, failed.mode, now, restartOf = failed.id, startNow = launch.startNow)
+        val u = series.start(seriesId, sessionId, failed.kind, launch.window, failed.contact, failed.mode, now, restartOf = failed.id, startNow = launch.startNow, origin = SeriesOrigin.PAID_RESTART)
         wallet = when (val r = reserveCommitment(wallet, seriesId, commitmentKop, now)) {
             is WalletEngine.Result.Ok -> r.wallet
             is WalletEngine.Result.Insufficient -> return Result.NotEnoughBalance(r.availableKop)
@@ -152,7 +160,7 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
             }
         }
         val launch = SeriesDraft.resolve(time, now)
-        val u = series.start(seriesId, sessionId, kind, launch.window, contact, mode, now, startNow = launch.startNow)
+        val u = series.start(seriesId, sessionId, kind, launch.window, contact, mode, now, startNow = launch.startNow, origin = SeriesOrigin.PAID_RESTART)
         wallet = when (val r = reserveCommitment(wallet, seriesId, commitmentKop, now)) {
             is WalletEngine.Result.Ok -> r.wallet
             is WalletEngine.Result.Insufficient -> return Result.NotEnoughBalance(r.availableKop)
@@ -166,7 +174,10 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         val current = s.series ?: return s
         if (!current.inProgress) return settle(s, now)
         val u = series.afterSession(current, s.session, nextSessionId, now)
-        return settle(s.copy(series = u.series, session = u.session), now)
+        var next = s.copy(series = u.series, session = u.session)
+        // A completed paid Restart earns one free same-length series into the копилка (granted once).
+        if (u.rewardKind != null) next = next.copy(entitlements = next.entitlements.withStandardCredit(u.rewardKind, +1))
+        return settle(next, now)
     }
 
     /**
@@ -205,7 +216,9 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         val current = s.series ?: return null
         val u = series.cancelScheduled(current, s.session, now) ?: return null
         val wallet = WalletEngine.settle(s.wallet, u.series, now)
-        return Cancelled(s.copy(series = s.restartedFrom, restartedFrom = null, session = u.session, wallet = wallet), u.series)
+        // A series started from the копилка and cancelled before it began gives its credit back (no loss).
+        val entitlements = if (current.origin == SeriesOrigin.FROM_CREDIT) s.entitlements.withStandardCredit(current.kind, +1) else s.entitlements
+        return Cancelled(s.copy(series = s.restartedFrom, restartedFrom = null, session = u.session, wallet = wallet, entitlements = entitlements), u.series)
     }
 
     /**
