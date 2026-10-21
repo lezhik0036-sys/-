@@ -15,7 +15,7 @@ enum class SeriesKind(
     val restartPriceRub: Int,
 ) {
     THREE(3, 99),
-    FIVE(5, 199),
+    FIVE(5, 179),
     SEVEN(7, 299),
 }
 

@@ -38,7 +38,7 @@ class SeriesTest {
 
     @Test
     fun `restart prices`() {
-        assertEquals(listOf(99, 199, 299), SeriesKind.entries.map { it.restartPriceRub })
+        assertEquals(listOf(99, 179, 299), SeriesKind.entries.map { it.restartPriceRub })
         assertEquals(listOf(3, 5, 7), SeriesKind.entries.map { it.periods })
     }
 

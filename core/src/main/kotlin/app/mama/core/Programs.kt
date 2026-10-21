@@ -90,7 +90,7 @@ data class FlexPackage(
 
     companion object {
         const val PERIODS = 7
-        const val PRICE_RUB = 399
+        const val PRICE_RUB = 349
         val VALIDITY: Duration = Duration.ofDays(30)
 
         /** Shortest FLEX period. */

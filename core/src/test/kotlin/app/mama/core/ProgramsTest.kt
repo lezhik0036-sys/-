@@ -206,11 +206,11 @@ class ProgramsTest {
     }
 
     @Test
-    fun `package is 7 periods for 30 days at 399`() {
+    fun `package is 7 periods for 30 days at 349`() {
         val p = flex.activate("f", GrantSource.TEST_NO_PAYMENT, day0)
         assertEquals(7, p.remaining)
         assertEquals(day0 + Duration.ofDays(30), p.expiresAt)
-        assertEquals(399, FlexPackage.PRICE_RUB)
+        assertEquals(349, FlexPackage.PRICE_RUB)
     }
 
     @Test

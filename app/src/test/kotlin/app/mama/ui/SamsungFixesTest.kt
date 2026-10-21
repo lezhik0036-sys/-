@@ -289,10 +289,10 @@ class SamsungFixesTest {
     }
 
     @Test
-    fun `7 - test top-up pays for FLEX 399`() {
+    fun `7 - test top-up pays for FLEX 349`() {
         assertTrue(Mama.topUpTest(context, 1_000_00))
         assertTrue(Mama.activateFlex(context, GrantSource.INTERNAL_BALANCE))
-        assertEquals(601_00L, Mama.wallet(context).availableKop)
+        assertEquals(651_00L, Mama.wallet(context).availableKop)
         assertEquals(LedgerType.FLEX_PURCHASE_TEST, Mama.wallet(context).entries.last().type)
         assertNotNull(Mama.entitlements(context).flex)
     }
