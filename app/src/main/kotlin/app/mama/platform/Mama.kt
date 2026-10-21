@@ -32,6 +32,9 @@ import app.mama.core.TestMode
 import app.mama.core.TrustedContact
 import app.mama.billing.FeatureFlags
 import app.mama.lock.LockService
+import app.mama.trustedexit.DeliveryResult
+import app.mama.trustedexit.ExitCodeRequest
+import app.mama.trustedexit.TrustedExit
 import app.mama.ui.Requirement
 import app.mama.ui.Texts
 import java.time.Instant
@@ -514,10 +517,23 @@ object Mama {
     sealed interface CodeRequest {
         data class Sent(val contact: TrustedContact, val expiresAt: Instant) : CodeRequest
         data class Rejected(val reason: LockEngine.CodeRequestError, val retryAt: Instant?) : CodeRequest
+
+        /** The provider refused the message; nothing is pending, the user can retry. */
         data object SmsFailed : CodeRequest
+
+        /** No internet: the code is sent through the backend, so without a network it cannot go out. */
+        data object Offline : CodeRequest
     }
 
-    /** Generates a code, sends it by SMS to the trusted contact, and forgets it. */
+    /**
+     * Asks the backend to deliver a Trusted Exit code to the trusted contact
+     * ([TrustedExit]). The device never sends the SMS itself and never shows
+     * the code, so delivery does not depend on this device's SIM. The code is
+     * still generated and verified by [engine] (the 3-attempt rule and expiry
+     * are unchanged); only its delivery changed. The challenge is committed
+     * only once the backend accepted the message, so an offline or failed
+     * delivery leaves nothing pending.
+     */
     @Synchronized
     fun requestCode(context: Context, kind: ExitKind): CodeRequest {
         val r = reconcile(context)
@@ -526,12 +542,22 @@ object Mama {
             is LockEngine.CodeRequestResult.Rejected -> CodeRequest.Rejected(result.reason, result.retryAt)
             is LockEngine.CodeRequestResult.Issued -> {
                 val text = Texts.smsForContact(session.plan.mode, kind, result.plainCode, policy)
-                // Only commit the challenge if the SMS actually left; otherwise the
-                // user would be stuck waiting for a code nobody received.
-                if (!SmsSender.send(context, session.contact.phone, text)) return CodeRequest.SmsFailed
-                SessionStore(context.applicationContext).save(r.snapshot.copy(session = result.session))
-                reconcile(context)
-                CodeRequest.Sent(session.contact, result.session.challenge!!.expiresAt)
+                val request = ExitCodeRequest(
+                    sessionId = session.id,
+                    kind = kind.name,
+                    // One key per challenge, so a double tap reuses the same backend request.
+                    idempotencyKey = "${session.id}:${result.session.challenge!!.issuedAt}",
+                    debugMessage = text,
+                )
+                when (val delivery = TrustedExit.deliver(context, request)) {
+                    is DeliveryResult.Accepted -> {
+                        SessionStore(context.applicationContext).save(r.snapshot.copy(session = result.session))
+                        reconcile(context)
+                        CodeRequest.Sent(session.contact, result.session.challenge!!.expiresAt)
+                    }
+                    DeliveryResult.Offline -> CodeRequest.Offline
+                    is DeliveryResult.Failed -> CodeRequest.SmsFailed
+                }
             }
         }
     }

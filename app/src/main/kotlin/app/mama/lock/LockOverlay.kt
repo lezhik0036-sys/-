@@ -241,7 +241,9 @@ class LockOverlay(private val service: LockService) : LockActions {
         message = when (val r = Mama.requestCode(service, ExitKind.END_SESSION)) {
             is Mama.CodeRequest.Sent -> null
             is Mama.CodeRequest.Rejected -> Texts.codeRequestError(r.reason, r.retryAt, s.plan.zone)
-            Mama.CodeRequest.SmsFailed -> "Не удалось отправить SMS. Проверь связь и попробуй ещё раз."
+            Mama.CodeRequest.SmsFailed -> "Не удалось отправить код. Попробуй ещё раз."
+            Mama.CodeRequest.Offline ->
+                "Нет подключения к интернету. Для отправки кода доверенному контакту MAMA нужен интернет."
         }
         input.clear()
         rebind()

@@ -62,7 +62,7 @@ enum class ExitKind {
 
 /**
  * An outstanding code sent to the trusted contact. Only a salted hash is kept:
- * the plain code exists in memory just long enough to be sent by SMS.
+ * the plain code exists in memory just long enough to be handed to delivery.
  */
 data class CodeChallenge(
     val kind: ExitKind,
