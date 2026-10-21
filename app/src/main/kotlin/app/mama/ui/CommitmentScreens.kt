@@ -268,7 +268,7 @@ internal fun MainActivity.balanceCard(wallet: Wallet, compact: Boolean = false):
             row.addView(kit.secondaryButton("+${Texts.money(amount)} · тест") {
                 Mama.topUpTest(this@balanceCard, amount)
                 render()
-            }.apply { minHeight = kit.dp(44); textSize = 14f }, kit.weight().apply { if (i > 0) leftMargin = kit.dp(8) })
+            }.apply { minHeight = kit.dp(44); textSize = 17f }, kit.weight().apply { if (i > 0) leftMargin = kit.dp(8) })
         }
         addView(row, kit.gap(14))
         addView(kit.text("Тестовая сборка: кнопки добавляют тестовые кредиты, не деньги. Пополнение картой не подключено. Вывести или перевести баланс нельзя.", MamaType.SMALL, MamaColors.TextSecondary), kit.gap(8))

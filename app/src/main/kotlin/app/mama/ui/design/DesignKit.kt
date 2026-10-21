@@ -417,7 +417,8 @@ class DesignKit(val context: Context) {
     /** A number in a small card with its label under it ("17 · Ночей пройдено"). */
     fun tile(value: CharSequence, label: String): View = card(paddingDp = 14).apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        addView(text(value, Typo.NUMBER, Palette.Ink, center = true).apply { textSize = 40f; maxLines = 1 }, centered())
+        // A short number large; a longer value ("7 из 7") smaller, so it always fits on one line.
+        addView(text(value, Typo.NUMBER, Palette.Ink, center = true).apply { textSize = if (value.length > 3) 30f else 40f; maxLines = 1 }, centered())
         addView(text(label, Typo.LABEL, Palette.InkMuted, center = true), centered(4))
     }
 
