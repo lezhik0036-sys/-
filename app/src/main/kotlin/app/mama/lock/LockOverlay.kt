@@ -10,7 +10,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import app.mama.billing.FeatureFlags
 import app.mama.core.ExitKind
-import app.mama.core.LockEngine
+import app.mama.trustedexit.TrustedExitStore
 import app.mama.core.Session
 import app.mama.core.TestMode
 import app.mama.motivation.MotivationCatalog
@@ -116,8 +116,15 @@ class LockOverlay(private val service: LockService) : LockActions {
 
     private fun bind(s: Session, now: Instant) {
         val view = screen ?: return
-        val challenge = s.challenge
-        val resendAt = s.codeCooldownUntil ?: challenge?.expiresAt
+        // Server-authoritative Trusted Exit: the device holds only the handle
+        // (challengeId, expiry, attempts), never the code. Expiry, attempts and
+        // the resend countdown come from it.
+        val handle = TrustedExitStore(service).active(s.id)
+        val lockedUntil = handle?.lockedUntilMs?.let(Instant::ofEpochMilli)
+        val expiresAt = handle?.expiresAtMs?.let(Instant::ofEpochMilli)
+        val codeActive = handle != null && handle.kind == ExitKind.END_SESSION.name &&
+            lockedUntil == null && expiresAt != null && expiresAt.isAfter(now)
+        val resendAt = (lockedUntil ?: expiresAt?.takeIf { codeActive })?.takeIf { it.isAfter(now) }
         view.bind(
             LockModel(
                 now = now,
@@ -131,9 +138,9 @@ class LockOverlay(private val service: LockService) : LockActions {
                 promise = Promise.get(service),
                 call = LockService.callState,
                 exitOpen = exitOpen,
-                codeActive = challenge != null && challenge.kind == ExitKind.END_SESSION,
-                attemptsLeft = challenge?.attemptsLeft ?: Mama.policy.maxAttempts,
-                resendAt = resendAt?.takeIf { it.isAfter(now) },
+                codeActive = codeActive,
+                attemptsLeft = handle?.attemptsLeft ?: Mama.policy.maxAttempts,
+                resendAt = resendAt,
                 codeLength = Mama.policy.codeLength,
                 input = input.toString(),
                 message = message,
@@ -273,12 +280,13 @@ class LockOverlay(private val service: LockService) : LockActions {
         val result = Mama.submitCode(service, input.toString())
         input.clear()
         message = when (result) {
-            is LockEngine.CodeResult.Accepted -> null
-            is LockEngine.CodeResult.Wrong -> "Неверный код."
-            is LockEngine.CodeResult.Exhausted ->
+            Mama.SubmitResult.Accepted -> null
+            is Mama.SubmitResult.Wrong -> "Неверный код."
+            is Mama.SubmitResult.Locked ->
                 "Попытки закончились. Новый код можно запросить в ${Texts.time(result.retryAt, s.plan.zone)}."
-            is LockEngine.CodeResult.NoActiveCode -> "Код больше не действует. Запроси новый."
-            null -> null
+            Mama.SubmitResult.NoActiveCode -> "Код больше не действует. Запроси новый."
+            Mama.SubmitResult.Offline ->
+                "Нет подключения к интернету. Проверь связь и попробуй ещё раз."
         }
         service.onStateChanged()
         if (root != null) rebind()

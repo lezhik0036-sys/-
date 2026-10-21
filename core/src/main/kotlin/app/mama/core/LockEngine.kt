@@ -169,15 +169,7 @@ class LockEngine(
             normalized.all { it.isDigit() } &&
             CodeHasher.matches(challenge.salt, challenge.hash, normalized)
         if (ok) {
-            val cleared = s.copy(challenge = null)
-            val next = when (challenge.kind) {
-                ExitKind.END_SESSION -> finish(cleared, FinishReason.EXITED_WITH_CONTACT, now)
-                ExitKind.EMERGENCY -> cleared.copy(
-                    emergencyUntil = minOf(now + policy.emergencyPass, s.plan.end),
-                    emergencyPassesUsed = s.emergencyPassesUsed + 1,
-                )
-            }
-            return CodeResult.Accepted(next, challenge.kind)
+            return CodeResult.Accepted(applyExit(s, challenge.kind, now), challenge.kind)
         }
         val left = challenge.attemptsLeft - 1
         if (left <= 0) {
@@ -185,6 +177,38 @@ class LockEngine(
             return CodeResult.Exhausted(s.copy(challenge = null, codeCooldownUntil = retryAt), retryAt)
         }
         return CodeResult.Wrong(s.copy(challenge = challenge.copy(attemptsLeft = left)), left)
+    }
+
+    /**
+     * The transition of an authorized Trusted Exit, shared by [submitCode] (a
+     * correct code checked here) and [endByTrustedExit] (verification done
+     * elsewhere, server-authoritative). END_SESSION finishes the series;
+     * EMERGENCY opens one temporary pass. The series state machine is the
+     * same either way.
+     */
+    private fun applyExit(s: Session, kind: ExitKind, now: Instant): Session {
+        val cleared = s.copy(challenge = null)
+        return when (kind) {
+            ExitKind.END_SESSION -> finish(cleared, FinishReason.EXITED_WITH_CONTACT, now)
+            ExitKind.EMERGENCY -> cleared.copy(
+                emergencyUntil = minOf(now + policy.emergencyPass, s.plan.end),
+                emergencyPassesUsed = s.emergencyPassesUsed + 1,
+            )
+        }
+    }
+
+    /**
+     * Ends a locked session as an authorized Trusted Exit when the code was
+     * verified by the backend, not on the device (server-authoritative flow).
+     * It performs exactly the same transition as a correct code in
+     * [submitCode]; it does not look at [Session.challenge] and needs no code,
+     * so the device never has to hold or check the code. Returns the session
+     * unchanged when it is not locked.
+     */
+    fun endByTrustedExit(session: Session, kind: ExitKind, now: Instant): Session {
+        val s = advance(session, now)
+        if (stateOf(s, now) !is LockState.Locked) return s
+        return applyExit(s, kind, now)
     }
 
     private fun finish(s: Session, reason: FinishReason, at: Instant) = s.copy(

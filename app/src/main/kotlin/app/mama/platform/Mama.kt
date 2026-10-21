@@ -32,11 +32,13 @@ import app.mama.core.TestMode
 import app.mama.core.TrustedContact
 import app.mama.billing.FeatureFlags
 import app.mama.lock.LockService
-import app.mama.trustedexit.DeliveryResult
-import app.mama.trustedexit.ExitCodeRequest
+import app.mama.trustedexit.CreateChallengeRequest
+import app.mama.trustedexit.CreateChallengeResult
+import app.mama.trustedexit.StoredHandle
 import app.mama.trustedexit.TrustedExit
+import app.mama.trustedexit.TrustedExitStore
+import app.mama.trustedexit.VerifyResult
 import app.mama.ui.Requirement
-import app.mama.ui.Texts
 import java.time.Instant
 import java.time.ZoneId
 import java.util.UUID
@@ -526,49 +528,89 @@ object Mama {
     }
 
     /**
-     * Asks the backend to deliver a Trusted Exit code to the trusted contact
-     * ([TrustedExit]). The device never sends the SMS itself and never shows
-     * the code, so delivery does not depend on this device's SIM. The code is
-     * still generated and verified by [engine] (the 3-attempt rule and expiry
-     * are unchanged); only its delivery changed. The challenge is committed
-     * only once the backend accepted the message, so an offline or failed
-     * delivery leaves nothing pending.
+     * Asks the backend ([TrustedExit]) to create a Trusted Exit challenge and
+     * deliver the code to the trusted contact. The backend generates and owns
+     * the code; the device receives only a handle (challengeId, expiry,
+     * attempts) and stores it in [TrustedExitStore] — never the code, so
+     * delivery does not depend on this device's SIM. Offline is fail-closed:
+     * nothing is created and nothing is pending.
      */
     @Synchronized
     fun requestCode(context: Context, kind: ExitKind): CodeRequest {
         val r = reconcile(context)
         val session = r.snapshot.session ?: return CodeRequest.Rejected(LockEngine.CodeRequestError.NOT_LOCKED, null)
-        return when (val result = engine.requestCode(session, kind, r.trustedNow)) {
-            is LockEngine.CodeRequestResult.Rejected -> CodeRequest.Rejected(result.reason, result.retryAt)
-            is LockEngine.CodeRequestResult.Issued -> {
-                val text = Texts.smsForContact(session.plan.mode, kind, result.plainCode, policy)
-                val request = ExitCodeRequest(
-                    sessionId = session.id,
-                    kind = kind.name,
-                    // One key per challenge, so a double tap reuses the same backend request.
-                    idempotencyKey = "${session.id}:${result.session.challenge!!.issuedAt}",
-                    debugMessage = text,
+        if (r.state !is LockState.Locked) return CodeRequest.Rejected(LockEngine.CodeRequestError.NOT_LOCKED, null)
+        val request = CreateChallengeRequest(sessionId = session.id, kind = kind.name, idempotencyKey = session.id)
+        return when (val res = TrustedExit.createChallenge(context, request)) {
+            is CreateChallengeResult.Created -> {
+                TrustedExitStore(context).put(
+                    StoredHandle(
+                        sessionId = session.id,
+                        challengeId = res.handle.challengeId,
+                        kind = res.handle.kind,
+                        issuedAtMs = res.handle.issuedAtMs,
+                        expiresAtMs = res.handle.expiresAtMs,
+                        attemptsLeft = res.handle.attemptsLeft,
+                        delivery = res.delivery,
+                    ),
                 )
-                when (val delivery = TrustedExit.deliver(context, request)) {
-                    is DeliveryResult.Accepted -> {
-                        SessionStore(context.applicationContext).save(r.snapshot.copy(session = result.session))
-                        reconcile(context)
-                        CodeRequest.Sent(session.contact, result.session.challenge!!.expiresAt)
-                    }
-                    DeliveryResult.Offline -> CodeRequest.Offline
-                    is DeliveryResult.Failed -> CodeRequest.SmsFailed
-                }
+                CodeRequest.Sent(session.contact, Instant.ofEpochMilli(res.handle.expiresAtMs))
             }
+            CreateChallengeResult.Offline -> CodeRequest.Offline
+            is CreateChallengeResult.Rejected -> when (res.reason) {
+                CreateChallengeResult.Reason.ALREADY_PENDING ->
+                    CodeRequest.Rejected(LockEngine.CodeRequestError.ALREADY_PENDING, null)
+                CreateChallengeResult.Reason.COOLDOWN ->
+                    CodeRequest.Rejected(LockEngine.CodeRequestError.COOLDOWN, res.retryAtMs?.let(Instant::ofEpochMilli))
+            }
+            is CreateChallengeResult.Failed -> CodeRequest.SmsFailed
         }
     }
 
+    /** Result of submitting a code: the backend verified it, the device only reacts. */
+    sealed interface SubmitResult {
+        data object Accepted : SubmitResult
+        data class Wrong(val attemptsLeft: Int) : SubmitResult
+        data class Locked(val retryAt: Instant) : SubmitResult
+        data object NoActiveCode : SubmitResult
+        data object Offline : SubmitResult
+    }
+
+    /**
+     * Sends `challengeId + enteredCode` to the backend and reacts to the only
+     * answers it gives (VALID / INVALID / EXPIRED / LOCKED). On VALID the
+     * series ends through the existing engine transition
+     * ([LockEngine.endByTrustedExit]); the device never checks the code and
+     * never holds it.
+     */
     @Synchronized
-    fun submitCode(context: Context, code: String): LockEngine.CodeResult? {
+    fun submitCode(context: Context, code: String): SubmitResult {
         val r = reconcile(context)
-        val session = r.snapshot.session ?: return null
-        val result = engine.submitCode(session, code, r.trustedNow)
-        SessionStore(context.applicationContext).save(r.snapshot.copy(session = result.session))
-        sync(context)
-        return result
+        val session = r.snapshot.session ?: return SubmitResult.NoActiveCode
+        val store = TrustedExitStore(context)
+        val handle = store.active(session.id) ?: return SubmitResult.NoActiveCode
+        return when (val res = TrustedExit.verify(context, handle.challengeId, code)) {
+            VerifyResult.Valid -> {
+                val kind = runCatching { ExitKind.valueOf(handle.kind) }.getOrDefault(ExitKind.END_SESSION)
+                val ended = engine.endByTrustedExit(session, kind, r.trustedNow)
+                SessionStore(context.applicationContext).save(r.snapshot.copy(session = ended))
+                store.clear()
+                sync(context)
+                SubmitResult.Accepted
+            }
+            is VerifyResult.Invalid -> {
+                store.put(handle.copy(attemptsLeft = res.attemptsLeft))
+                SubmitResult.Wrong(res.attemptsLeft)
+            }
+            is VerifyResult.Locked -> {
+                store.put(handle.copy(attemptsLeft = 0, lockedUntilMs = res.retryAtMs))
+                SubmitResult.Locked(Instant.ofEpochMilli(res.retryAtMs))
+            }
+            VerifyResult.Expired, VerifyResult.Unknown -> {
+                store.clear()
+                SubmitResult.NoActiveCode
+            }
+            VerifyResult.Offline -> SubmitResult.Offline
+        }
     }
 }
