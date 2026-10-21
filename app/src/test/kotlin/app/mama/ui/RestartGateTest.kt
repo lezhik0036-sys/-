@@ -4,7 +4,11 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import app.mama.core.DailyWindow
 import app.mama.core.Entitlements
+import app.mama.core.ExitKind
 import app.mama.core.GrantSource
+import app.mama.core.LaunchTime
+import app.mama.core.LockEngine
+import app.mama.core.SeriesFlow
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
@@ -15,6 +19,7 @@ import app.mama.core.TrustedContact
 import app.mama.core.Wallet
 import app.mama.platform.Mama
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -168,5 +173,33 @@ class RestartGateTest {
         assertEquals(Mama.SeriesStart.Rejected, startPaid(SeriesKind.THREE))
         assertEquals(44_000_00L, Mama.wallet(context).availableKop)
         assertNull(Mama.series(context))
+    }
+
+    // Each new срыв re-anchors the 30-day wait to itself, through the real reconcile path:
+    // a paid Restart series that was started during an OLD cooldown and is now Trusted-Exited
+    // must move the free-start clock to THIS break, not leave it on the earlier failure.
+    @Test
+    fun `a new failure re-anchors the cooldown to itself, not the earlier one`() {
+        val lock = LockEngine()
+        val flow = SeriesFlow(lock)
+        val oldFailure = Instant.now().minus(Duration.ofDays(10))
+        val startedAt = Instant.now().minus(Duration.ofHours(3))
+        // A paid Restart (3 дня) begun during the old cooldown, brought ACTIVE.
+        val scheduled = (
+            flow.startPaid(
+                Snapshot(entitlements = Entitlements(standardFailedAt = oldFailure), wallet = Wallet(availableKop = 44_000_00)),
+                GrantSource.INTERNAL_BALANCE, SeriesKind.THREE, LaunchTime.AutoNow(Duration.ofHours(8), zone), mom, SessionMode.SLEEP,
+                "paid", "sess", null, startedAt,
+            ) as SeriesFlow.Result.Done
+            ).snapshot
+        val active = flow.confirm(scheduled, startedAt.plusSeconds(1))!!
+        // Trusted Exit a moment ago: the series fails.
+        val ended = lock.endByTrustedExit(active.session!!, ExitKind.END_SESSION, Instant.now().minusSeconds(5))
+        seed(active.copy(session = ended))
+
+        val r = Mama.reconcile(context)
+        assertEquals(SeriesStatus.BROKEN, r.snapshot.series!!.status)
+        assertNotEquals("the clock no longer sits on the old failure", oldFailure, r.snapshot.entitlements.standardFailedAt)
+        assertTrue(StandardRules.daysUntilFreeStart(r.snapshot.entitlements, Mama.trustedNow(context)) in 29..30)
     }
 }
