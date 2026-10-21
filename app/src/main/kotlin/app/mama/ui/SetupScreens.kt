@@ -722,10 +722,7 @@ internal fun MainActivity.startChosen() {
                 closeDraft()
             }
             Mama.SeriesStart.Busy -> return alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
-            is Mama.SeriesStart.Waiting -> return alert(
-                "Бесплатная серия пока недоступна",
-                "Следующая бесплатная серия через ${Texts.days(r.days.toInt())}. Телефон при этом не заблокирован.",
-            )
+            is Mama.SeriesStart.Waiting -> return offerStartDuringCooldown(choice.series!!, r.days, contact)
             is Mama.SeriesStart.NotEnoughBalance -> return notEnoughBalance { commitmentKop = null; startChosen() }
             Mama.SeriesStart.Rejected -> return alert("Не получилось", "Серию сейчас нельзя начать.")
         }
@@ -734,6 +731,45 @@ internal fun MainActivity.startChosen() {
     step = Step.WELCOME
     tab = 0
     render()
+}
+
+/**
+ * The free start is still on the 30-day cooldown after a failure. Not a dead
+ * end: two honest ways on — start this series now with a paid Restart, or wait
+ * for the free start. The phone is never locked during the wait; unlocking and
+ * Trusted Exit are always free. This pays only for starting another series.
+ */
+private fun MainActivity.offerStartDuringCooldown(kind: app.mama.core.SeriesKind, days: Long, contact: TrustedContact) {
+    BrandDialog.show(
+        this, "Начать серию сейчас?",
+        message = "Бесплатная новая серия будет доступна через ${Texts.days(days.toInt())} — телефон при этом не заблокирован. " +
+            "Начать эту серию сейчас можно через Restart.",
+        confirm = "Начать сейчас · Restart — ${Texts.price(kind.restartPriceRub)}",
+        cancel = "Подождать",
+    ) {
+        payStartDuringCooldown(kind, contact)
+        true
+    }
+}
+
+/** Pays the Restart price (from the balance) and starts the chosen series at once; the cooldown stays. */
+private fun MainActivity.payStartDuringCooldown(kind: app.mama.core.SeriesKind, contact: TrustedContact) {
+    val commitment = commitmentKop
+    Checkout.obtain(this, Product.Restart(kind), "Начать серию · Restart", reserveAheadKop = commitment ?: 0) { source ->
+        when (Mama.startSeriesWithRestart(this, kind, launchTime(), contact, mode, source, commitment)) {
+            Mama.SeriesStart.Started -> {
+                commitmentKop = null
+                closeDraft()
+                agreed = false
+                step = Step.WELCOME
+                tab = 0
+                render()
+            }
+            is Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; payStartDuringCooldown(kind, contact) }
+            Mama.SeriesStart.Busy -> alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
+            is Mama.SeriesStart.Waiting, Mama.SeriesStart.Rejected -> alert("Не получилось", "Серию сейчас нельзя начать.")
+        }
+    }
 }
 
 internal fun MainActivity.activateFlex(source: GrantSource) {

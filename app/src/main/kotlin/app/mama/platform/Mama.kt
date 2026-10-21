@@ -253,6 +253,47 @@ object Mama {
         return saveStart(context, result)
     }
 
+    /**
+     * "Начать сейчас" from the normal setup while the 30-day free start is on
+     * cooldown (the gate that [startSeries] reports as [SeriesStart.Waiting]):
+     * pay the chosen length's Restart price and start a new series at once.
+     * The free-start cooldown is NOT reset — paying buys only this one start
+     * (see [SeriesFlow.startPaid]). Trusted Exit and unlocking are never paid.
+     */
+    fun startSeriesWithRestart(
+        context: Context,
+        kind: SeriesKind,
+        window: DailyWindow,
+        contact: TrustedContact,
+        mode: SessionMode,
+        source: GrantSource,
+        commitmentKop: Long? = null,
+    ): SeriesStart = startSeriesWithRestart(context, kind, LaunchTime.Fixed(window), contact, mode, source, commitmentKop)
+
+    /** [startSeriesWithRestart] with the draft's [time], resolved at the confirmation like [startSeries]. */
+    @Synchronized
+    fun startSeriesWithRestart(
+        context: Context,
+        kind: SeriesKind,
+        time: LaunchTime,
+        contact: TrustedContact,
+        mode: SessionMode,
+        source: GrantSource,
+        commitmentKop: Long? = null,
+    ): SeriesStart {
+        val r = reconcile(context)
+        // A series already running — or a double tap that reached this far — takes no second
+        // charge and starts no second series: the running series makes this Busy.
+        if (!idle(r)) return SeriesStart.Busy
+        // Paid Restart is only the cooldown gate: when a free start is available it must never charge.
+        if (StandardRules.canStartFree(r.snapshot.entitlements, r.trustedNow)) return SeriesStart.Rejected
+        Log.i(TAG, "Paid start of $kind during the free-start cooldown: $source")
+        val result = flow.startPaid(
+            r.snapshot, source, kind, time, contact, mode, UUID.randomUUID().toString(), UUID.randomUUID().toString(), commitmentKop, r.trustedNow,
+        )
+        return saveStart(context, result)
+    }
+
     private fun saveStart(context: Context, result: SeriesFlow.Result): SeriesStart = when (result) {
         is SeriesFlow.Result.Done -> {
             SessionStore(context.applicationContext).save(result.snapshot)

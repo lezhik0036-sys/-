@@ -116,6 +116,51 @@ class SeriesFlow(lockEngine: LockEngine, policy: CorePolicy = CorePolicy()) {
         return Result.Done(s.copy(series = u.series, session = u.session, wallet = wallet, restartedFrom = failed))
     }
 
+    /**
+     * "Начать сейчас" from the normal setup while the 30-day free start is
+     * still on cooldown: a brand new standard series of [kind], paid for with
+     * that length's Restart price (held from the AVAILABLE balance for
+     * [GrantSource.INTERNAL_BALANCE], like any Restart, until the series
+     * becomes ACTIVE). The Busy and "is a free start available?" checks are
+     * the caller's.
+     *
+     * Unlike [restart] this is NOT tied to a specific failed series — after
+     * "Вернуться на главную" there may be none left to continue — so it has no
+     * [Series.restartOf] and never sets [Snapshot.restartedFrom]. [settle]
+     * therefore does not lift the 30-day free-start wait: the cooldown keeps
+     * running and a later free start is unchanged. The payment buys only this
+     * one immediate start; unlocking and Trusted Exit are always free.
+     */
+    fun startPaid(
+        s: Snapshot,
+        source: GrantSource,
+        kind: SeriesKind,
+        time: LaunchTime,
+        contact: TrustedContact,
+        mode: SessionMode,
+        seriesId: String,
+        sessionId: String,
+        commitmentKop: Long?,
+        now: Instant,
+    ): Result {
+        var wallet = s.wallet
+        if (source == GrantSource.INTERNAL_BALANCE) {
+            wallet = when (val r = WalletEngine.holdRestart(wallet, seriesId, kind.restartPriceRub * 100L, now)) {
+                is WalletEngine.Result.Ok -> r.wallet
+                is WalletEngine.Result.Insufficient -> return Result.NotEnoughBalance(r.availableKop)
+                is WalletEngine.Result.Invalid -> return Result.Rejected
+            }
+        }
+        val launch = SeriesDraft.resolve(time, now)
+        val u = series.start(seriesId, sessionId, kind, launch.window, contact, mode, now, startNow = launch.startNow)
+        wallet = when (val r = reserveCommitment(wallet, seriesId, commitmentKop, now)) {
+            is WalletEngine.Result.Ok -> r.wallet
+            is WalletEngine.Result.Insufficient -> return Result.NotEnoughBalance(r.availableKop)
+            is WalletEngine.Result.Invalid -> return Result.Rejected
+        }
+        return Result.Done(s.copy(series = u.series, session = u.session, wallet = wallet))
+    }
+
     /** Brings the series up to date with its lock and settles what follows from it (reconcile). */
     fun fold(s: Snapshot, nextSessionId: String, now: Instant): Snapshot {
         val current = s.series ?: return s
