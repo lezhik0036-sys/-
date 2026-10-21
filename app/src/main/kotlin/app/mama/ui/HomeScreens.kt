@@ -600,7 +600,8 @@ internal fun MainActivity.failureScreen(
         render()
     }, v.k.gap(22))
     b.addView(v.link("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }, v.k.centered(6))
-    return v1Frame(Scenery.RECOVERY, design.topBar(null), b, null, layout = SceneLayout.HERO).also { it.first.tag = RECOVERY_SCREEN }
+    // The sun stays high in the window, so the path down to the lake is in view.
+    return v1Frame(Scenery.RECOVERY, design.topBar(null), b, null, layout = SceneLayout.HERO, focusY = 0.1f).also { it.first.tag = RECOVERY_SCREEN }
 }
 
 // ---------------- 12. Success ----------------

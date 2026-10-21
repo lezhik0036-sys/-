@@ -114,6 +114,12 @@ class ScenicBackground(
     /** [SceneLayout.CARD_RIGHT]: share of the card width the landscape takes. */
     private val vignette: Float = 0.42f,
     private val mood: SceneMood = SceneMood.CALM,
+    /**
+     * [SceneLayout.HERO]: where the sun of the photo sits in the window (0 top,
+     * 1 bottom), the photo whole in width — low to show the sky, high to show
+     * the ground. Null: the home framing.
+     */
+    private val focusY: Float? = null,
 ) : Drawable() {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val matrix = Matrix()
@@ -122,7 +128,7 @@ class ScenicBackground(
     override fun draw(canvas: Canvas) {
         val b = bounds
         if (b.width() <= 0 || b.height() <= 0) return
-        val bitmap = SceneCache.get(context, scenery, layout, base, b.width(), b.height(), vignette, mood) ?: run {
+        val bitmap = SceneCache.get(context, scenery, layout, base, b.width(), b.height(), vignette, mood, focusY) ?: run {
             paint.shader = null
             paint.color = base
             box.set(b)
@@ -163,18 +169,28 @@ internal object SceneCache {
     private var bundled: Map<Scenery, String>? = null
 
     @Synchronized
-    fun get(context: Context, scenery: Scenery, layout: SceneLayout, base: Int, w: Int, h: Int, vignette: Float = 0.42f, mood: SceneMood = SceneMood.CALM): Bitmap? {
+    fun get(
+        context: Context,
+        scenery: Scenery,
+        layout: SceneLayout,
+        base: Int,
+        w: Int,
+        h: Int,
+        vignette: Float = 0.42f,
+        mood: SceneMood = SceneMood.CALM,
+        focusY: Float? = null,
+    ): Bitmap? {
         // A painted screen background is soft: half resolution is enough. Photos and cards: full.
         val photo = file(context, scenery) != null
         val q = if (photo || layout == SceneLayout.CARD_BOTTOM || layout == SceneLayout.CARD_RIGHT) 1f else 0.5f
         val bw = max(1, (w * q).roundToInt())
         val bh = max(1, (h * q).roundToInt())
-        val key = "$scenery/$layout/$base/$vignette/$mood/$bw x $bh"
+        val key = "$scenery/$layout/$base/$vignette/$mood/$focusY/$bw x $bh"
         cache.get(key)?.let { return it }
         val density = context.resources.displayMetrics.density * q
         val bitmap = runCatching {
             Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also {
-                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette, density, mood)
+                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette, density, mood, focusY)
             }
         }.getOrNull() ?: return null
         cache.put(key, bitmap)
@@ -310,6 +326,7 @@ internal object ScenePainter {
         vignette: Float = 0.42f,
         density: Float = 1f,
         mood: SceneMood = SceneMood.CALM,
+        focusY: Float? = null,
     ) {
         reset()
         this.mood = mood
@@ -327,10 +344,9 @@ internal object ScenePainter {
                 val edge = H * if (hero) 0.9f else 0.86f
                 val layer = canvas.saveLayer(0f, 0f, w, H, null)
                 if (photo != null) {
-                    // The path of RECOVERY runs down the lower half of its photo: its sun stays high, the path in view.
-                    val path = hero && scenery == Scenery.RECOVERY
-                    val ty = if (path) 0.1f else if (hero) 0.62f else 0.42f
-                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, ty, if (hero && !path) 1.2f else 1f)
+                    val framed = hero && focusY != null
+                    val ty = if (framed) focusY!! else if (hero) 0.62f else 0.42f
+                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, ty, if (hero && !framed) 1.2f else 1f)
                 } else {
                     landscape(canvas, w, H, l, H)
                 }

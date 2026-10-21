@@ -213,8 +213,10 @@ internal val ONBOARDING = listOf(
 
 /**
  * One onboarding page (1–3): the dawn of the welcome goes on, its light
- * growing page by page (quiet, calm, bright); one line under it; the pages
- * as steps of a path. After the last one: the setup, as before.
+ * growing page by page (quiet, calm, bright) while the view comes down from
+ * the sky (a rhythm) over the horizon (day and night) to the shore where the
+ * path begins; one line under it; the pages as steps of a path. After the
+ * last one: the setup, as before.
  */
 internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     val d = design
@@ -233,7 +235,8 @@ internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
         render()
     }
     val mood = listOf(SceneMood.QUIET, SceneMood.CALM, SceneMood.BRIGHT)[page - 1]
-    return v1Frame(Scenery.DAWN, d.stepHeader(page, ONBOARDING.size) { onboardingBack() }, b, d.bottomCta(next), layout = SceneLayout.HERO, mood = mood)
+    val sun = listOf(0.78f, 0.31f, 0.08f)[page - 1]
+    return v1Frame(Scenery.DAWN, d.stepHeader(page, ONBOARDING.size) { onboardingBack() }, b, d.bottomCta(next), layout = SceneLayout.HERO, mood = mood, focusY = sun)
 }
 
 /** Back from an onboarding page: the page before, or the welcome. */

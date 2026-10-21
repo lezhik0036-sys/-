@@ -457,7 +457,8 @@ class MainActivity : Activity() {
         nav: View? = null,
         layout: SceneLayout = SceneLayout.HEADER,
         mood: SceneMood = SceneMood.CALM,
-    ): Pair<View, Boolean> = design.screen(scenery, layout, header, body, footer, nav, mood) to true
+        focusY: Float? = null,
+    ): Pair<View, Boolean> = design.screen(scenery, layout, header, body, footer, nav, mood, focusY) to true
 
     internal fun body(paddingTopDp: Int = 18) = design.body(paddingTopDp)
 

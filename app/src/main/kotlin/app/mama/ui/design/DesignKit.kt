@@ -885,9 +885,11 @@ class DesignKit(val context: Context) {
         cta: View? = null,
         nav: View? = null,
         mood: SceneMood = SceneMood.CALM,
+        /** [SceneLayout.HERO]: where the sun sits in the window ([ScenicBackground]). */
+        focusY: Float? = null,
     ): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        background = scenery?.let { ScenicBackground(context, it, layout, mood = mood) } ?: EarthPage(context.resources.displayMetrics.density, ground = nav == null)
+        background = scenery?.let { ScenicBackground(context, it, layout, mood = mood, focusY = focusY) } ?: EarthPage(context.resources.displayMetrics.density, ground = nav == null)
         header?.let { addView(it, fill()) }
         addView(ScrollView(context).apply {
             isFillViewport = true
