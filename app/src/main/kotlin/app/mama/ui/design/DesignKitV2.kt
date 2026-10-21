@@ -47,7 +47,7 @@ object V2 {
     /** Mist: a chosen card, the palest green. */
     val Mist = Color.rgb(0xEE, 0xF1, 0xE8)
 
-    /** Pale sand: steps still ahead, quiet circles. */
+    /** Pale sand: quiet surfaces. */
     val SandLight = Color.rgb(0xF2, 0xE8, 0xDA)
 
     /** Warm earth: quote marks; its ink for text on sand. */

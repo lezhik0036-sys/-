@@ -41,7 +41,7 @@ object Palette {
     val ProgressDark = V2.OliveDeep
     val ProgressMid = V2.Olive
     val ProgressLight = V2.Sage
-    val ProgressOff = V2.SandLight
+    val ProgressOff = V2.Sand
 
     /** Timer ring. */
     val RingArc = V2.Olive

@@ -273,8 +273,8 @@ class DesignKit(val context: Context) {
 
     /**
      * A secondary action that stays at hand but never leads the screen: a
-     * translucent warm pill with a sand outline, a small olive icon, a muted
-     * label, no shadow (lock).
+     * warm pill with a sand outline, a small olive icon, a muted label, no
+     * shadow (lock).
      */
     fun quietAction(icon: Icon, label: String, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
@@ -285,7 +285,8 @@ class DesignKit(val context: Context) {
         minHeight = dp(46)
         minimumHeight = dp(46)
         setPadding(dp(18), dp(10), dp(20), dp(10))
-        background = pressable(shape(Color.argb(0xCC, 0xF8, 0xF0, 0xE6), 23, Color.argb(0x99, 0xEB, 0xDC, 0xC9), 1f), 23)
+        // Nearly opaque: the sprigs of the earth page stay behind it, never show through.
+        background = pressable(shape(Color.argb(0xF2, 0xFA, 0xF3, 0xEA), 23, Color.argb(0xB3, 0xEB, 0xDC, 0xC9), 1f), 23)
         val d = IconDrawable(icon, Palette.Olive, 1.8f, solid = true).apply { setBounds(0, 0, dp(18), dp(18)) }
         setCompoundDrawables(d, null, null, null)
         compoundDrawablePadding = dp(10)
