@@ -139,9 +139,9 @@ class Kit(val context: Context) {
     // ---------- [MamaSelectableCard] ----------
 
     /**
-     * A choice card: icon circle, title, subtitle, optional trailing text.
-     * Selected: sage mist with an olive outline, a filled circle and a check;
-     * the clay of the main button stays the only strong colour.
+     * A choice row (reference screen 05): a sand circle with a line icon, a
+     * serif title, a subtitle, optional trailing text. Selected: a moss
+     * outline and a moss circle with a white icon.
      */
     fun selectableCard(
         icon: Icon,
@@ -151,16 +151,16 @@ class Kit(val context: Context) {
         trailing: String? = null,
         onClick: () -> Unit,
     ): View = row().apply {
-        setPadding(dp(14), dp(12), dp(18), dp(12))
-        minimumHeight = dp(76)
+        setPadding(dp(14), dp(13), dp(18), dp(13))
+        minimumHeight = dp(80)
         // As on the approved series screen: cream rows, the chosen one outlined in moss with a moss circle.
         val base = if (selected) shape(Palette.Card, Radii.CARD, Palette.Moss, 1.4f) else design.surface(Palette.Card, Radii.CARD)
         background = pressable(base, Radii.CARD)
         design.elevate(this, if (selected) 2.5f else 1.5f)
-        addView(design.iconCircle(icon, 50, if (selected) CircleStyle.FILLED else CircleStyle.SAND))
+        addView(design.iconCircle(icon, 52, if (selected) CircleStyle.FILLED else CircleStyle.SAND))
         val texts = column()
-        texts.addView(design.text(title, Typo.VALUE))
-        texts.addView(design.text(subtitle, Typo.CAPTION, Palette.InkMuted), gap(3))
+        texts.addView(design.text(title, Typo.VALUE).apply { textSize = 22f })
+        texts.addView(design.text(subtitle, Typo.LABEL, Palette.InkMuted), gap(3))
         addView(texts, weight().apply { leftMargin = dp(16) })
         trailing?.let {
             addView(design.text(it, Typo.VALUE, if (selected) Palette.Moss else Palette.Ink), wrap().apply { leftMargin = dp(8) })

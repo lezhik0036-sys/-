@@ -818,7 +818,7 @@ class DesignKit(val context: Context) {
      * "Осталось", "6 ч 12 мин" and the day of the series as a pill ("День 2
      * из 7"). Bind with [TimerRing.set].
      */
-    fun timerRing(sizeDp: Int = 196, sprout: Boolean = true): TimerRing {
+    fun timerRing(sizeDp: Int = 196, sprout: Boolean = true, valueSp: Float = Typo.NUMBER.sizeSp): TimerRing {
         // The disc and its shadow belong to the container, so the ring and the text are drawn above them.
         val root = FrameLayout(context).apply {
             background = oval(Palette.Card)
@@ -831,7 +831,7 @@ class DesignKit(val context: Context) {
         if (sprout) inner.addView(iconCircle(Icon.SPROUT, 44), size(44).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(8) })
         val caption = text("Осталось", Typo.LABEL, Palette.InkMuted, center = true)
         inner.addView(caption, centered())
-        val value = text("", Typo.NUMBER, Palette.Ink, center = true)
+        val value = text("", Typo.NUMBER, Palette.Ink, center = true).apply { textSize = valueSp }
         inner.addView(value, centered(6))
         val day = text("", Typo.LABEL, Palette.OliveInk, center = true).apply {
             textSize = 14f

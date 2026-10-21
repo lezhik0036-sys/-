@@ -184,7 +184,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         col.addView(callCard, d.gap(18))
 
         // Remaining time: the anchor of the screen, a large ring; when the phone is free again under it.
-        ring = d.timerRing(250)
+        ring = d.timerRing(284, valueSp = 52f)
         col.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(22) })
         until = v.text("", Typo.SUBTITLE, V2.InkMuted, center = true).apply { textSize = 18f }
         col.addView(until, d.centered(18))

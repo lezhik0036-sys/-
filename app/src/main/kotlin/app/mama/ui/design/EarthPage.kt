@@ -14,10 +14,10 @@ import android.graphics.drawable.Drawable
 
 /**
  * The page of every screen (MAMA_DESIGN_SYSTEM_V2 «Страница»): cream that
- * warms towards the bottom, with painted leaf sprigs (cut from the approved
- * welcome art) hanging from the top-right corner and growing from the
- * bottom-left one, as on the approved screens. [quiet]: the stillest page
- * (the lock) — cream only.
+ * warms towards the bottom, with a painted leaf sprig (cut from the approved
+ * welcome art) growing from the bottom-left corner, as on the approved
+ * screens; the top stays clear for the bar and the title. [quiet]: the
+ * stillest page — cream only.
  */
 class EarthPage(
     context: Context,
@@ -72,14 +72,6 @@ internal object EarthPainter {
         canvas.scale(-1f, 1f, sw / 2, sh / 2)
         box.set(0f, 0f, sw, sh)
         p.alpha = 0xE6
-        canvas.drawBitmap(sprig, null, box, p)
-        canvas.restore()
-        // Top-right: turned over, hanging from the corner.
-        canvas.save()
-        canvas.translate(w - sw * 0.86f + 18 * density, -14 * density)
-        canvas.rotate(180f, sw * 0.86f / 2, sh * 0.86f / 2)
-        box.set(0f, 0f, sw * 0.86f, sh * 0.86f)
-        p.alpha = 0xD9
         canvas.drawBitmap(sprig, null, box, p)
         canvas.restore()
         p.alpha = 0xFF

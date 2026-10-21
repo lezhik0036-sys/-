@@ -21,7 +21,9 @@ import kotlin.math.roundToInt
  * and anchored to its bottom — and the real views sit where the art leaves
  * room for them. Each child is placed in a rectangle given in the art's own
  * pixels, and text set with [text] keeps its size relative to the art. If the
- * lowest child would fall under the navigation bar, everything moves up.
+ * lowest child would fall under the navigation bar, everything moves up; a
+ * child the screen's edge would cut (the art is wider than the screen) moves
+ * in to stay whole.
  */
 class ArtLayout(
     context: Context,
@@ -29,7 +31,7 @@ class ArtLayout(
     private val artWidth: Int,
     private val artHeight: Int,
 ) : ViewGroup(context) {
-    private class Place(val x0: Int, val y0: Int, val x1: Int, val y1: Int, val center: Boolean)
+    private class Place(val x0: Int, val y0: Int, val x1: Int, val y1: Int, val center: Boolean, val exact: Boolean)
 
     private val places = HashMap<View, Place>()
     private val textSizes = HashMap<TextView, Float>()
@@ -40,9 +42,13 @@ class ArtLayout(
     /** The art itself, the first child, covering the whole layout. */
     val art: View = ArtView(context, asset).also { addView(it) }
 
-    /** Places [view] in the art's rectangle ([x0], [y0])–([x1], [y1]); [center]: vertically centred in it, else at its top. */
-    fun place(view: View, x0: Int, y0: Int, x1: Int, y1: Int, center: Boolean = true): ArtLayout = apply {
-        places[view] = Place(x0, y0, x1, y1, center)
+    /**
+     * Places [view] in the art's rectangle ([x0], [y0])–([x1], [y1]); [center]:
+     * vertically centred in it, else at its top; [exact]: exactly as high as
+     * the rectangle, else at most.
+     */
+    fun place(view: View, x0: Int, y0: Int, x1: Int, y1: Int, center: Boolean = true, exact: Boolean = false): ArtLayout = apply {
+        places[view] = Place(x0, y0, x1, y1, center, exact)
         addView(view)
     }
 
@@ -67,14 +73,18 @@ class ArtLayout(
         for ((view, p) in places) {
             val pw = ((p.x1 - p.x0) * scale).roundToInt()
             val ph = ((p.y1 - p.y0) * scale).roundToInt()
-            view.measure(MeasureSpec.makeMeasureSpec(pw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ph, MeasureSpec.AT_MOST))
+            view.measure(MeasureSpec.makeMeasureSpec(pw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ph, if (p.exact) MeasureSpec.EXACTLY else MeasureSpec.AT_MOST))
         }
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        art.layout(0, 0, r - l, b - t)
+        val w = r - l
+        val edge = (12 * resources.displayMetrics.density).roundToInt()
+        art.layout(0, 0, w, b - t)
         for ((view, p) in places) {
             val x = (artLeft + p.x0 * scale).roundToInt()
+                .coerceAtMost(w - paddingRight - edge - view.measuredWidth)
+                .coerceAtLeast(paddingLeft + edge)
             val boxTop = artTop + p.y0 * scale
             val boxHeight = (p.y1 - p.y0) * scale
             val y = (if (p.center) boxTop + (boxHeight - view.measuredHeight) / 2f else boxTop).roundToInt()

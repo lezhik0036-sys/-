@@ -626,7 +626,7 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
         (getChildAt(0) as android.widget.TextView).textSize = 40f
     })
     // No badges: the title is the reward, the open sky and the sun carry the light.
-    heroSpace(b, 236)
+    heroSpace(b, 212)
     // The result: every day of the series, done.
     val result = d.card(paddingDp = 20)
     result.addView(d.valueRow(Icon.SPROUT, "Твой результат · ${Texts.seriesName(series.kind)}", "$done из $n").view)
@@ -663,13 +663,13 @@ internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> 
         clipToOutline = true
         d.elevate(this, 2f)
     }
-    b.addView(photo, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(250)))
+    // At least 250 dp; on a taller screen the landscape takes the room left.
+    b.addView(photo, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(250), 1f))
     val thought = d.card(paddingDp = 22, radiusDp = V2.CARD_LARGE)
     thought.addView(d.text(phrase, Typo.QUOTE, Palette.Ink).apply { textSize = 24f }, d.fill())
     thought.addView(d.text("— MAMA", Typo.TAG, Palette.InkSoft), d.wrap().apply { topMargin = d.dp(12) })
     b.addView(thought, d.fill().apply { topMargin = -d.dp(44); leftMargin = d.dp(14); rightMargin = d.dp(14) })
-    b.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f).apply { topMargin = d.dp(18) })
-    b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap())
+    b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap().apply { topMargin = d.dp(26) })
     b.addView(d.dayCircles(done, n), d.gap(14))
     val next = d.primaryButton("Продолжить", large = true) { closeMotivation(series) }
     return lightFrame(d.topBar(null), b, d.bottomCta(next))

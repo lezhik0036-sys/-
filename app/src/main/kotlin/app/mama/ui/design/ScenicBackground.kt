@@ -369,7 +369,8 @@ internal object ScenePainter {
                 canvas.restoreToCount(layer)
                 if (photo != null) {
                     // Home: title, state badge and a phrase sit a little lower than a wizard subtitle.
-                    textVeil(canvas, w, w * if (hero) 0.62f else 0.55f, w * 0.12f, base)
+                    // A framed window carries a centred title (Recovery): its veil spans the whole width.
+                    textVeil(canvas, w, w * if (hero) 0.62f else 0.55f, w * 0.12f, base, centered = hero && focusY != null)
                 } else {
                     titleVeil(canvas, w, H * if (hero) 0.40f else 0.82f, base)
                     grain(canvas, w, h)
@@ -992,14 +993,21 @@ internal object ScenePainter {
      * milky on the left where the text is, clear over the sun on the right,
      * fading out below [textBottom]; and a light band under the top bar.
      */
-    private fun textVeil(c: Canvas, w: Float, textBottom: Float, fade: Float, base: Int) {
+    private fun textVeil(c: Canvas, w: Float, textBottom: Float, fade: Float, base: Int, centered: Boolean = false) {
         val bottom = textBottom + fade
         val layer = c.saveLayer(0f, 0f, w, bottom, null)
         p.maskFilter = null
-        p.shader = LinearGradient(
-            0f, 0f, w, 0f, intArrayOf(alpha(base, 215), alpha(base, 175), alpha(base, 0), alpha(base, 0)),
-            floatArrayOf(0f, 0.55f, 0.9f, 1f), Shader.TileMode.CLAMP,
-        )
+        p.shader = if (centered) {
+            LinearGradient(
+                0f, 0f, w, 0f, intArrayOf(alpha(base, 150), alpha(base, 195), alpha(base, 195), alpha(base, 150)),
+                floatArrayOf(0f, 0.3f, 0.7f, 1f), Shader.TileMode.CLAMP,
+            )
+        } else {
+            LinearGradient(
+                0f, 0f, w, 0f, intArrayOf(alpha(base, 215), alpha(base, 175), alpha(base, 0), alpha(base, 0)),
+                floatArrayOf(0f, 0.55f, 0.9f, 1f), Shader.TileMode.CLAMP,
+            )
+        }
         c.drawRect(0f, 0f, w, bottom, p)
         p.shader = LinearGradient(0f, textBottom, 0f, bottom, Color.BLACK, Color.TRANSPARENT, Shader.TileMode.CLAMP)
         p.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)

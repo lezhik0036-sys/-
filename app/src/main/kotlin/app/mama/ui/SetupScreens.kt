@@ -203,8 +203,13 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         beginDraft()
         if (!prefs.getBoolean(MainActivity.ONBOARDING_SEEN, false)) onboardingPage = 1
         go(Step.PERMISSIONS)
+    }.apply {
+        // As high as the button drawn on the art, whatever the screen.
+        minHeight = 0
+        minimumHeight = 0
+        setPadding(paddingLeft, 0, paddingRight, 0)
     }
-    screen.place(screen.text(start, 40f), 178, 1272, 768, 1372)
+    screen.place(screen.text(start, 40f), 178, 1272, 768, 1372, exact = true)
     // Three quiet notes, not buttons: what the path is about.
     listOf(Icon.SPROUT to "Забота\nо себе", Icon.MOUNTAIN to "Больше\nсвободы", Icon.SUN to "Осознанная\nжизнь").forEachIndexed { i, (icon, label) ->
         val x = WelcomeArt.ICON_LEFTS[i]
@@ -213,9 +218,9 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
             d.elevate(this, 1f)
             val pad = d.dp(14)
             setPadding(pad, pad, pad, pad)
-            addView(ImageView(this@welcomeScreen).apply { setImageDrawable(IconDrawable(icon, Color.rgb(0x62, 0x5E, 0x32), 1.5f)) })
+            addView(ImageView(this@welcomeScreen).apply { setImageDrawable(IconDrawable(icon, Color.rgb(0x62, 0x5E, 0x32), 1.5f)) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, x, WelcomeArt.ICON_TOP, x + WelcomeArt.ICON_SIZE, WelcomeArt.ICON_TOP + WelcomeArt.ICON_SIZE)
+        }, x, WelcomeArt.ICON_TOP, x + WelcomeArt.ICON_SIZE, WelcomeArt.ICON_TOP + WelcomeArt.ICON_SIZE, exact = true)
         screen.place(screen.text(d.text(label, Typo.LABEL, Color.rgb(0x8A, 0x82, 0x70), center = true).apply {
             typeface = MamaFonts.ui(this@welcomeScreen, 400)
             setLineSpacing(0f, 1.0f)
@@ -223,11 +228,14 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
     }
     screen.place(PageDots(this, 3, 0), 410, 1578, 532, 1602)
     // A quiet way to everything already done, at any time between series (3A.1).
-    val path = d.linkButton("Мой путь") { openPath() }.apply {
+    val path = d.linkButton("Мой путь", V2.Moss) { openPath() }.apply {
         tag = OPEN_PATH
-        background = d.pressable(d.shape(Color.argb(0xB8, 0xFD, 0xF9, 0xF1), 22), 22)
+        background = d.pressable(d.shape(Color.argb(0xD9, 0xFD, 0xF9, 0xF1), 22), 22)
+        minHeight = 0
+        minimumHeight = 0
+        setPadding(d.dp(14), 0, d.dp(14), 0)
     }
-    screen.place(screen.text(path, 30f), 726, 92, 918, 150)
+    screen.place(screen.text(path, 30f), 726, 92, 900, 152, exact = true)
     return screen to true
 }
 
@@ -260,7 +268,7 @@ internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     card.addView(d.text(content.note, Typo.QUOTE, V2.InkMuted, center = true).apply { textSize = 20f }, d.fill().apply { topMargin = d.dp(6) })
     val row = d.row()
     row.addView(PageDots(this, ONBOARDING.size, page - 1), LinearLayout.LayoutParams(d.dp(66), d.dp(12)))
-    row.addView(View(this), d.weight())
+    row.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
     row.addView(d.roundButton(Icon.ARROW_RIGHT, "Далее") {
         if (page < ONBOARDING.size) {
             onboardingPage = page + 1
