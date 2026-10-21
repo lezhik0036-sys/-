@@ -350,7 +350,8 @@ internal object ScenePainter {
                 } else {
                     landscape(canvas, w, H, l, H)
                 }
-                mist(canvas, w, H * 0.42f, edge, mood.mist)
+                // The mist holds on under the wave line too, where the wave dips below it.
+                mist(canvas, w, H * 0.42f, edge, mood.mist, H)
                 wave(path, w, edge, w * 0.034f, H)
                 soft(1.2f * density)
                 p.color = Color.BLACK
@@ -973,14 +974,17 @@ internal object ScenePainter {
         gradientRect(c, 0f, 0f, w, w * 0.30f, alpha(base, 110), alpha(base, 0))
     }
 
-    /** A milky mist settling from [top] down to [bottom]: thin at first, then [ground] (0–255) at the ground. */
-    private fun mist(c: Canvas, w: Float, top: Float, bottom: Float, ground: Int) {
+    /**
+     * A milky mist settling from [top] down to [bottom]: thin at first, then
+     * [ground] (0–255) at the ground, which holds on down to [to].
+     */
+    private fun mist(c: Canvas, w: Float, top: Float, bottom: Float, ground: Int, to: Float = bottom) {
         p.maskFilter = null
         p.shader = LinearGradient(
             0f, top, 0f, bottom, intArrayOf(alpha(V2.Milk, 0), alpha(V2.Milk, ground * 31 / 100), alpha(V2.Milk, ground)),
             floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
         )
-        c.drawRect(0f, top, w, bottom, p)
+        c.drawRect(0f, top, w, maxOf(bottom, to), p)
         p.shader = null
     }
 
