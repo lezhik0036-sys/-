@@ -54,12 +54,15 @@ object V2 {
     val Earth = Color.rgb(0xB5, 0x9A, 0x6E)
     val EarthInk = Color.rgb(0x6E, 0x5B, 0x3C)
 
-    /** Something still needed ("Нужно"): warm amber on pale amber, never an alarm. */
+    /** Something still needed ("Нужно"): warm amber on pale amber, never an alarm (5:1). */
     val ClaySoft = Color.rgb(0xF3, 0xE4, 0xCB)
-    val ClayInk = Color.rgb(0x8A, 0x66, 0x34)
+    val ClayInk = Color.rgb(0x7A, 0x5A, 0x28)
 
-    /** Hints, chevrons, inactive navigation. */
-    val InkSoft = Color.rgb(0x8A, 0x82, 0x6F)
+    /** Hints, chevrons, inactive navigation: quieter than [InkMuted], still at least 4.5:1 on every surface. */
+    val InkSoft = Color.rgb(0x71, 0x69, 0x58)
+
+    /** Rings of what is still ahead (days of a series, periods): visible at 3:1 on cream. */
+    val SageDeep = Color.rgb(0x8B, 0x8D, 0x6A)
 
     /** Dividers and outlines. */
     val Line = Color.rgb(0xE6, 0xD9, 0xC4)

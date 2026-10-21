@@ -34,6 +34,9 @@ import app.mama.ui.MamaFonts
 /** Look of an icon circle. */
 enum class CircleStyle { MINT, FILLED, SAND, WHITE, TEST }
 
+/** Tag of the bottom navigation ([DesignKit.bottomNav]): the activity pads it, not the screen, for the gesture bar. */
+const val BOTTOM_NAV = "bottom_nav"
+
 /** Colour of a tag. */
 enum class TagTone { MINT, SAND, TEST }
 
@@ -386,7 +389,7 @@ class DesignKit(val context: Context) {
                 background = when {
                     i <= done -> oval(Palette.Moss)
                     i == current -> oval(Palette.Card, Palette.Moss, 2f)
-                    else -> oval(Palette.Card, Palette.Sage, 1.5f)
+                    else -> oval(Palette.Card, V2.SageDeep, 1.5f)
                 }
                 // Done: a white check on moss; today: a moss check in a moss ring; ahead: an empty ring.
                 if (i <= (current ?: done)) {
@@ -417,8 +420,13 @@ class DesignKit(val context: Context) {
     /** A number in a small card with its label under it ("17 · Ночей пройдено"). */
     fun tile(value: CharSequence, label: String): View = card(paddingDp = 14).apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        // A short number large; a longer value ("7 из 7") smaller, so it always fits on one line.
-        addView(text(value, Typo.NUMBER, Palette.Ink, center = true).apply { textSize = if (value.length > 3) 30f else 40f; maxLines = 1 }, centered())
+        // A short number large; a longer value ("7 из 7") smaller, so it always fits on one line —
+        // in a box of one height, so the labels of a row of tiles stay on one line.
+        addView(text(value, Typo.NUMBER, Palette.Ink, center = true).apply {
+            textSize = if (value.length > 3) 30f else 40f
+            maxLines = 1
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
         addView(text(label, Typo.LABEL, Palette.InkMuted, center = true), centered(4))
     }
 
@@ -903,6 +911,8 @@ class DesignKit(val context: Context) {
 
     /** Cream bottom navigation: Главная · Статистика · Настройки, under a hairline. */
     fun bottomNav(selected: Int, onPick: (Int) -> Unit): View = column().apply {
+        // Reaches down under the gesture bar (the activity pads it there), one colour to the screen edge.
+        tag = BOTTOM_NAV
         setBackgroundColor(Color.argb(0xF5, 0xFB, 0xF5, 0xEA))
         addView(divider())
         val items = row().apply { setPadding(dp(8), dp(6), dp(8), dp(8)) }

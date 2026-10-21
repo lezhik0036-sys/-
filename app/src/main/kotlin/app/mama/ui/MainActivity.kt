@@ -28,6 +28,7 @@ import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
 import app.mama.platform.Mama
+import app.mama.ui.design.BOTTOM_NAV
 import app.mama.ui.design.DesignKit
 import app.mama.ui.design.SceneLayout
 import app.mama.ui.design.SceneMood
@@ -427,7 +428,17 @@ class MainActivity : Activity() {
     private fun padForBars(v: View, insets: WindowInsets): WindowInsets {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            // A screen with the bottom navigation: the navigation itself reaches under the gesture bar,
+            // so the bottom of the screen is one colour (not while the keyboard is up).
+            val nav = v.findViewWithTag<View>(BOTTOM_NAV)
+            val keyboard = insets.isVisible(WindowInsets.Type.ime())
+            if (nav != null && !keyboard) {
+                v.setPadding(bars.left, bars.top, bars.right, 0)
+                nav.setPadding(0, 0, 0, bars.bottom)
+            } else {
+                nav?.setPadding(0, 0, 0, 0)
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            }
         } else {
             v.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
         }

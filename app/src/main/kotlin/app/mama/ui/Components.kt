@@ -205,7 +205,7 @@ class Kit(val context: Context) {
     /** Small icon + caption line (hints under the time cards). */
     fun hintRow(icon: Icon, value: String): View = row().apply {
         gravity = Gravity.TOP
-        addView(icon(icon, Palette.Sage, 18), size(18).apply { topMargin = dp(1) })
+        addView(icon(icon, Palette.Olive, 18), size(18).apply { topMargin = dp(1) })
         addView(text(value, MamaType.CAPTION, muted), weight().apply { leftMargin = dp(12) })
     }
 
@@ -278,7 +278,7 @@ class Kit(val context: Context) {
             val d = when {
                 i < done -> oval(Palette.OliveDeep)
                 i < done + failed -> oval(Palette.Sand)
-                else -> oval(Color.TRANSPARENT, Palette.Sage, 1.5f)
+                else -> oval(Color.TRANSPARENT, V2.SageDeep, 1.5f)
             }
             addView(View(context).apply { background = d }, size(sizeDp).apply { setMargins(dp(5), 0, dp(5), 0) })
         }
