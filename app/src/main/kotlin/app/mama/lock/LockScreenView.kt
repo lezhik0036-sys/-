@@ -2,7 +2,6 @@ package app.mama.lock
 
 import android.content.Context
 import android.graphics.Color
-import android.graphics.drawable.Drawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -20,9 +19,6 @@ import app.mama.ui.design.DesignKit
 import app.mama.ui.design.DesignKitV2
 import app.mama.ui.design.Palette
 import app.mama.ui.design.Radii
-import app.mama.ui.design.SceneLayout
-import app.mama.ui.design.ScenicBackground
-import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.TimerRing
 import app.mama.ui.design.Typo
@@ -87,27 +83,24 @@ interface LockActions {
 }
 
 /**
- * The active lock screen (UI v1, reference 16): the calmest screen of MAMA.
- * A quiet dawn over the lake, "M A M A", one short phrase, the time the
- * phone stays protected, the remaining time and the day of the series in a
- * ring, and only two actions — "Экстренный звонок" and "Мне действительно
- * нужно выйти" (Trusted Exit). No red, no warning signs. "Экстренный звонок"
- * opens the "Экстренные службы" page; the Trusted Exit page shows the
- * user's reason and a pause, then the code entry. Pure view code: all
- * behaviour goes through [LockActions].
+ * The active lock screen (MAMA_DESIGN_SYSTEM_V2 «ACTIVE»): the calmest screen
+ * of MAMA, a quiet but reliable frame rather than a wall. The milky earth
+ * page, "M A M A", one short phrase, the time the phone stays protected,
+ * the remaining time and the day of the series in a ring like a sun over the
+ * ground, and only two quiet actions — "Экстренный звонок" and "Мне
+ * действительно нужно выйти" (Trusted Exit). No red, no warning signs.
+ * "Экстренный звонок" opens the "Экстренные службы" page; the Trusted Exit
+ * page shows the user's reason and a pause, then the code entry. Every page
+ * stands on the same earth. Pure view code: all behaviour goes through
+ * [LockActions].
  */
 class LockScreenView(private val context: Context, private val actions: LockActions) {
     private val d = DesignKit(context)
-
-    /** Design System v2: the lock itself (its main page); the pages over it follow later. */
     private val v = DesignKitV2(context)
 
-    val root: FrameLayout = FrameLayout(context)
-
-    // The background lies on the root, so it also fills the area under the system bars:
-    // the milky v2 page behind the lock itself, the header photo behind the pages over it.
-    private val lockScene: Drawable = v.page()
-    private val pageScene: Drawable by lazy { ScenicBackground(context, Scenery.DAWN, SceneLayout.HEADER) }
+    // The earth page lies on the root, so it also fills the area under the system bars;
+    // the pages over the lock stand on it too.
+    val root: FrameLayout = FrameLayout(context).apply { background = v.page() }
 
     // Main page.
     private lateinit var mainPage: View
@@ -143,7 +136,6 @@ class LockScreenView(private val context: Context, private val actions: LockActi
     private lateinit var introMessage: TextView
 
     init {
-        root.background = lockScene
         mainPage = buildMain()
         root.addView(mainPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         exitPage = buildExit()
@@ -212,7 +204,6 @@ class LockScreenView(private val context: Context, private val actions: LockActi
     private fun buildEmergency(): View {
         val col = d.column().apply { setPadding(dp(Spacing.SCREEN), dp(48), dp(Spacing.SCREEN), dp(26)) }
         col.addView(d.wordmark(), d.centered())
-        // Ink, not the muted tone: the longer header of this page reaches the trees of the photo.
         col.addView(d.titleBlock(
             "Экстренные службы",
             lead = "Номер откроется в приложении «Телефон» — останется нажать вызов. Звонок не прерывает серию и ничего не стоит.",
@@ -330,10 +321,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         answer.visibility = if (m.call == Calls.CallState.RINGING) View.VISIBLE else View.GONE
         backToCall.visibility = if (m.emergencyCallActive && m.call != Calls.CallState.NONE) View.VISIBLE else View.GONE
 
-        val overLock = m.emergencyOpen || m.exitOpen
-        mainPage.visibility = if (overLock) View.GONE else View.VISIBLE
-        val scene = if (overLock) pageScene else lockScene
-        if (root.background !== scene) root.background = scene
+        mainPage.visibility = if (m.emergencyOpen || m.exitOpen) View.GONE else View.VISIBLE
         emergencyPage.visibility = if (m.emergencyOpen) View.VISIBLE else View.GONE
         if (m.emergencyServices != shownServices) {
             shownServices = m.emergencyServices

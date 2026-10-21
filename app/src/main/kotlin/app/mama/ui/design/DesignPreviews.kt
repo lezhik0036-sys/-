@@ -52,14 +52,14 @@ object DesignPreviews {
     // ---------------- palette ----------------
 
     private fun palette(k: DesignKit) = page(k, "Палитра") {
-        addView(k.titleBlock("Палитра", "Светлая тема: айвори, изумруд, тёплый песок. Без красного."))
+        addView(k.titleBlock("Палитра", "Природа и земля: молоко, песок, шалфей, олива; глина — только главное действие. Без красного."))
         val swatches = listOf(
-            "bg" to Palette.Bg, "card" to Palette.Card, "cardQuiet" to Palette.CardQuiet, "line" to Palette.Line,
-            "emeraldDeep" to Palette.OliveDeep, "emeraldLight" to Palette.Sage, "emeraldInk" to Palette.OliveInk, "emeraldBorder" to Palette.OliveLine,
-            "mintBadge" to Palette.SageBadge, "mintSelected" to Palette.SageSelected, "mintTag" to Palette.SageTag, "progressOff" to Palette.ProgressOff,
-            "ringArc" to Palette.RingArc, "ringTrack" to Palette.RingTrack, "sand" to Palette.Sand, "sandSoft" to Palette.SandSoft,
-            "olive" to Palette.Olive, "ink" to Palette.Ink, "inkMuted" to Palette.InkMuted, "inkSoft" to Palette.InkSoft,
-            "testInk" to Palette.TestInk, "testFill" to Palette.TestFill, "testLine" to Palette.TestLine, "onEmerald" to Palette.OnAccent,
+            "milk" to V2.Milk, "warm" to V2.WarmBg, "card" to Palette.Card, "line" to Palette.Line,
+            "sand" to V2.Sand, "sandLight" to V2.SandLight, "earth" to V2.Earth, "earthInk" to V2.EarthInk,
+            "mist" to V2.Mist, "oliveLight" to V2.OliveLight, "sage" to V2.Sage, "olive" to V2.Olive,
+            "oliveDeep" to V2.OliveDeep, "ink" to V2.Ink, "inkMuted" to V2.InkMuted, "inkSoft" to V2.InkSoft,
+            "clay" to V2.Coral, "clayLight" to V2.CoralLight, "claySoft" to V2.ClaySoft, "clayInk" to V2.ClayInk,
+            "testInk" to Palette.TestInk, "testFill" to Palette.TestFill, "testLine" to Palette.TestLine, "onAccent" to Palette.OnAccent,
         )
         swatches.chunked(4).forEachIndexed { r, line ->
             val row = k.row().apply { gravity = Gravity.TOP }
@@ -72,13 +72,9 @@ object DesignPreviews {
             }
             addView(row, k.gap(if (r == 0) 20 else 12))
         }
-        addView(section(k, "Главная кнопка · прогресс"), k.gap(20))
-        addView(View(context).apply {
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Palette.Sage, Palette.OliveDeep),
-            ).apply { cornerRadius = k.dpf(20f) }
-        }, LinearLayout.LayoutParams(-1, k.dp(26)).apply { topMargin = k.dp(10) })
-        addView(k.segments(4, 7), k.gap(12))
+        addView(section(k, "Главная кнопка · путь"), k.gap(20))
+        addView(k.primaryButton("Начать свой путь") {}, k.gap(10))
+        addView(k.segments(4, 7), k.gap(14))
     }
 
     // ---------------- typography ----------------
@@ -112,7 +108,7 @@ object DesignPreviews {
             row.addView(k.text(sample, style, if (style == Typo.BUTTON) Palette.OliveInk else Palette.Ink).apply { maxLines = 1 }, k.weight())
             addView(row, k.gap(if (i == 0) 6 else 11))
         }
-        addView(k.text("Manrope — интерфейс · Cormorant Garamond — цитаты", Typo.CAPTION, Palette.InkMuted), k.gap(16))
+        addView(k.text("Manrope — весь интерфейс, цитаты тоже", Typo.CAPTION, Palette.InkMuted), k.gap(16))
     }
 
     // ---------------- buttons, chips, tags ----------------
@@ -220,24 +216,18 @@ object DesignPreviews {
         return k.screen(Scenery.RECOVERY, SceneLayout.HEADER, k.topBar({}), body)
     }
 
-    /** Active lock shell (reference 16-lock): only two actions; "Я держу курс" is a badge, not a button. */
+    /** The lock shell: the earth page, the timer like a sun over the ground, only two quiet actions. */
     private fun lockShell(k: DesignKit): View {
-        val header = k.column().apply {
-            addView(k.topBar(null, "2 из 7"))
-            addView(k.segments(2, 7), k.gap(4).apply { leftMargin = k.dp(Spacing.SCREEN); rightMargin = k.dp(Spacing.SCREEN) })
-        }
         val body = k.body(20).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        body.addView(k.titleBlock("Время для себя", "Сейчас ты в фокусе.\nТелефон под защитой до 07:00.", center = true), k.fill())
-        val ring = k.timerRing()
+        body.addView(k.text(MotivationCatalog.pick(Placement.LOCK_NIGHT, "preview").text, Typo.QUOTE, Palette.Ink, center = true), k.fill())
+        body.addView(k.text("Телефон под защитой до 07:00", Typo.SUBTITLE, Palette.InkMuted, center = true), k.gap(12))
+        val ring = k.timerRing(220)
         ring.set(6, 12, 0.32f, "День 2 из 7")
-        body.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = k.dp(22) })
-        body.addView(k.badge("Я держу курс", Icon.SPROUT), k.centered(16))
-        val actions = k.row()
-        actions.addView(k.actionTile(Icon.PHONE, "Экстренный звонок") {}, k.weight())
-        actions.addView(k.actionTile(Icon.PEOPLE, "Мне действительно нужно выйти") {}, k.weight().apply { leftMargin = k.dp(12) })
-        body.addView(actions, k.gap(22))
-        body.addView(k.quoteCard(MotivationCatalog.pick(Placement.LOCK_NIGHT, "preview").text, scenery = Scenery.DAWN), k.gap(Spacing.GUTTER))
-        return k.screen(Scenery.DAWN, SceneLayout.FULL, header, body)
+        body.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = k.dp(26) })
+        body.addView(View(k.context), LinearLayout.LayoutParams(1, 0, 1f))
+        body.addView(k.quietAction(Icon.PHONE, "Экстренный звонок") {}, k.centered(26))
+        body.addView(k.quietAction(Icon.PEOPLE, "Мне действительно нужно выйти") {}, k.centered(8))
+        return k.screen(null, header = k.topBar(null), body = body)
     }
 
     // ---------------- dialogs ----------------

@@ -60,7 +60,6 @@ class MainActivity : Activity() {
 
     internal val prefs by lazy { getSharedPreferences("mama_setup", Context.MODE_PRIVATE) }
     internal val kit by lazy { Kit(this) }
-    internal val nightKit by lazy { Kit(this, night = true) }
 
     /** UI v1 components (docs/DESIGN_SYSTEM_V1.md); screens move to it group by group. */
     internal val design by lazy { DesignKit(this) }
@@ -436,27 +435,7 @@ class MainActivity : Activity() {
     internal fun lightFrame(header: View?, body: View, footer: View?, nav: View? = null): Pair<View, Boolean> =
         design.screen(null, header = header, body = body, cta = footer, nav = nav) to true
 
-    /** Night frame: landscape behind everything (reference screens 1, 7, 8, 10). */
-    internal fun nightFrame(scene: Scene, body: View, footer: View? = null, nav: View? = null): Pair<View, Boolean> {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = PhotoBackground(this@MainActivity, scene)
-        }
-        root.addView(ScrollView(this).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-            addView(body)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        footer?.let {
-            root.addView(it, kit.fill().apply {
-                leftMargin = kit.dp(20); rightMargin = kit.dp(20); topMargin = kit.dp(8); bottomMargin = kit.dp(16)
-            })
-        }
-        nav?.let { root.addView(it, kit.fill()) }
-        return root to false
-    }
-
-    /** UI v1 frame: photo background ([scenery]), header, scrolling body, sticky bottom action, navigation. Light status bar. */
+    /** A screen with a nature window ([scenery]) over the earth page: header, scrolling body, sticky bottom action, navigation. Light status bar. */
     internal fun v1Frame(
         scenery: Scenery,
         header: View?,

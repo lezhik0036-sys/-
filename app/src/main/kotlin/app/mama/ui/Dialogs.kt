@@ -19,6 +19,8 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import app.mama.ui.design.Palette
+import app.mama.ui.design.Radii
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -30,7 +32,7 @@ class BrandDialogHandle(private val dialog: Dialog, val confirm: BrandButtonView
     }
 }
 
-/** MAMA's own dialog: ivory surface, large radius, emerald actions. No system AlertDialogs. */
+/** MAMA's own dialog: a milky sheet with a large radius, the clay action and a soft second one. No system AlertDialogs. */
 object BrandDialog {
 
     /** [onConfirm] returns true to close the dialog, false to keep it open (invalid input). */
@@ -49,7 +51,7 @@ object BrandDialog {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
 
         val sheet = kit.column().apply {
-            background = kit.shape(MamaColors.WarmIvory, 26)
+            background = kit.shape(MamaColors.WarmIvory, Radii.SHEET)
             setPadding(kit.dp(22), kit.dp(24), kit.dp(22), kit.dp(18))
         }
         sheet.addView(kit.text(title, MamaType.H2))
@@ -100,16 +102,17 @@ object BrandDialog {
             val r = kit.row().apply {
                 minimumHeight = kit.dp(52)
                 setPadding(kit.dp(16), kit.dp(10), kit.dp(16), kit.dp(10))
+                // The chosen day as a chosen chip: sage mist and an olive outline.
                 background = if (on) {
-                    kit.pressable(kit.gradient(MamaColors.EmeraldActive, MamaColors.Emerald, 16), 16, MamaColors.RippleOnDark)
+                    kit.pressable(kit.shape(Palette.SageSelected, Radii.CARD_SMALL, Palette.OliveLine, 1.6f), Radii.CARD_SMALL)
                 } else {
-                    kit.pressable(kit.shape(MamaColors.PureCard, 16, MamaColors.Border), 16)
+                    kit.pressable(kit.shape(MamaColors.PureCard, Radii.CARD_SMALL, MamaColors.Border), Radii.CARD_SMALL)
                 }
                 isClickable = true
                 setOnClickListener { handle.dismiss(); onPick(i) }
             }
-            r.addView(kit.text(main, MamaType.BODY, if (on) MamaColors.White else MamaColors.Graphite), kit.weight())
-            side?.let { r.addView(kit.text(it, MamaType.BODY, if (on) MamaColors.OliveLight else MamaColors.TextSecondary)) }
+            r.addView(kit.text(main, MamaType.BODY, if (on) Palette.OliveInk else MamaColors.Graphite).apply { if (on) typeface = MamaFonts.ui(context, 700) }, kit.weight())
+            side?.let { r.addView(kit.text(it, MamaType.BODY, MamaColors.TextSecondary)) }
             rows.addView(r, kit.gap(if (i == 0) 0 else 8))
         }
         val content: View = if (items.size > 6) {

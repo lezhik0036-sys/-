@@ -43,7 +43,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
-// Dashboards (UI v1, reference 13), statistics/settings tabs, failure, success, FLEX.
+// Dashboards, statistics/settings tabs, Recovery, success, FLEX (MAMA_DESIGN_SYSTEM_V2).
 
 private fun MainActivity.nav() = design.bottomNav(tab) { tab = it; editSaved = false; render() }
 
@@ -377,7 +377,7 @@ internal fun MainActivity.statisticsScreen(
     if (stats.isEmpty) return statisticsEmpty(header, tabs)
     val b = d.body(18)
 
-    // The main number over the golden photo: the nights already chosen.
+    // The main number over the evening window: the nights already chosen.
     val (label, each) = when (stats.unit) {
         Statistics.PeriodUnit.NIGHTS -> "Ночей пройдено" to "Каждая — решение в пользу себя."
         Statistics.PeriodUnit.DAYS -> "Дней пройдено" to "Каждый — решение в пользу себя."
@@ -505,17 +505,19 @@ private fun MainActivity.pathCard(item: Statistics.PathItem, thisYear: Int): Vie
     return card
 }
 
+/** Settings: a clean page of the earth, sections with quiet headings. */
 internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
+    val d = design
     val b = body(30)
-    b.addView(kit.sectionHeader("Настройки"))
+    b.addView(d.title("Настройки"))
     if (FeatureFlags.WALLET_ENABLED) {
         val wallet = Mama.wallet(this)
-        b.addView(balanceCard(wallet), kit.gap(18))
-        b.addView(kit.text("История баланса", MamaType.TITLE), kit.gap(18))
-        b.addView(ledgerList(wallet, zone), kit.gap(10))
+        b.addView(balanceCard(wallet), d.gap(18))
+        b.addView(d.text("История баланса", Typo.VALUE), d.gap(24))
+        b.addView(ledgerList(wallet, zone), d.gap(10))
     }
-    b.addView(kit.text("Разрешения", MamaType.TITLE), kit.gap(24))
-    b.addView(kit.caption("Без них блокировку можно обойти."), kit.gap(4))
+    b.addView(d.text("Разрешения", Typo.VALUE), d.gap(28))
+    b.addView(d.text("Без них блокировку можно обойти.", Typo.LABEL, Palette.InkMuted), d.gap(4))
     Requirement.entries.forEachIndexed { i, req ->
         val status = when {
             req.isGranted(this) -> PermissionStatus.GRANTED
@@ -525,9 +527,9 @@ internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
         b.addView(kit.permissionCard(req.icon, req.title, req.why, status) { req.request(this) }, kit.gap(if (i == 0) 20 else 10))
     }
     if (FeatureFlags.TEST_MODE_ENABLED) {
-        b.addView(kit.infoCard("Тестовая версия: оплата не подключена и не проводится.", Icon.FLASK), kit.gap(18))
+        b.addView(d.noteCard("Тестовая версия: оплата не подключена и не проводится.", icon = Icon.FLASK), d.gap(18))
     }
-    b.addView(kit.caption("MAMA ${Texts.version(this)}", center = true), kit.gap(14))
+    b.addView(d.text("MAMA ${Texts.version(this)}", Typo.CAPTION, Palette.InkSoft, center = true), d.gap(16))
     return lightFrame(null, b, null, nav())
 }
 
@@ -604,8 +606,8 @@ internal fun MainActivity.failureScreen(
 // ---------------- 12. Success ----------------
 
 /**
- * The series is done: the brightest screen of MAMA, a golden morning over
- * the lake. A grown-up reward — no confetti: the result, «Цена слова»
+ * The series is done: a calm recognition of the path walked, an evening
+ * over the lake. A grown-up reward — no confetti: the result, «Цена слова»
  * kept, and the way on.
  */
 internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.mama.core.Commitment? = null): Pair<View, Boolean> {
@@ -635,10 +637,11 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
 // ---------------- motivation ----------------
 
 /**
- * One strong thought, large, over the photo of this stage of the series:
- * "У меня получается. Я уже двигаюсь." Shown once after each night that
- * is done, and when the phrase on the home screen is tapped. Phrases from
- * [app.mama.motivation.MotivationCatalog]: no pressure, shame or comparison.
+ * One quiet thought over the misted photo of this stage of the series:
+ * "У меня получается. Я уже двигаюсь." — soft support, not a slogan. Shown
+ * once after each night that is done, and when the phrase on the home
+ * screen is tapped. Phrases from [app.mama.motivation.MotivationCatalog]: no
+ * pressure, shame or comparison.
  */
 internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> {
     val d = design
@@ -647,7 +650,7 @@ internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> 
     val b = d.body(26)
     val phrase = MotivationRotation.of(this).phrase(Placement.SUCCESS, "${series.id}:night-$done", maxLength = 70).text
     b.addView(d.text(phrase, Typo.QUOTE, Palette.Ink).apply {
-        textSize = 33f
+        textSize = 28f
         maxWidth = (resources.displayMetrics.widthPixels * 0.82f).toInt()
     }, d.wrap())
     b.addView(d.text("— MAMA", Typo.TAG, Palette.InkSoft), d.wrap().apply { topMargin = d.dp(14) })
@@ -766,25 +769,30 @@ private fun MainActivity.submitFlexPeriod() {
     render()
 }
 
+/**
+ * A FLEX package is over: like the end of a series, a calm look at what was
+ * done — the result, each period as a dot (done, ended early, unused) and
+ * the way on.
+ */
 internal fun MainActivity.flexResultScreen(flex: FlexPackage): Pair<View, Boolean> {
-    val k = nightKit
-    val perfect = flex.earnedReward
-    val b = body(56).apply { gravity = Gravity.CENTER_HORIZONTAL }
-    b.addView(k.emblem(if (perfect) Icon.CHECK else Icon.INFINITY, MamaColors.Emerald, 84))
-    b.addView(k.text("FLEX завершён", MamaType.DISPLAY, MamaColors.Night, center = true), k.gap(22))
-    b.addView(k.text("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}", MamaType.BODY, MamaColors.Graphite, center = true), k.gap(10))
-    b.addView(kit.dots(FlexPackage.PERIODS, flex.successful, flex.used - flex.successful), k.gap(16))
+    val d = design
+    val b = d.body(22)
+    b.addView(d.titleBlock("FLEX завершён", narrow = true, lead = "Успешно: ${flex.successful} из ${FlexPackage.PERIODS}"))
+    heroSpace(b, 198)
+    val result = d.card(paddingDp = 20)
+    result.addView(d.valueRow(if (flex.earnedReward) Icon.CHECK else Icon.INFINITY, "Твой результат · MAMA FLEX", "${flex.successful} из ${FlexPackage.PERIODS}").view)
+    result.addView(kit.dots(FlexPackage.PERIODS, flex.successful, flex.used - flex.successful), d.gap(18))
+    b.addView(result, d.gap(Spacing.GUTTER))
     val credits = Mama.entitlements(this).freeFlexCredits
-    val footer = k.column()
-    if (credits > 0) {
-        b.addView(k.text("Следующий FLEX — бесплатно.", MamaType.TITLE, MamaColors.Emerald, center = true), k.gap(18))
-        footer.addView(k.primaryButton("Активировать бесплатный FLEX") { Mama.dismissFlex(this); activateFlex(GrantSource.REWARD) }, k.fill())
+    val next = if (credits > 0) {
+        b.addView(d.noteCard("Следующий FLEX — бесплатно.", icon = Icon.STAR), d.gap(Spacing.GUTTER))
+        d.primaryButton("Активировать бесплатный FLEX", large = true) { Mama.dismissFlex(this); activateFlex(GrantSource.REWARD) }
     } else {
-        b.addView(k.text("Следующий бесплатный FLEX доступен только при результате 7 из 7.", MamaType.CAPTION, MamaColors.TextSecondary, center = true), k.gap(18))
-        footer.addView(k.primaryButton("Новый FLEX — ${Texts.price(FlexPackage.PRICE_RUB)}") {
+        b.addView(d.text("Следующий бесплатный FLEX доступен только при результате 7 из 7.", Typo.CAPTION, Palette.InkMuted, center = true), d.gap(20))
+        d.primaryButton("Новый FLEX — ${Texts.price(FlexPackage.PRICE_RUB)}", large = true) {
             Checkout.obtain(this, Product.FlexPackage, "MAMA FLEX") { source -> Mama.dismissFlex(this); activateFlex(source) }
-        }, k.fill())
+        }
     }
-    footer.addView(k.secondaryButton("На главную") { Mama.dismissFlex(this); render() }, k.gap(10))
-    return nightFrame(Scene.DAWN, b, footer)
+    val home = d.linkButton("На главную") { Mama.dismissFlex(this); render() }
+    return v1Frame(Scenery.EVENING, d.topBar(null), b, d.bottomCta(next, home), layout = SceneLayout.HERO)
 }
