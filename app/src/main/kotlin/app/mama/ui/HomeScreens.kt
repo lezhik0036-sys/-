@@ -32,7 +32,6 @@ import app.mama.ui.design.NoteTone
 import app.mama.ui.design.Palette
 import app.mama.ui.design.SceneLayout
 import app.mama.ui.design.SceneMood
-import app.mama.ui.design.ScenicBackground
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.SummaryItem
@@ -54,8 +53,16 @@ private fun MainActivity.homeHeader(counter: String?, done: Int, total: Int): Vi
     if (total > 0) addView(design.segments(done, total), design.gap(4).apply { leftMargin = design.dp(Spacing.SCREEN); rightMargin = design.dp(Spacing.SCREEN) })
 }
 
-/** Room under the title where the landscape shows (reference 13). */
+/** Room under the title where the landscape shows (the hero window of Recovery and Success). */
 private fun MainActivity.heroSpace(b: LinearLayout, heightDp: Int = 140) = b.addView(View(this), LinearLayout.LayoutParams(1, design.dp(heightDp)))
+
+/**
+ * The landscape of this moment under the title of a home screen, as a
+ * rounded picture (reference 07): the words stay on the cream page, the
+ * photo keeps its full colour.
+ */
+private fun MainActivity.homePicture(b: LinearLayout, scenery: Scenery, mood: SceneMood, heightDp: Int = 176) =
+    b.addView(design.photoBand(scenery, mood), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, design.dp(heightDp)).apply { topMargin = design.dp(22) })
 
 /**
  * Title of a dashboard: the main fact (the day of the series), its state as
@@ -63,11 +70,12 @@ private fun MainActivity.heroSpace(b: LinearLayout, heightDp: Int = 140) = b.add
  */
 private fun MainActivity.homeTitle(b: LinearLayout, title: String, state: String?, stateIcon: Icon, line: String?, onLine: (() -> Unit)? = null) {
     val d = design
-    b.addView(d.title(title))
+    // The day of the series is the main fact of the screen: the largest words on it.
+    b.addView(d.title(title).apply { textSize = 42f })
     state?.let { b.addView(d.badge(it, stateIcon), d.wrap().apply { topMargin = d.dp(12) }) }
     line?.let {
         b.addView(d.subtitle(it).apply {
-            maxWidth = (resources.displayMetrics.widthPixels * 0.72f).toInt()
+            maxWidth = (resources.displayMetrics.widthPixels * 0.9f).toInt()
             onLine?.let { open -> setOnClickListener { open() } }
         }, d.wrap().apply { topMargin = d.dp(12) })
     }
@@ -209,7 +217,10 @@ internal fun MainActivity.seriesDashboard(
             homePhrase(Placement.SCHEDULED, "${series.id}:scheduled"),
         )
     }
-    heroSpace(b)
+    // Before the first lock: the quiet morning of a path about to begin.
+    val scenery = if (series.committed) progressScenery(series) else Scenery.MORNING
+    val mood = if (series.committed) progressMood(series) else SceneMood.QUIET
+    homePicture(b, scenery, mood)
     if (editSaved && series.status == SeriesStatus.SCHEDULED) {
         b.addView(d.noteCard("Время и длина серии остались прежними.", "Изменения сохранены", icon = Icon.CHECK), d.gap(Spacing.GUTTER))
     }
@@ -230,12 +241,9 @@ internal fun MainActivity.seriesDashboard(
         SeriesStatus.ACTIVATING -> b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(14))
         else -> Unit
     }
-    // Before the first lock: the quiet morning of a path about to begin.
-    val scenery = if (series.committed) progressScenery(series) else Scenery.MORNING
-    val mood = if (series.committed) progressMood(series) else SceneMood.QUIET
     // The day counter once the series runs (the days themselves are the circles); before that only the wordmark.
     val header = if (series.committed) homeHeader("$day из $n", 0, 0) else homeHeader(null, 0, 0)
-    return v1Frame(scenery, header, b, null, nav(), SceneLayout.HERO, mood)
+    return lightFrame(header, b, null, nav())
 }
 
 /** The window, trusted contact, "Цена слова" and a held Restart of a series: real values, short notes. */
@@ -291,7 +299,7 @@ private fun MainActivity.needsAttentionScreen(
     val d = design
     val b = d.body(22)
     b.addView(d.titleBlock("Серия не началась", lead = "MAMA не смогла включить защиту.", narrow = true))
-    heroSpace(b, 120)
+    homePicture(b, Scenery.MORNING, SceneMood.QUIET, 150)
     b.addView(d.noteCard(
         "Поэтому день не засчитан, ничего не списано и ничего не потеряно. Блокировка не включится сама — только после того, как ты подтвердишь новый запуск.",
         "Ничего не потеряно", icon = Icon.HEART,
@@ -314,7 +322,7 @@ private fun MainActivity.needsAttentionScreen(
     b.addView(d.secondaryButton("Изменить условия", Icon.CALENDAR) { beginEditing(series) }, d.gap(10))
     b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(4))
     b.addView(d.summaryCard(null, seriesDetails(series, shownWindow(series), sampleCommitment, sampleRestart)), d.gap(18))
-    return v1Frame(Scenery.MORNING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO, SceneMood.QUIET)
+    return lightFrame(homeHeader(null, 0, 0), b, null, nav())
 }
 
 private fun MainActivity.relaunch() {
@@ -337,7 +345,7 @@ internal fun MainActivity.sessionDashboard(session: Session, state: () -> LockSt
     val isTest = Duration.between(session.plan.start, session.plan.end) == app.mama.core.TestMode.DURATION
     val (badge, icon) = lockBadge(state(), "Скоро начнётся") ?: ("Скоро начнётся" to Icon.SPROUT)
     homeTitle(b, if (isTest) "Тестовый режим" else "Блокировка", badge, icon, if (isTest) "15 минут · только для тестирования" else Texts.mode(session.plan.mode))
-    heroSpace(b)
+    homePicture(b, Scenery.MORNING, SceneMood.QUIET)
     val z = session.plan.zone
     b.addView(timerCard(state, z), d.gap(Spacing.GUTTER))
     b.addView(d.summaryCard(null, listOf(
@@ -347,7 +355,7 @@ internal fun MainActivity.sessionDashboard(session: Session, state: () -> LockSt
     if (state() is LockState.Waiting) {
         b.addView(d.linkButton("Отменить до начала") { Mama.cancelBeforeStart(this); render() }, d.gap(10))
     }
-    return v1Frame(Scenery.MORNING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO, SceneMood.QUIET)
+    return lightFrame(homeHeader(null, 0, 0), b, null, nav())
 }
 
 // ---------------- tabs ----------------
@@ -525,11 +533,11 @@ internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
     if (FeatureFlags.WALLET_ENABLED) {
         val wallet = Mama.wallet(this)
         b.addView(balanceCard(wallet), d.gap(18))
-        b.addView(d.text("История баланса", Typo.VALUE), d.gap(24))
+        b.addView(d.text("История баланса", Typo.HEADLINE), d.gap(30))
         b.addView(ledgerList(wallet, zone), d.gap(10))
     }
-    b.addView(d.text("Разрешения", Typo.VALUE), d.gap(28))
-    b.addView(d.text("Без них блокировку можно обойти.", Typo.LABEL, Palette.InkMuted), d.gap(4))
+    b.addView(d.text("Разрешения", Typo.HEADLINE), d.gap(34))
+    b.addView(d.text("Без них блокировку можно обойти.", Typo.BODY, Palette.InkMuted), d.gap(4))
     Requirement.entries.forEachIndexed { i, req ->
         val status = when {
             req.isGranted(this) -> PermissionStatus.GRANTED
@@ -623,7 +631,7 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     val b = d.body(22)
     // The result in ink, one thought per line: it is the reward of the screen.
     b.addView(d.titleBlock("Ты сделал это.", center = true, lead = "$done $unit.\n$done ${plural(done, "решение", "решения", "решений")} в пользу себя.").apply {
-        (getChildAt(0) as android.widget.TextView).textSize = 40f
+        (getChildAt(0) as android.widget.TextView).textSize = 44f
     })
     // No badges: the title is the reward, the open sky and the sun carry the light.
     heroSpace(b, 212)
@@ -657,16 +665,10 @@ internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> 
     val b = d.body(18)
     val phrase = MotivationRotation.of(this).phrase(Placement.SUCCESS, "${series.id}:night-$done", maxLength = 70).text
     // The landscape of this stage as a card; the thought in a card resting on it.
-    val photo = View(this).apply {
-        background = ScenicBackground(this@motivationScreen, progressScenery(series), SceneLayout.PICTURE, Palette.Card, d.dpf(V2.CARD_LARGE.toFloat()), mood = progressMood(series))
-        outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-        clipToOutline = true
-        d.elevate(this, 2f)
-    }
     // At least 250 dp; on a taller screen the landscape takes the room left.
-    b.addView(photo, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(250), 1f))
-    val thought = d.card(paddingDp = 22, radiusDp = V2.CARD_LARGE)
-    thought.addView(d.text(phrase, Typo.QUOTE, Palette.Ink).apply { textSize = 24f }, d.fill())
+    b.addView(d.photoBand(progressScenery(series), progressMood(series)), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(250), 1f))
+    val thought = d.card(paddingDp = 24, radiusDp = V2.CARD_LARGE)
+    thought.addView(d.text(phrase, Typo.QUOTE, Palette.Ink).apply { textSize = 27f }, d.fill())
     thought.addView(d.text("— MAMA", Typo.TAG, Palette.InkSoft), d.wrap().apply { topMargin = d.dp(12) })
     b.addView(thought, d.fill().apply { topMargin = -d.dp(44); leftMargin = d.dp(14); rightMargin = d.dp(14) })
     b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap().apply { topMargin = d.dp(26) })
@@ -689,7 +691,7 @@ internal fun MainActivity.flexDashboard(flex: FlexPackage, state: () -> LockStat
     val now = Mama.trustedNow(this)
     val b = d.body(22)
     b.addView(d.titleBlock("MAMA FLEX", "${flex.successful} из ${FlexPackage.PERIODS} выполнено", narrow = true))
-    heroSpace(b)
+    homePicture(b, Scenery.MORNING, SceneMood.CALM)
     b.addView(d.noteCard(
         if (flex.rewardStillPossible) "Каждый успешный период приближает к бесплатному пакету." else "Следующий бесплатный FLEX доступен только при результате 7 из 7.",
         if (flex.rewardStillPossible) "Пройди 7 из 7 — следующий FLEX бесплатно" else "Успешно: ${flex.successful} из ${FlexPackage.PERIODS}",
@@ -716,7 +718,7 @@ internal fun MainActivity.flexDashboard(flex: FlexPackage, state: () -> LockStat
     if (flex.currentSessionId == null || state() == LockState.Free) {
         b.addView(d.primaryButton("Запланировать FLEX-период") { flexPlanning = true; render() }, d.gap(18))
     }
-    return v1Frame(Scenery.MORNING, homeHeader("${flex.successful} из ${FlexPackage.PERIODS}", flex.successful, FlexPackage.PERIODS), b, null, nav(), SceneLayout.HERO)
+    return lightFrame(homeHeader("${flex.successful} из ${FlexPackage.PERIODS}", flex.successful, FlexPackage.PERIODS), b, null, nav())
 }
 
 /** FLEX period planner: explicit dates and 24-hour times (reference screen 4). */

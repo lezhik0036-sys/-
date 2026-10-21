@@ -30,6 +30,7 @@ import app.mama.platform.Promise
 import app.mama.ui.MainActivity.Choice
 import app.mama.ui.MainActivity.Step
 import app.mama.ui.design.ArtLayout
+import app.mama.ui.design.CircleStyle
 import app.mama.ui.design.NoteTone
 import app.mama.ui.design.PageDots
 import app.mama.ui.design.Palette
@@ -222,7 +223,7 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
             addView(ImageView(this@welcomeScreen).apply { setImageDrawable(mark) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, x, WelcomeArt.ICON_TOP, x + WelcomeArt.ICON_SIZE, WelcomeArt.ICON_TOP + WelcomeArt.ICON_SIZE, exact = true)
-        screen.place(screen.text(d.text(label, Typo.LABEL, Color.rgb(0x8A, 0x82, 0x70), center = true).apply {
+        screen.place(screen.text(d.text(label, Typo.LABEL, V2.InkMuted, center = true).apply {
             typeface = MamaFonts.ui(this@welcomeScreen, 400)
             setLineSpacing(0f, 1.0f)
         }, 24f), x - 52, 1500, x + WelcomeArt.ICON_SIZE + 52, 1562, center = false)
@@ -254,20 +255,24 @@ internal val ONBOARDING = listOf(
 )
 
 /**
- * One onboarding page (1–3), as approved: the landscape over the whole
- * screen, its light growing page by page (quiet, calm, bright); the title and
- * its line in the sky; a cream card at the bottom with a quiet line, the page
- * dots and a round "→". After the last page: the setup, as before.
+ * One onboarding page (1–3): the same words, card and round "→" on each, but
+ * its own picture and light, so the three read as three steps, not one
+ * screen three times (quiet, calm, bright):
+ * 1. Rhythm: the dawn lake over the whole screen, the title in its sky.
+ * 2. Day and night: the valley by day as a framed picture, the title on the
+ *    cream page under it and the turn from the sun to the moon.
+ * 3. A few nights: the title and the first nights on the cream page, the
+ *    morning shore rising from the bottom.
+ * After the last page: the setup, as before.
  */
 internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     val d = design
     val content = ONBOARDING[page - 1]
-    val narrow = (resources.displayMetrics.widthPixels * 0.84f).toInt()
-    val b = d.body(40)
-    b.addView(d.text(content.title, Typo.DISPLAY).apply { textSize = 40f; maxWidth = narrow }, d.wrap())
-    b.addView(d.text(content.line, Typo.SUBTITLE, V2.InkMuted).apply { textSize = 23f; maxWidth = narrow }, d.wrap().apply { topMargin = d.dp(16) })
+    val narrow = (resources.displayMetrics.widthPixels * 0.86f).toInt()
+    fun title() = d.text(content.title, Typo.DISPLAY).apply { textSize = 40f; maxWidth = narrow }
+    fun line() = d.text(content.line, Typo.SUBTITLE, V2.Ink).apply { textSize = 23f; maxWidth = narrow; alpha = 0.82f }
     val card = d.card(paddingDp = 24, radiusDp = V2.CARD_LARGE)
-    card.addView(d.text(content.note, Typo.QUOTE, V2.InkMuted, center = true).apply { textSize = 22f }, d.fill().apply { topMargin = d.dp(8) })
+    card.addView(d.text(content.note, Typo.QUOTE, V2.Ink, center = true).apply { textSize = 23f }, d.fill().apply { topMargin = d.dp(8) })
     val row = d.row()
     row.addView(PageDots(this, ONBOARDING.size, page - 1), LinearLayout.LayoutParams(d.dp(66), d.dp(12)))
     row.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
@@ -281,8 +286,37 @@ internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
         render()
     })
     card.addView(row, d.gap(22))
-    val mood = listOf(SceneMood.QUIET, SceneMood.CALM, SceneMood.BRIGHT)[page - 1]
-    return v1Frame(Scenery.DAWN, null, b, card, layout = SceneLayout.FULL, mood = mood)
+    return when (page) {
+        1 -> {
+            val b = d.body(40)
+            b.addView(title(), d.wrap())
+            b.addView(line(), d.wrap().apply { topMargin = d.dp(16) })
+            v1Frame(Scenery.DAWN, null, b, card, layout = SceneLayout.FULL, mood = SceneMood.QUIET)
+        }
+        2 -> {
+            val b = d.body(24)
+            // The day: the valley in full light, framed like a picture; the rest of the page is cream.
+            b.addView(d.photoBand(Scenery.DAY, SceneMood.CALM), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(260), 1f))
+            b.addView(title(), d.wrap().apply { topMargin = d.dp(26) })
+            b.addView(line(), d.wrap().apply { topMargin = d.dp(12) })
+            // From the decision by day to the night MAMA keeps it.
+            val turn = d.row().apply { gravity = Gravity.CENTER_VERTICAL }
+            turn.addView(d.iconCircle(Icon.SUN, 52, CircleStyle.SAND))
+            turn.addView(View(this).apply { setBackgroundColor(V2.Sand) }, LinearLayout.LayoutParams(0, d.dp(2), 1f).apply { leftMargin = d.dp(12); rightMargin = d.dp(12) })
+            turn.addView(d.iconCircle(Icon.MOON, 52, CircleStyle.FILLED))
+            turn.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            b.addView(turn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = d.dp(22); leftMargin = d.dp(36); rightMargin = d.dp(36) })
+            lightFrame(null, b, card)
+        }
+        else -> {
+            val b = d.body(40)
+            b.addView(title(), d.wrap())
+            b.addView(line(), d.wrap().apply { topMargin = d.dp(16) })
+            // A few nights: the first one ready, the next two ahead.
+            b.addView(d.dayCircles(0, 3, 1).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(d.dp(210), LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = d.dp(28) })
+            v1Frame(Scenery.MORNING, null, b, card, layout = SceneLayout.GROUND, mood = SceneMood.BRIGHT)
+        }
+    }
 }
 
 /** Back from an onboarding page: the page before, or the welcome. */

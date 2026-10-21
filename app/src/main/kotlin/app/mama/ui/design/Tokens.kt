@@ -118,34 +118,34 @@ enum class Typo(
     private val serif: Boolean = false,
 ) {
     /** Screen title: "Всё готово", "Этот путь продолжается". */
-    DISPLAY(36f, 600, tracking = -0.01f, leading = 1.06f, serif = true),
+    DISPLAY(38f, 600, tracking = -0.01f, leading = 1.06f, serif = true),
 
     /** Sheet title, big card title. */
-    HEADLINE(27f, 600, leading = 1.1f, serif = true),
+    HEADLINE(28f, 600, leading = 1.1f, serif = true),
 
     /** Card title: "7 дней", "Начать заново". */
-    TITLE(23f, 600, leading = 1.12f, serif = true),
+    TITLE(24f, 600, leading = 1.12f, serif = true),
 
     /** Value in a summary row: "Анна", "21:00 – 07:00". */
-    VALUE(20f, 600, leading = 1.15f, serif = true),
+    VALUE(21f, 600, leading = 1.15f, serif = true),
 
     /** Two lines under the title. */
-    SUBTITLE(19f, 500, leading = 1.24f, serif = true),
-    BODY(15f, 500, leading = 1.38f),
+    SUBTITLE(21f, 500, leading = 1.22f, serif = true),
+    BODY(16f, 500, leading = 1.38f),
 
     /** Field label: "Длительность", "Доверенный контакт". */
-    LABEL(13.5f, 500, leading = 1.3f),
-    CAPTION(12.5f, 500, leading = 1.32f),
+    LABEL(14.5f, 500, leading = 1.3f),
+    CAPTION(13.5f, 500, leading = 1.32f),
     BUTTON(20f, 600, serif = true),
 
     /** "M A M A" in the top bar. */
     WORDMARK(19f, 600, tracking = 0.14f, serif = true),
 
     /** "6 из 6". */
-    STEP(14f, 500),
+    STEP(14.5f, 500),
 
     /** "РЕКОМЕНДУЕМ", "ВЕЧЕРОМ". */
-    TAG(10.5f, 800, tracking = 0.06f, caps = true),
+    TAG(11.5f, 800, tracking = 0.06f, caps = true),
 
     /** "500 ₽" on the "Цена слова" card. */
     AMOUNT(46f, 500, tabular = true, serif = true),
@@ -154,11 +154,11 @@ enum class Typo(
     NUMBER(40f, 500, tabular = true, serif = true),
 
     /** A quiet thought: quote cards, the motivation screen. */
-    QUOTE(22f, 500, leading = 1.22f, serif = true),
-    QUOTE_ITALIC(22f, 500, leading = 1.22f, serif = true),
+    QUOTE(23f, 500, leading = 1.22f, serif = true),
+    QUOTE_ITALIC(23f, 500, leading = 1.22f, serif = true),
 
     /** A short line on the home screen. */
-    QUOTE_SANS(19f, 500, leading = 1.24f, serif = true),
+    QUOTE_SANS(20f, 500, leading = 1.24f, serif = true),
     ;
 
     fun applyTo(view: TextView) {

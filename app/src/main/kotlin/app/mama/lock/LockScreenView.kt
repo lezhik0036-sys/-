@@ -171,7 +171,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
             setPadding(dp(Spacing.SCREEN), dp(40), dp(Spacing.SCREEN), dp(22))
         }
         // The day of the series on top, as a quiet heading.
-        dayTop = d.text("", Typo.VALUE, V2.Ink, center = true).apply { textSize = 21f }
+        dayTop = d.text("", Typo.VALUE, V2.Ink, center = true).apply { textSize = 24f }
         col.addView(dayTop, d.centered())
 
         callCard = d.card(Spacing.INNER).apply { gravity = Gravity.CENTER_HORIZONTAL }
@@ -183,16 +183,19 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         callCard.addView(d.secondaryButton("Завершить звонок") { actions.hangUp() }, d.gap(10))
         col.addView(callCard, d.gap(18))
 
-        // Remaining time: the anchor of the screen, a large ring; when the phone is free again under it.
-        ring = d.timerRing(284, valueSp = 52f)
-        col.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(22) })
-        until = v.text("", Typo.SUBTITLE, V2.InkMuted, center = true).apply { textSize = 18f }
+        // Remaining time: the anchor of the screen, a large ring (a little smaller on a short phone);
+        // when the phone is free again right under it, in ink.
+        val metrics = context.resources.displayMetrics
+        val tall = metrics.heightPixels / metrics.density >= 760
+        ring = d.timerRing(if (tall) 288 else 244, valueSp = if (tall) 56f else 48f)
+        col.addView(ring.view, (ring.view.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(if (tall) 22 else 14) })
+        until = v.text("", Typo.SUBTITLE, V2.Ink, center = true).apply { textSize = 21f }
         col.addView(until, d.centered(18))
 
         col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
 
         // One short line of support in a card over the landscape.
-        phrase = v.text("", Typo.QUOTE, V2.Ink).apply { textSize = 19f }
+        phrase = v.text("", Typo.QUOTE, V2.Ink).apply { textSize = 21f }
         phraseCard = d.card(paddingDp = 16).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -202,11 +205,9 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         }
         col.addView(phraseCard, d.gap(24))
 
-        // Only two actions, both quiet: always at hand, never the main thing on the screen.
-        val actionsRow = d.row().apply { gravity = Gravity.TOP }
-        actionsRow.addView(v.quietAction(Icon.PHONE, "Экстренный звонок") { actions.openEmergency() }.apply { minHeight = dp(60) }, d.weight())
-        actionsRow.addView(v.quietAction(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() }.apply { minHeight = dp(60) }, d.weight().apply { leftMargin = dp(10) })
-        col.addView(actionsRow, d.gap(12))
+        // Only two actions, both quiet: always at hand, never the main thing on the screen; one line each.
+        col.addView(v.quietAction(Icon.PHONE, "Экстренный звонок") { actions.openEmergency() }.apply { minHeight = dp(54) }, d.gap(14))
+        col.addView(v.quietAction(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() }.apply { minHeight = dp(54) }, d.gap(10))
         diagnostics = d.text("", Typo.CAPTION, Color.argb(0x99, 0x5E, 0x62, 0x66), center = true).also {
             it.textSize = 9.5f
             col.addView(it, d.gap(10))

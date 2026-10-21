@@ -36,7 +36,9 @@ object V2 {
     /** Light olive-beige: pills, tags, the timer track. */
     val OliveLight = Color.rgb(0xE9, 0xE3, 0xCC)
     val Ink = Color.rgb(0x2B, 0x26, 0x15)
-    val InkMuted = Color.rgb(0x7A, 0x72, 0x62)
+
+    /** Secondary text: as dark as the text of the approved welcome art, readable on cream and on veiled photos. */
+    val InkMuted = Color.rgb(0x61, 0x59, 0x49)
     val Sand = Color.rgb(0xE6, 0xD6, 0xBD)
 
     /** Sage: the light end of the moss scale (arcs, marks). */
@@ -57,10 +59,10 @@ object V2 {
     val ClayInk = Color.rgb(0x8A, 0x66, 0x34)
 
     /** Hints, chevrons, inactive navigation. */
-    val InkSoft = Color.rgb(0xA3, 0x9B, 0x89)
+    val InkSoft = Color.rgb(0x8A, 0x82, 0x6F)
 
     /** Dividers and outlines. */
-    val Line = Color.rgb(0xEA, 0xDF, 0xCD)
+    val Line = Color.rgb(0xE6, 0xD9, 0xC4)
 
     /** Card surface on the cream page. */
     val Card = Color.rgb(0xFD, 0xF9, 0xF1)

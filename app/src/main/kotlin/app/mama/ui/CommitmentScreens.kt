@@ -241,18 +241,19 @@ internal fun MainActivity.balanceCard(wallet: Wallet, compact: Boolean = false):
     val head = kit.row()
     head.addView(kit.iconCircle(Icon.SHIELD, 40))
     val t = kit.column()
-    t.addView(kit.text("Баланс MAMA", MamaType.TITLE))
-    t.addView(kit.text("Только внутри приложения", MamaType.SMALL, MamaColors.TextSecondary), kit.gap(2))
+    t.addView(design.text("Баланс MAMA", Typo.VALUE))
+    t.addView(design.text("Только внутри приложения", Typo.LABEL, Palette.InkMuted), kit.gap(2))
     head.addView(t, kit.weight().apply { leftMargin = kit.dp(12) })
     addView(head)
+    // The two sums in the serif figures of the whole app, large enough to read at a glance.
     val nums = kit.row()
     nums.addView(kit.column().apply {
-        addView(kit.text("Доступно", MamaType.SMALL, MamaColors.TextSecondary))
-        addView(kit.text(Texts.money(wallet.availableKop), MamaType.H2), kit.gap(2))
+        addView(design.text("Доступно", Typo.LABEL, Palette.InkMuted))
+        addView(design.text(Texts.money(wallet.availableKop), Typo.NUMBER).apply { textSize = 32f }, kit.gap(2))
     }, kit.weight())
     nums.addView(kit.column().apply {
-        addView(kit.text("В резерве", MamaType.SMALL, MamaColors.TextSecondary))
-        addView(kit.text(Texts.money(wallet.reservedKop + wallet.restartReservedKop), MamaType.H2), kit.gap(2))
+        addView(design.text("В резерве", Typo.LABEL, Palette.InkMuted))
+        addView(design.text(Texts.money(wallet.reservedKop + wallet.restartReservedKop), Typo.NUMBER).apply { textSize = 32f }, kit.gap(2))
     }, kit.weight())
     addView(nums, kit.gap(14))
     if (wallet.restartReservedKop > 0) {

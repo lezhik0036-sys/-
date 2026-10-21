@@ -83,3 +83,12 @@ jobs:
           gh release delete ui-screenshots --yes --cleanup-tag || true
           gh release create ui-screenshots shots_jpg/*.jpg --prerelease --target "$GITHUB_SHA" \
             --title "UI screenshots (CI)" --notes "Screens of MAMA $GITHUB_SHA rendered on an Android 14 emulator (Pixel 6), preview mode with sample data."
+      # The same screens at full size (1080 × 2400 PNG), for close review.
+      - name: Keep full-size screenshots
+        if: ${{ !cancelled() && startsWith(github.ref_name, 'claude/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots-png
+          path: shots/*.png
+          retention-days: 7
+          if-no-files-found: ignore

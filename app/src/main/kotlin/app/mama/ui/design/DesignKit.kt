@@ -296,8 +296,8 @@ class DesignKit(val context: Context) {
     fun quietAction(icon: Icon, label: String, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.VALUE.applyTo(this)
-        textSize = 17f
-        setTextColor(Palette.InkMuted)
+        textSize = 19f
+        setTextColor(Palette.Ink)
         gravity = Gravity.CENTER
         minHeight = dp(46)
         minimumHeight = dp(46)
@@ -379,17 +379,20 @@ class DesignKit(val context: Context) {
      */
     fun dayCircles(done: Int, total: Int, current: Int? = null): View = row().apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        val size = if (total > 7) 30 else 36
+        val size = if (total > 7) 32 else 40
         for (i in 1..total) {
             val item = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
             val circle = FrameLayout(context).apply {
                 background = when {
                     i <= done -> oval(Palette.Moss)
                     i == current -> oval(Palette.Card, Palette.Moss, 2f)
-                    else -> oval(Palette.Card, V2.Sand, 1.5f)
+                    else -> oval(Palette.Card, Palette.Sage, 1.5f)
                 }
-                val mark = if (i <= done) Palette.OnAccent else if (i == current) Palette.Moss else V2.Sand
-                addView(ImageView(context).apply { setImageDrawable(IconDrawable(Icon.CHECK, mark, 2.2f)) }, FrameLayout.LayoutParams(dp(size / 2), dp(size / 2), Gravity.CENTER))
+                // Done: a white check on moss; today: a moss check in a moss ring; ahead: an empty ring.
+                if (i <= (current ?: done)) {
+                    val mark = if (i <= done) Palette.OnAccent else Palette.Moss
+                    addView(ImageView(context).apply { setImageDrawable(IconDrawable(Icon.CHECK, mark, 2.2f)) }, FrameLayout.LayoutParams(dp(size / 2), dp(size / 2), Gravity.CENTER))
+                }
             }
             item.addView(circle, size(size))
             item.addView(text("$i", Typo.CAPTION, if (i <= (current ?: done)) Palette.Ink else Palette.InkSoft, center = true), centered(5))
@@ -398,11 +401,24 @@ class DesignKit(val context: Context) {
         contentDescription = "Пройдено $done из $total"
     }
 
+    /**
+     * The landscape of a moment as a rounded picture (home of a series,
+     * motivation): the photo whole, with its own [mood], under the text
+     * rather than behind it, so every line on the screen stays readable.
+     */
+    fun photoBand(scenery: Scenery, mood: SceneMood): View = View(context).apply {
+        background = ScenicBackground(context, scenery, SceneLayout.PICTURE, Palette.Card, dpf(V2.CARD_LARGE.toFloat()), mood = mood)
+        outlineProvider = ViewOutlineProvider.BACKGROUND
+        clipToOutline = true
+        elevate(this, 2f)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
     /** A number in a small card with its label under it ("17 · Ночей пройдено"). */
     fun tile(value: CharSequence, label: String): View = card(paddingDp = 14).apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        addView(text(value, Typo.NUMBER, Palette.Ink, center = true).apply { textSize = 34f; maxLines = 1 }, centered())
-        addView(text(label, Typo.CAPTION, Palette.InkMuted, center = true), centered(4))
+        addView(text(value, Typo.NUMBER, Palette.Ink, center = true).apply { textSize = 40f; maxLines = 1 }, centered())
+        addView(text(label, Typo.LABEL, Palette.InkMuted, center = true), centered(4))
     }
 
     // ---------------- chips, tags, badges ----------------
@@ -723,7 +739,7 @@ class DesignKit(val context: Context) {
         elevate(this, if (tone == NoteTone.CARE) 1f else 2f)
         addView(iconCircle(icon, 38, if (tone == NoteTone.CARE) CircleStyle.SAND else CircleStyle.MINT))
         val texts = column()
-        title?.let { texts.addView(text(it, Typo.VALUE).apply { textSize = 15.5f }) }
+        title?.let { texts.addView(text(it, Typo.VALUE).apply { textSize = 19f }) }
         texts.addView(text(message, Typo.LABEL, Palette.InkMuted), if (title != null) gap(4) else fill())
         addView(texts, weight().apply { leftMargin = dp(12); topMargin = dp(if (title != null) 1 else 9) })
     }

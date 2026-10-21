@@ -999,7 +999,7 @@ internal object ScenePainter {
         p.maskFilter = null
         p.shader = if (centered) {
             LinearGradient(
-                0f, 0f, w, 0f, intArrayOf(alpha(base, 150), alpha(base, 195), alpha(base, 195), alpha(base, 150)),
+                0f, 0f, w, 0f, intArrayOf(alpha(base, 178), alpha(base, 222), alpha(base, 222), alpha(base, 178)),
                 floatArrayOf(0f, 0.3f, 0.7f, 1f), Shader.TileMode.CLAMP,
             )
         } else {

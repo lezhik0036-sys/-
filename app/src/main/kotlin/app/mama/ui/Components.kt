@@ -154,12 +154,13 @@ class Kit(val context: Context) {
         setPadding(dp(14), dp(13), dp(18), dp(13))
         minimumHeight = dp(80)
         // As on the approved series screen: cream rows, the chosen one outlined in moss with a moss circle.
-        val base = if (selected) shape(Palette.Card, Radii.CARD, Palette.Moss, 1.4f) else design.surface(Palette.Card, Radii.CARD)
+        // The chosen row stands out at a glance: a pale olive fill and a clear moss outline.
+        val base = if (selected) shape(Palette.SageSelected, Radii.CARD, Palette.Moss, 2f) else design.surface(Palette.Card, Radii.CARD)
         background = pressable(base, Radii.CARD)
-        design.elevate(this, if (selected) 2.5f else 1.5f)
+        design.elevate(this, if (selected) 3f else 1.5f)
         addView(design.iconCircle(icon, 52, if (selected) CircleStyle.FILLED else CircleStyle.SAND))
         val texts = column()
-        texts.addView(design.text(title, Typo.VALUE).apply { textSize = 22f })
+        texts.addView(design.text(title, Typo.VALUE, if (selected) Palette.Moss else Palette.Ink).apply { textSize = 23f })
         texts.addView(design.text(subtitle, Typo.LABEL, Palette.InkMuted), gap(3))
         addView(texts, weight().apply { leftMargin = dp(16) })
         trailing?.let {
@@ -218,7 +219,7 @@ class Kit(val context: Context) {
         design.elevate(this, 2f)
         addView(design.iconCircle(icon, 44))
         val texts = column()
-        texts.addView(design.text(title, Typo.VALUE).apply { textSize = 16f })
+        texts.addView(design.text(title, Typo.VALUE).apply { textSize = 19f })
         texts.addView(design.text(why, Typo.CAPTION, Palette.InkMuted), gap(4))
         addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(10) })
         when (status) {
