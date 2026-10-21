@@ -2,6 +2,7 @@ package app.mama.ui
 
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.InsetDrawable
 import android.text.Editable
 import android.text.SpannableString
 import android.text.Spanned
@@ -216,9 +217,9 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         screen.place(FrameLayout(this).apply {
             background = d.oval(V2.SandLight)
             d.elevate(this, 1f)
-            val pad = d.dp(14)
-            setPadding(pad, pad, pad, pad)
-            addView(ImageView(this@welcomeScreen).apply { setImageDrawable(IconDrawable(icon, Color.rgb(0x62, 0x5E, 0x32), 1.5f)) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            // The icon keeps its share of the circle at any scale, as drawn on the art.
+            val mark = InsetDrawable(IconDrawable(icon, V2.Moss, 1.8f), 0.24f)
+            addView(ImageView(this@welcomeScreen).apply { setImageDrawable(mark) }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, x, WelcomeArt.ICON_TOP, x + WelcomeArt.ICON_SIZE, WelcomeArt.ICON_TOP + WelcomeArt.ICON_SIZE, exact = true)
         screen.place(screen.text(d.text(label, Typo.LABEL, Color.rgb(0x8A, 0x82, 0x70), center = true).apply {
@@ -233,9 +234,10 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         background = d.pressable(d.shape(Color.argb(0xD9, 0xFD, 0xF9, 0xF1), 22), 22)
         minHeight = 0
         minimumHeight = 0
-        setPadding(d.dp(14), 0, d.dp(14), 0)
+        maxLines = 1
+        setPadding(d.dp(10), 0, d.dp(10), 0)
     }
-    screen.place(screen.text(path, 30f), 726, 92, 900, 152, exact = true)
+    screen.place(screen.text(path, 30f), 696, 92, 900, 152, exact = true)
     return screen to true
 }
 
@@ -262,10 +264,10 @@ internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     val content = ONBOARDING[page - 1]
     val narrow = (resources.displayMetrics.widthPixels * 0.84f).toInt()
     val b = d.body(40)
-    b.addView(d.text(content.title, Typo.DISPLAY).apply { textSize = 35f; maxWidth = narrow }, d.wrap())
-    b.addView(d.text(content.line, Typo.SUBTITLE, V2.InkMuted).apply { textSize = 21f; maxWidth = narrow }, d.wrap().apply { topMargin = d.dp(14) })
-    val card = d.card(paddingDp = 22, radiusDp = V2.CARD_LARGE)
-    card.addView(d.text(content.note, Typo.QUOTE, V2.InkMuted, center = true).apply { textSize = 20f }, d.fill().apply { topMargin = d.dp(6) })
+    b.addView(d.text(content.title, Typo.DISPLAY).apply { textSize = 40f; maxWidth = narrow }, d.wrap())
+    b.addView(d.text(content.line, Typo.SUBTITLE, V2.InkMuted).apply { textSize = 23f; maxWidth = narrow }, d.wrap().apply { topMargin = d.dp(16) })
+    val card = d.card(paddingDp = 24, radiusDp = V2.CARD_LARGE)
+    card.addView(d.text(content.note, Typo.QUOTE, V2.InkMuted, center = true).apply { textSize = 22f }, d.fill().apply { topMargin = d.dp(8) })
     val row = d.row()
     row.addView(PageDots(this, ONBOARDING.size, page - 1), LinearLayout.LayoutParams(d.dp(66), d.dp(12)))
     row.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))

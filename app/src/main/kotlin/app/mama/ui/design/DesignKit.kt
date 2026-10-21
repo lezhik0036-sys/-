@@ -945,6 +945,9 @@ class DesignKit(val context: Context) {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
             clipToPadding = false
+            // Text that runs on under the bottom action fades out instead of being cut.
+            isVerticalFadingEdgeEnabled = true
+            setFadingEdgeLength(dp(28))
             addView(body)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         cta?.let {
