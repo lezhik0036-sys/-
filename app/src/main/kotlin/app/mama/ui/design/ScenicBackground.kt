@@ -8,6 +8,8 @@ import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Outline
@@ -71,12 +73,14 @@ enum class SceneLayout {
 }
 
 /**
- * The one background of UI v1. Draws the production photo of the scenery
- * (`assets/scenes/v1/<scenery>.webp`), cropped around its sun for the
- * layout, with only light ivory veils where text sits; the photo itself is
- * never redrawn or darkened. Without the file, a light landscape is painted
- * in code instead (fallback), in the same place with the same fades. Never
- * a screenshot of a reference.
+ * A window into nature (MAMA_DESIGN_SYSTEM_V2 «Образы»). Draws the
+ * production photo of the scenery (`assets/scenes/v1/<scenery>.webp`),
+ * cropped around its sun for the layout and quietened: calmer colours, a
+ * milky lift and a mist settling towards the ground, so it reads as a calm
+ * place, not a postcard. On a screen it ends in a soft wave (like the
+ * approved welcome art) over the [EarthPage]; light milky veils stay where
+ * text sits. The photo is never redrawn. Without the file, a light landscape
+ * is painted in code instead (fallback), in the same place.
  *
  * Rendered once per size into a cached bitmap, then only drawn.
  */
@@ -147,9 +151,10 @@ internal object SceneCache {
         val bh = max(1, (h * q).roundToInt())
         val key = "$scenery/$layout/$base/$vignette/$bw x $bh"
         cache.get(key)?.let { return it }
+        val density = context.resources.displayMetrics.density * q
         val bitmap = runCatching {
             Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also {
-                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette)
+                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette, density)
             }
         }.getOrNull() ?: return null
         cache.put(key, bitmap)
@@ -268,12 +273,13 @@ internal object ScenePainter {
         p.shader = null
         p.maskFilter = null
         p.xfermode = null
+        p.colorFilter = null
         p.style = Paint.Style.FILL
         p.strokeCap = Paint.Cap.BUTT
         p.alpha = 255
     }
 
-    fun paint(canvas: Canvas, w: Float, h: Float, scenery: Scenery, layout: SceneLayout, base: Int, photo: Bitmap?, vignette: Float = 0.42f) {
+    fun paint(canvas: Canvas, w: Float, h: Float, scenery: Scenery, layout: SceneLayout, base: Int, photo: Bitmap?, vignette: Float = 0.42f, density: Float = 1f) {
         reset()
         canvas.drawColor(base)
         val l = look(scenery)
@@ -281,24 +287,32 @@ internal object ScenePainter {
             SceneLayout.HEADER, SceneLayout.HERO -> {
                 val hero = layout == SceneLayout.HERO
                 val H = w * if (hero) 1.22f else 1.0f
-                // Photo: its sun right of the subtitle (wizard) or under the subtitle (home, a little closer).
+                // The page under the window: the earth on a screen, the plain colour on a card.
+                if (base == Palette.Bg) EarthPainter.paint(canvas, w, h, density)
+                reset()
+                // The window: the photo (its sun right of the subtitle on a wizard step, under it on
+                // home, a little closer), misted towards the ground and cut along a soft wave.
+                val edge = H * if (hero) 0.9f else 0.86f
+                val layer = canvas.saveLayer(0f, 0f, w, H, null)
                 if (photo != null) {
                     drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, if (hero) 0.62f else 0.42f, if (hero) 1.2f else 1f)
                 } else {
                     landscape(canvas, w, H, l, H)
                 }
-                // Fade into the page under the cards, then the page itself.
-                val fade = if (hero) 0.84f else if (photo != null) 0.62f else 0.76f
-                gradientRect(canvas, 0f, H * fade, w, H, alpha(base, 0), base, mid = alpha(base, 170), midAt = 0.5f)
-                p.color = base
-                canvas.drawRect(0f, H, w, h, p)
+                mist(canvas, w, H * 0.42f, edge)
+                wave(path, w, edge, w * 0.034f, H)
+                soft(1.2f * density)
+                p.color = Color.BLACK
+                p.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT)
+                canvas.drawPath(path, p)
+                reset()
+                canvas.restoreToCount(layer)
                 if (photo != null) {
                     // Home: title, state badge and a phrase sit a little lower than a wizard subtitle.
                     textVeil(canvas, w, w * if (hero) 0.62f else 0.55f, w * 0.12f, base)
                 } else {
                     titleVeil(canvas, w, H * if (hero) 0.40f else 0.82f, base)
                     grain(canvas, w, h)
-                    leaves(canvas, w, H * 0.34f)
                     bokeh(canvas, w, h)
                 }
             }
@@ -310,6 +324,7 @@ internal object ScenePainter {
                 } else {
                     landscape(canvas, w, H, l, h)
                 }
+                mist(canvas, w, h * 0.45f, h)
                 // Light veils: the title at the top and the cards below stay readable.
                 gradientRect(canvas, 0f, 0f, w, H * 0.40f, alpha(base, 150), alpha(base, 0))
                 gradientRect(canvas, 0f, H * 0.70f, w, h, alpha(base, 0), alpha(base, 200), mid = alpha(base, 120), midAt = 0.5f)
@@ -907,6 +922,47 @@ internal object ScenePainter {
         gradientRect(c, 0f, 0f, w, w * 0.30f, alpha(base, 110), alpha(base, 0))
     }
 
+    /** A milky mist settling from [top] down to [bottom]: thin at first, then thicker towards the ground. */
+    private fun mist(c: Canvas, w: Float, top: Float, bottom: Float) {
+        p.maskFilter = null
+        p.shader = LinearGradient(
+            0f, top, 0f, bottom, intArrayOf(alpha(V2.Milk, 0), alpha(V2.Milk, 34), alpha(V2.Milk, 110)),
+            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
+        )
+        c.drawRect(0f, top, w, bottom, p)
+        p.shader = null
+    }
+
+    /** The area under a soft wave around [y] (two gentle swells, like the welcome art), down to [bottom]. */
+    private fun wave(into: Path, w: Float, y: Float, amp: Float, bottom: Float) {
+        into.reset()
+        into.moveTo(-4f, bottom + 4f)
+        val steps = 48
+        for (i in 0..steps) {
+            val t = 2 * PI.toFloat() * i / steps
+            into.lineTo(w * i / steps, y + amp * (0.62f * sin(0.9f * t + 0.6f) + 0.38f * sin(1.9f * t + 1.02f)))
+        }
+        into.lineTo(w + 4f, bottom + 4f)
+        into.close()
+    }
+
+    /**
+     * The quiet grade of a photo: calmer colours (78 % saturation) and a milky
+     * lift (14 % of the page colour), so the sun no longer flares like a
+     * postcard and the photo sits in the palette of the page.
+     */
+    private val grade = ColorMatrixColorFilter(ColorMatrix().apply {
+        setSaturation(0.78f)
+        val k = 0.86f
+        val lift = 0.14f
+        postConcat(ColorMatrix(floatArrayOf(
+            k, 0f, 0f, 0f, lift * Color.red(V2.Milk),
+            0f, k, 0f, 0f, lift * Color.green(V2.Milk),
+            0f, 0f, k, 0f, lift * Color.blue(V2.Milk),
+            0f, 0f, 0f, 1f, 0f,
+        )))
+    })
+
     /** Where the sun is on the bundled production photo of [s] (fractions of its width and height). */
     private fun focus(s: Scenery): Pair<Float, Float> = when (s) {
         Scenery.DAWN -> 0.26f to 0.37f
@@ -919,8 +975,8 @@ internal object ScenePainter {
     /**
      * A production photo covering the box ([left], [top], [bw] × [bh]),
      * [zoom] times closer, placed so that its sun lands at ([tx], [ty]) of
-     * the box as far as the photo reaches. Scaled as a whole, never
-     * stretched or redrawn.
+     * the box as far as the photo reaches, in the quiet [grade]. Scaled as a
+     * whole, never stretched or redrawn.
      */
     private fun drawPhoto(c: Canvas, bitmap: Bitmap, scenery: Scenery, left: Float, top: Float, bw: Float, bh: Float, tx: Float, ty: Float, zoom: Float = 1f) {
         val (fx, fy) = focus(scenery)
@@ -934,9 +990,11 @@ internal object ScenePainter {
         p.maskFilter = null
         p.shader = null
         p.isFilterBitmap = true
+        p.colorFilter = grade
         val source = reduced(bitmap, dw)
         c.drawBitmap(source, null, RectF(x, y, x + dw, y + dh), p)
         if (source !== bitmap) source.recycle()
+        p.colorFilter = null
         c.restore()
     }
 

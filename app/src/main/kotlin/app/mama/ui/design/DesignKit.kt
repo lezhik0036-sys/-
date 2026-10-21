@@ -37,10 +37,10 @@ enum class CircleStyle { MINT, FILLED, SAND, WHITE, TEST }
 /** Colour of a tag. */
 enum class TagTone { MINT, SAND, TEST }
 
-/** A notice card: [INFO] calm emerald, [CARE] warm sand (instead of any warning red). */
+/** A notice card: [INFO] calm olive, [CARE] warm earth (instead of any warning red). */
 enum class NoteTone { INFO, CARE }
 
-/** Colour of the quote mark: emerald on setup screens, warm sand on home and recovery. */
+/** Colour of the quote mark: sage on setup screens, warm earth on home and recovery. */
 enum class QuoteAccent { EMERALD, SAND }
 
 /** One row of a [DesignKit.summaryCard] ("Твой план"); [note] is a small line under the value. */
@@ -56,9 +56,10 @@ data class SummaryItem(
 class ValueRow(val view: LinearLayout, val label: TextView, val value: TextView)
 
 /**
- * UI v1 components (DESIGN_SYSTEM_V1 §5), built from [Palette], [Typo],
- * [Spacing] and [Radii]. Plain Android views, no Material components.
- * Screens are assembled from these in PHASE 2; nothing here holds product
+ * The MAMA components (MAMA_DESIGN_SYSTEM_V2 «Компоненты»), built from
+ * [Palette], [Typo], [Spacing] and [Radii]: one clay action per screen,
+ * olive for choices and states, soft warm cards and pills on the [EarthPage].
+ * Plain Android views, no Material components; nothing here holds product
  * logic — every action is a callback.
  */
 class DesignKit(val context: Context) {
@@ -107,9 +108,9 @@ class DesignKit(val context: Context) {
         RippleDrawable(ColorStateList.valueOf(ripple), content, shape(Color.WHITE, radiusDp))
 
     /**
-     * Very soft depth: a wide, faint, warm shadow and a halo (an emerald
-     * glow for the main button). Tinted shadows need Android 9+; older
-     * phones get a lower, plain elevation.
+     * Very soft depth: a wide, faint, warm shadow and a halo (a clay glow
+     * for the main button). Tinted shadows need Android 9+; older phones get
+     * a lower, plain elevation.
      */
     fun elevate(view: View, levelDp: Float, color: Int = Palette.Shadow, ambient: Int = Palette.ShadowAmbient) {
         val tinted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
@@ -120,7 +121,7 @@ class DesignKit(val context: Context) {
         }
     }
 
-    /** Card surface: opaque fill, large radius, a light rim instead of a border. */
+    /** Card surface: opaque fill, large radius, a soft sand rim instead of a border. */
     fun surface(fill: Int = Palette.Card, radiusDp: Int = Radii.CARD): GradientDrawable = shape(fill, radiusDp, Palette.Rim, 1f)
 
     private fun clickable(view: View, onClick: () -> Unit) {
@@ -181,7 +182,7 @@ class DesignKit(val context: Context) {
 
     // ---------------- icons ----------------
 
-    fun icon(icon: Icon, color: Int = Palette.EmeraldInk, sizeDp: Int = 22, solid: Boolean = true): ImageView = ImageView(context).apply {
+    fun icon(icon: Icon, color: Int = Palette.OliveInk, sizeDp: Int = 22, solid: Boolean = true): ImageView = ImageView(context).apply {
         setImageDrawable(IconDrawable(icon, color, 2.0f, solid))
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
@@ -189,10 +190,10 @@ class DesignKit(val context: Context) {
     /** Icon in a soft circle, as on every reference card. */
     fun iconCircle(icon: Icon, sizeDp: Int = 44, style: CircleStyle = CircleStyle.MINT): FrameLayout = FrameLayout(context).apply {
         val (fill, tint) = when (style) {
-            CircleStyle.MINT -> Palette.MintBadge to Palette.EmeraldInk
-            CircleStyle.FILLED -> Palette.EmeraldDeep to Palette.OnEmerald
-            CircleStyle.SAND -> Palette.SandSoft to Palette.Sand
-            CircleStyle.WHITE -> Palette.Card to Palette.EmeraldInk
+            CircleStyle.MINT -> Palette.SageBadge to Palette.OliveInk
+            CircleStyle.FILLED -> Palette.OliveDeep to Palette.OnAccent
+            CircleStyle.SAND -> Palette.ClaySoft to Palette.Clay
+            CircleStyle.WHITE -> Palette.Card to Palette.OliveInk
             CircleStyle.TEST -> Palette.TestFill to Palette.TestInk
         }
         background = oval(fill)
@@ -205,27 +206,27 @@ class DesignKit(val context: Context) {
 
     // ---------------- buttons ----------------
 
-    /** Main action: emerald gradient pill, white label in the centre, "→" at the right edge; [large] for the one decisive action of a screen. */
+    /**
+     * The one main action of a screen: a matte clay pill (MAMA Coral), white
+     * label in the centre, "→" at the right edge, a soft clay glow; [large]
+     * for the decisive action of a screen.
+     */
     fun primaryButton(label: String, arrow: Boolean = true, large: Boolean = false, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.BUTTON.applyTo(this)
-        if (large) textSize = 17.5f
-        setTextColor(Palette.OnEmerald)
+        if (large) textSize = 17f
+        setTextColor(Palette.OnAccent)
         gravity = Gravity.CENTER
-        minHeight = dp(if (large) 58 else Spacing.BUTTON)
-        minimumHeight = dp(if (large) 58 else Spacing.BUTTON)
-        val radius = dp(Spacing.BUTTON)
-        val pill = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Palette.EmeraldLight, Palette.EmeraldDeep)).apply {
-            cornerRadius = radius.toFloat()
+        val height = if (large) 56 else Spacing.BUTTON + 2
+        minHeight = dp(height)
+        minimumHeight = dp(height)
+        val pill = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(0xD0, 0x7A, 0x6C), Palette.Clay)).apply {
+            cornerRadius = dpf(height / 2f)
         }
-        val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.argb(0x3A, 0xFF, 0xFF, 0xFF), Color.argb(0, 0xFF, 0xFF, 0xFF))).apply {
-            cornerRadius = radius.toFloat()
-            setStroke(dp(1), Color.argb(0x30, 0xFF, 0xFF, 0xFF))
-        }
-        background = RippleDrawable(ColorStateList.valueOf(Palette.RippleOnEmerald), LayerDrawable(arrayOf(pill, sheen)), shape(Color.WHITE, Spacing.BUTTON))
+        background = RippleDrawable(ColorStateList.valueOf(Palette.RippleOnAccent), pill, shape(Color.WHITE, height / 2))
         val side = dp(22)
         if (arrow) {
-            val d = IconDrawable(Icon.ARROW_RIGHT, Palette.OnEmerald, 2.0f).apply { setBounds(0, 0, dp(22), dp(22)) }
+            val d = IconDrawable(Icon.ARROW_RIGHT, Palette.OnAccent, 2.0f).apply { setBounds(0, 0, dp(22), dp(22)) }
             setCompoundDrawables(null, null, d, null)
             // Balanced padding keeps the label in the centre of the pill.
             setPadding(side + dp(22) + dp(10), dp(14), side, dp(14))
@@ -233,34 +234,34 @@ class DesignKit(val context: Context) {
         } else {
             setPadding(side, dp(14), side, dp(14))
         }
-        elevate(this, 4f, Palette.Glow, Palette.GlowAmbient)
+        elevate(this, 3f, Palette.Glow, Palette.GlowAmbient)
         clickable(this, onClick)
     }
 
-    /** Secondary action: white pill, hairline outline, emerald label. */
+    /** A second action that does not compete: a milky pill with a sand outline, deep olive label. */
     fun secondaryButton(label: String, icon: Icon? = null, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.BUTTON.applyTo(this)
-        setTextColor(Palette.EmeraldInk)
+        textSize = 15.5f
+        setTextColor(Palette.OliveInk)
         gravity = Gravity.CENTER
         minHeight = dp(Spacing.BUTTON)
         minimumHeight = dp(Spacing.BUTTON)
-        setPadding(dp(20), dp(14), dp(20), dp(14))
-        background = pressable(shape(Palette.Card, Spacing.BUTTON, Color.argb(0xB3, 0xE6, 0xDF, 0xD0)), Spacing.BUTTON)
+        setPadding(dp(20), dp(12), dp(20), dp(12))
+        background = pressable(shape(Palette.Card, Spacing.BUTTON, V2.Sand, 1.2f), Spacing.BUTTON)
         icon?.let {
-            val d = IconDrawable(it, Palette.EmeraldInk, 2.0f, solid = true).apply { setBounds(0, 0, dp(20), dp(20)) }
+            val d = IconDrawable(it, Palette.OliveInk, 2.0f, solid = true).apply { setBounds(0, 0, dp(18), dp(18)) }
             setCompoundDrawables(d, null, null, null)
             compoundDrawablePadding = dp(10)
         }
-        elevate(this, 2f)
         clickable(this, onClick)
     }
 
     /** Quiet text action ("Отменить запуск", "Изменить"). */
-    fun linkButton(label: String, color: Int = Palette.EmeraldInk, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
+    fun linkButton(label: String, color: Int = Palette.OliveInk, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.BUTTON.applyTo(this)
-        textSize = 15f
+        textSize = 15.5f
         setTextColor(color)
         gravity = Gravity.CENTER
         minHeight = dp(44)
@@ -272,7 +273,8 @@ class DesignKit(val context: Context) {
 
     /**
      * A secondary action that stays at hand but never leads the screen: a
-     * translucent milky pill, a small icon, a muted label, no shadow (lock).
+     * translucent warm pill with a sand outline, a small olive icon, a muted
+     * label, no shadow (lock).
      */
     fun quietAction(icon: Icon, label: String, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
@@ -283,8 +285,8 @@ class DesignKit(val context: Context) {
         minHeight = dp(46)
         minimumHeight = dp(46)
         setPadding(dp(18), dp(10), dp(20), dp(10))
-        background = pressable(shape(Color.argb(0x99, 0xFE, 0xFD, 0xF9), 23), 23)
-        val d = IconDrawable(icon, Palette.InkMuted, 1.8f, solid = true).apply { setBounds(0, 0, dp(18), dp(18)) }
+        background = pressable(shape(Color.argb(0xCC, 0xF8, 0xF0, 0xE6), 23, Color.argb(0x99, 0xEB, 0xDC, 0xC9), 1f), 23)
+        val d = IconDrawable(icon, Palette.Olive, 1.8f, solid = true).apply { setBounds(0, 0, dp(18), dp(18)) }
         setCompoundDrawables(d, null, null, null)
         compoundDrawablePadding = dp(10)
         clickable(this, onClick)
@@ -332,7 +334,7 @@ class DesignKit(val context: Context) {
         addView(segments(step, total), gap(4).apply { leftMargin = dp(Spacing.SCREEN); rightMargin = dp(Spacing.SCREEN) })
     }
 
-    /** Segmented progress: [done] emerald segments (dark to light), the rest sand. Steps of a wizard, days of a series. */
+    /** Steps of a path: [done] segments from deep olive to sage, the rest sand. Steps of a wizard, days of a series. */
     fun segments(done: Int, total: Int): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         for (i in 0 until total) {
@@ -354,15 +356,15 @@ class DesignKit(val context: Context) {
 
     // ---------------- chips, tags, badges ----------------
 
-    /** Amount chip ("1 000 ₽"); selected: mint with an emerald outline. */
-    fun chip(label: String, selected: Boolean, onClick: () -> Unit): TextView = text(label, Typo.VALUE, if (selected) Palette.EmeraldInk else Palette.Ink, center = true).apply {
+    /** Amount chip ("1 000 ₽"); selected: sage mist with an olive outline. */
+    fun chip(label: String, selected: Boolean, onClick: () -> Unit): TextView = text(label, Typo.VALUE, if (selected) Palette.OliveInk else Palette.Ink, center = true).apply {
         gravity = Gravity.CENTER
         minHeight = dp(48)
         setPadding(dp(8), dp(10), dp(8), dp(10))
         background = if (selected) {
-            pressable(shape(Palette.MintSelected, Radii.CHIP, Palette.EmeraldBorder, 1.6f), Radii.CHIP)
+            pressable(shape(Palette.SageSelected, Radii.CHIP, Palette.OliveLine, 1.6f), Radii.CHIP)
         } else {
-            pressable(shape(Palette.Card, Radii.CHIP, Color.argb(0xB3, 0xE6, 0xDF, 0xD0), 1f), Radii.CHIP)
+            pressable(shape(Palette.Card, Radii.CHIP, Palette.Line, 1.2f), Radii.CHIP)
         }
         if (selected) elevate(this, 2f)
         isSelected = selected
@@ -384,35 +386,35 @@ class DesignKit(val context: Context) {
     /** Small capital tag: "РЕКОМЕНДУЕМ", "ВЕЧЕРОМ". */
     fun tag(label: String, tone: TagTone = TagTone.MINT): TextView {
         val (fill, ink) = when (tone) {
-            TagTone.MINT -> Palette.MintTag to Palette.EmeraldInk
+            TagTone.MINT -> Palette.SageTag to Palette.OliveInk
             TagTone.SAND -> Palette.SandSoft to Palette.SandInk
             TagTone.TEST -> Palette.TestFill to Palette.TestInk
         }
         return text(label, Typo.TAG, ink).apply {
             background = shape(fill, Radii.TAG)
-            setPadding(dp(8), dp(5), dp(8), dp(5))
+            setPadding(dp(10), dp(5), dp(10), dp(5))
         }
     }
 
     /** A non-clickable pill ("Я держу курс"): a statement, never a button. */
     fun badge(label: String, icon: Icon? = null): View = row().apply {
-        background = shape(Palette.MintTag, 16)
-        setPadding(dp(12), dp(7), dp(14), dp(7))
-        icon?.let { addView(icon(it, Palette.EmeraldInk, 15), size(15).apply { rightMargin = dp(7) }) }
-        addView(text(label, Typo.LABEL, Palette.EmeraldInk).apply { typeface = MamaFonts.ui(context, 700) })
+        background = shape(Palette.SageTag, Radii.TAG)
+        setPadding(dp(13), dp(7), dp(15), dp(7))
+        icon?.let { addView(icon(it, Palette.OliveInk, 15), size(15).apply { rightMargin = dp(7) }) }
+        addView(text(label, Typo.LABEL, Palette.OliveInk).apply { typeface = MamaFonts.ui(context, 700) })
         isClickable = false
         isFocusable = false
     }
 
     // ---------------- cards ----------------
 
-    /** White card with a soft warm shadow. */
+    /** Milky card with a soft warm shadow. */
     fun card(paddingDp: Int = Spacing.INNER, fill: Int = Palette.Card, radiusDp: Int = Radii.CARD): LinearLayout = column(paddingDp).apply {
         background = surface(fill, radiusDp)
-        elevate(this, 2.5f)
+        elevate(this, 2f)
     }
 
-    /** Quiet card (quotes, secondary information): cream, almost no shadow. */
+    /** Quiet card (quotes, secondary information): the warm wash of the page, almost no shadow. */
     fun quietCard(paddingDp: Int = Spacing.INNER): LinearLayout = column(paddingDp).apply {
         background = surface(Palette.CardQuiet)
         elevate(this, 1f)
@@ -506,9 +508,9 @@ class DesignKit(val context: Context) {
         onClick: () -> Unit,
     ): View = column().apply {
         val radius = dpf(Radii.CARD.toFloat())
-        val base = if (selected) Palette.MintSelected else Palette.Card
+        val base = if (selected) Palette.SageSelected else Palette.Card
         val fill: Drawable = scenery?.let { ScenicBackground(context, it, SceneLayout.CARD_BOTTOM, base, radius) } ?: shape(base, Radii.CARD)
-        val layers = if (selected) LayerDrawable(arrayOf(fill, shape(Color.TRANSPARENT, Radii.CARD, Palette.EmeraldBorder, 1.8f))) else LayerDrawable(arrayOf(fill))
+        val layers = if (selected) LayerDrawable(arrayOf(fill, shape(Color.TRANSPARENT, Radii.CARD, Palette.OliveLine, 1.8f))) else LayerDrawable(arrayOf(fill))
         background = RippleDrawable(ColorStateList.valueOf(Palette.Ripple), layers, shape(Color.WHITE, Radii.CARD))
         outlineProvider = roundOutline(radius)
         clipToOutline = false
@@ -662,7 +664,7 @@ class DesignKit(val context: Context) {
         addView(text(phrase, Typo.SUBTITLE, Palette.Ink), weight().apply { leftMargin = dp(16) })
     }
 
-    /** Calm notice. [NoteTone.CARE] (protection not ready, not enough balance) is warm sand, never red. */
+    /** Calm notice. [NoteTone.CARE] (protection not ready, not enough balance) is warm earth and clay, never red. */
     fun noteCard(message: CharSequence, title: String? = null, tone: NoteTone = NoteTone.INFO, icon: Icon = if (tone == NoteTone.CARE) Icon.HEART else Icon.SHIELD): View = row().apply {
         gravity = Gravity.TOP
         setPadding(dp(14), dp(14), dp(16), dp(14))
@@ -676,9 +678,11 @@ class DesignKit(val context: Context) {
     }
 
     /**
-     * The motivational text component: a quote card. Serif text (or sans on
-     * the home screen), a large quote mark in emerald or warm sand, an
-     * optional "— MAMA" and an optional landscape on the right.
+     * The motivational text component: a quote card. A quiet thought in
+     * Manrope (smaller and muted on the home screen), a large quote mark in
+     * sage or warm earth, an optional "— MAMA" and an optional landscape on
+     * the right. [serif] and [italic] are kept for the callers: the earth
+     * type has one voice.
      */
     fun quoteCard(
         phrase: String,
@@ -695,10 +699,10 @@ class DesignKit(val context: Context) {
         outlineProvider = roundOutline(radius)
         elevate(this, 1.5f)
         setPadding(dp(18), dp(18), dp(if (scenery != null) 112 else 20), dp(20))
-        val markColor = if (accent == QuoteAccent.SAND) Palette.Sand else Color.argb(0x99, 0x5A, 0x99, 0x74)
+        val markColor = if (accent == QuoteAccent.SAND) Palette.Sand else Palette.Sage
         if (markInCircle) {
             addView(FrameLayout(context).apply {
-                background = oval(if (accent == QuoteAccent.SAND) Palette.SandSoft else Palette.MintBadge)
+                background = oval(if (accent == QuoteAccent.SAND) Palette.SandSoft else Palette.SageBadge)
                 addView(ImageView(context).apply { setImageDrawable(IconDrawable(Icon.QUOTE, markColor)) }, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
             }, size(46))
         } else {
@@ -715,7 +719,7 @@ class DesignKit(val context: Context) {
         addView(texts, weight().apply { leftMargin = dp(12); topMargin = dp(if (markInCircle) 4 else 6) })
     }
 
-    /** A centred serif line over a landscape (lock, welcome). */
+    /** A centred quiet line over a landscape (lock, motivation). */
     fun motivationLine(phrase: String, color: Int = Palette.Ink): TextView = text(phrase, Typo.QUOTE, color, center = true).apply {
         gravity = Gravity.CENTER_HORIZONTAL
     }
@@ -725,8 +729,8 @@ class DesignKit(val context: Context) {
         setPadding(dp(2), dp(8), 0, dp(8))
         minimumHeight = dp(48)
         val box = FrameLayout(context).apply {
-            background = if (checked) shape(Palette.EmeraldDeep, Radii.CHECK) else shape(Palette.Card, Radii.CHECK, Palette.EmeraldBorder, 1.6f)
-            if (checked) addView(ImageView(context).apply { setImageDrawable(IconDrawable(Icon.CHECK, Palette.OnEmerald, 2.6f)) }, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
+            background = if (checked) shape(Palette.OliveDeep, Radii.CHECK) else shape(Palette.Card, Radii.CHECK, Palette.OliveLine, 1.6f)
+            if (checked) addView(ImageView(context).apply { setImageDrawable(IconDrawable(Icon.CHECK, Palette.OnAccent, 2.6f)) }, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
         }
         addView(box, size(28))
         addView(text(label, Typo.LABEL, Palette.InkMuted), weight().apply { leftMargin = dp(14) })
@@ -750,18 +754,22 @@ class DesignKit(val context: Context) {
         gravity = if (multiLine) Gravity.TOP or Gravity.START else Gravity.CENTER_VERTICAL
         setPadding(dp(16), dp(14), dp(16), dp(14))
         background = StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_focused), shape(Palette.Card, Radii.CARD_SMALL, Palette.EmeraldBorder, 1.6f))
+            addState(intArrayOf(android.R.attr.state_focused), shape(Palette.Card, Radii.CARD_SMALL, Palette.OliveLine, 1.6f))
             addState(intArrayOf(), shape(Palette.Card, Radii.CARD_SMALL, Palette.Line))
         }
     }
 
     // ---------------- lock timer ----------------
 
-    /** The lock timer: ring, sprout, "Осталось", "6 ч 12 мин", "День 2 из 7". Bind with [TimerRing.set]. */
+    /**
+     * The timer: a milky disc like a sun over the ground, a light olive track,
+     * a sage-to-olive arc, sprout, "Осталось", "6 ч 12 мин" and the day of the
+     * series as a pill ("День 2 из 7"). Bind with [TimerRing.set].
+     */
     fun timerRing(sizeDp: Int = 196): TimerRing {
         // The disc and its shadow belong to the container, so the ring and the text are drawn above them.
         val root = FrameLayout(context).apply {
-            background = oval(Color.argb(0xEE, 0xFE, 0xFD, 0xF9))
+            background = oval(Palette.Card)
             outlineProvider = ViewOutlineProvider.BACKGROUND
             elevate(this, 4f)
         }
@@ -773,8 +781,13 @@ class DesignKit(val context: Context) {
         inner.addView(caption, centered(8))
         val value = text("", Typo.NUMBER, Palette.Ink, center = true)
         inner.addView(value, centered(6))
-        val day = text("", Typo.LABEL, Palette.Ink, center = true).apply { textSize = 14.5f }
-        inner.addView(day, centered(8))
+        val day = text("", Typo.LABEL, Palette.OliveInk, center = true).apply {
+            textSize = 14f
+            typeface = MamaFonts.ui(context, 700)
+            background = shape(Palette.SageTag, Radii.TAG)
+            setPadding(dp(14), dp(6), dp(14), dp(6))
+        }
+        inner.addView(day, centered(10))
         root.addView(inner, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         root.layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply { gravity = Gravity.CENTER_HORIZONTAL }
         return TimerRing(this, root, ring, caption, value, day)
@@ -819,19 +832,19 @@ class DesignKit(val context: Context) {
 
     // ---------------- navigation ----------------
 
-    /** Light bottom navigation: Главная · Статистика · Настройки, under a hairline. */
+    /** Milky bottom navigation: Главная · Статистика · Настройки, under a hairline. */
     fun bottomNav(selected: Int, onPick: (Int) -> Unit): View = column().apply {
-        setBackgroundColor(Color.argb(0xF2, 0xFD, 0xFB, 0xF5))
+        setBackgroundColor(Color.argb(0xF5, 0xFC, 0xF6, 0xEE))
         addView(divider())
         val items = row().apply { setPadding(dp(8), dp(6), dp(8), dp(8)) }
         listOf(Icon.HOME to "Главная", Icon.CHART to "Статистика", Icon.GEAR to "Настройки").forEachIndexed { i, (ic, label) ->
             val on = i == selected
-            val color = if (on) Palette.EmeraldInk else Palette.InkSoft
+            val color = if (on) Palette.OliveInk else Palette.InkSoft
             items.addView(column().apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(0, dp(4), 0, dp(2))
                 addView(FrameLayout(context).apply {
-                    if (on) background = shape(Palette.MintTag, 15)
+                    if (on) background = shape(Palette.SageTag, 15)
                     addView(ImageView(context).apply { setImageDrawable(IconDrawable(ic, color, 1.9f, solid = on)) }, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
                 }, LinearLayout.LayoutParams(dp(58), dp(30)).apply { gravity = Gravity.CENTER_HORIZONTAL })
                 addView(text(label, Typo.CAPTION, color).apply { if (on) typeface = MamaFonts.ui(context, 700) }, centered(3))
@@ -857,9 +870,10 @@ class DesignKit(val context: Context) {
     }
 
     /**
-     * Every v1 screen: [ScenicBackground] (or the plain page), top bar,
-     * scrolling body, sticky bottom action, optional bottom navigation. The
-     * system bar insets are added by the activity.
+     * Every screen: the [EarthPage] (under a nature window, [ScenicBackground],
+     * when there is a [scenery]), top bar, scrolling body, sticky bottom
+     * action, optional bottom navigation. The system bar insets are added by
+     * the activity.
      */
     fun screen(
         scenery: Scenery?,
@@ -870,7 +884,7 @@ class DesignKit(val context: Context) {
         nav: View? = null,
     ): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        background = scenery?.let { ScenicBackground(context, it, layout) } ?: ColorDrawable(Palette.Bg)
+        background = scenery?.let { ScenicBackground(context, it, layout) } ?: EarthPage(context.resources.displayMetrics.density, ground = nav == null)
         header?.let { addView(it, fill()) }
         addView(ScrollView(context).apply {
             isFillViewport = true

@@ -362,7 +362,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
             "${m.contactName} ${m.contactPhone}"
         boxes.forEachIndexed { i, b ->
             b.text = m.input.getOrNull(i)?.toString().orEmpty()
-            b.background = d.shape(Palette.Card, Radii.CHIP, if (i == m.input.length) Palette.EmeraldBorder else Palette.Line, 1.5f)
+            b.background = d.shape(Palette.Card, Radii.CHIP, if (i == m.input.length) Palette.OliveLine else Palette.Line, 1.5f)
         }
         attempts.text = "Осталось попыток: ${m.attemptsLeft}"
         message.text = m.message.orEmpty()

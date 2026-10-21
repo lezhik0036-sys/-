@@ -1,90 +1,98 @@
 package app.mama.ui.design
 
 import android.graphics.Color
-import android.graphics.Typeface
 import android.os.Build
 import android.util.TypedValue
 import android.widget.TextView
 import app.mama.ui.MamaFonts
 
 /*
- * MAMA UI v1 design tokens (docs/DESIGN_SYSTEM_V1.md, measured from the
- * approved references in docs/design-reference/). Every v1 component takes
- * its colours, type, spacing and radii from here. Light only: there is no
- * night theme in UI v1.
+ * MAMA design tokens. Since the earth direction (docs/MAMA_DESIGN_SYSTEM_V2.md:
+ * nature, earth and MAMA as quiet support) every colour comes from [V2];
+ * [Palette] names their roles for the components. Light only: there is no
+ * night theme.
  */
 
-/** Colours (DESIGN_SYSTEM_V1 §2). */
+/** Colour roles (MAMA_DESIGN_SYSTEM_V2 «Палитра»). */
 object Palette {
-    /** Warm ivory page. */
-    val Bg = Color.rgb(0xFD, 0xFB, 0xF5)
-    val Card = Color.rgb(0xFE, 0xFD, 0xF9)
+    /** Milky page. */
+    val Bg = V2.Milk
+    val Card = V2.Card
 
-    /** Quote cards and quiet surfaces. */
-    val CardQuiet = Color.rgb(0xFA, 0xF6, 0xEA)
+    /** Quote cards and quiet surfaces: the warm wash of the page. */
+    val CardQuiet = V2.WarmBg
 
-    val EmeraldDeep = Color.rgb(0x16, 0x54, 0x46)
-    val EmeraldLight = Color.rgb(0x5A, 0x99, 0x74)
+    /** Filled states: a checked box, a selected circle. */
+    val OliveDeep = V2.OliveDeep
+    val Sage = V2.Sage
 
     /** Icons in circles, tag text, links. */
-    val EmeraldInk = Color.rgb(0x0F, 0x4A, 0x36)
+    val OliveInk = V2.OliveDeep
 
     /** Border of a selected card or chip. */
-    val EmeraldBorder = Color.rgb(0x3D, 0x7F, 0x6C)
-    val MintBadge = Color.rgb(0xE0, 0xEB, 0xDB)
-    val MintSelected = Color.rgb(0xE8, 0xF5, 0xEB)
-    val MintTag = Color.rgb(0xD9, 0xF0, 0xE2)
+    val OliveLine = V2.Olive
 
-    /** Progress segments: done ones run from dark to light emerald, the rest are sand. */
-    val ProgressDark = Color.rgb(0x0D, 0x56, 0x47)
-    val ProgressMid = Color.rgb(0x34, 0x7B, 0x63)
-    val ProgressLight = Color.rgb(0x55, 0x9C, 0x7A)
-    val ProgressOff = Color.rgb(0xF2, 0xEA, 0xDB)
+    /** Icon circles. */
+    val SageBadge = V2.OliveLight
+    val SageSelected = V2.Mist
+    val SageTag = V2.OliveLight
 
-    /** Lock timer ring. */
-    val RingArc = Color.rgb(0x37, 0x82, 0x67)
-    val RingArcLight = Color.rgb(0x5F, 0xA2, 0x7F)
-    val RingTrack = Color.rgb(0xD5, 0xE6, 0xD2)
+    /** Steps of a path: done ones run from deep olive to sage, the rest are sand. */
+    val ProgressDark = V2.OliveDeep
+    val ProgressMid = V2.Olive
+    val ProgressLight = V2.Sage
+    val ProgressOff = V2.SandLight
 
-    /** Warm sand: quote marks on recovery and home, gentle notices. Never red. */
-    val Sand = Color.rgb(0x94, 0x7F, 0x66)
-    val SandSoft = Color.rgb(0xF0, 0xE4, 0xD1)
-    val SandInk = Color.rgb(0x6F, 0x5B, 0x42)
+    /** Timer ring. */
+    val RingArc = V2.Olive
+    val RingArcLight = V2.Sage
+    val RingTrack = V2.OliveLight
 
-    /** Olive accent for recovery screens. */
-    val Olive = Color.rgb(0x7E, 0x8E, 0x4F)
-    val OliveSoft = Color.rgb(0xEC, 0xEE, 0xD9)
+    /** Warm earth: quote marks, gentle notices. Never red. */
+    val Sand = V2.Earth
+    val SandSoft = V2.SandLight
+    val SandInk = V2.EarthInk
 
-    val Ink = Color.rgb(0x11, 0x11, 0x11)
-    val InkMuted = Color.rgb(0x5E, 0x62, 0x66)
+    val Olive = V2.Olive
+
+    /** Clay (MAMA Coral): the one main action of a screen and its glow. */
+    val Clay = V2.Coral
+    val ClayLight = V2.CoralLight
+
+    /** Something still needed ("Нужно"): clay on a pale clay pill, never an alarm. */
+    val ClaySoft = V2.ClaySoft
+    val ClayInk = V2.ClayInk
+
+    val Ink = V2.Ink
+    val InkMuted = V2.InkMuted
 
     /** Hints, chevrons, inactive navigation. */
-    val InkSoft = Color.rgb(0x8B, 0x90, 0x94)
+    val InkSoft = V2.InkSoft
 
     /** Dividers, chip and field outlines. */
-    val Line = Color.rgb(0xEC, 0xE7, 0xDC)
-    val OnEmerald = Color.WHITE
+    val Line = V2.Line
+    val OnAccent = Color.WHITE
 
     /**
-     * Depth (Android 9+): a faint, wide, warm directional shadow and a warm
-     * halo all around — soft depth instead of a Material edge. The system
-     * scales these alphas down (spot ≈ 0.19×, ambient ≈ 0.04×).
+     * Depth (Android 9+): a faint, wide, warm earth shadow and a halo all
+     * around — soft depth instead of a Material edge. The system scales these
+     * alphas down (spot ≈ 0.19×, ambient ≈ 0.04×).
      */
-    val Shadow = Color.argb(0x52, 0x6B, 0x55, 0x2E)
-    val ShadowAmbient = Color.argb(0xFF, 0x7A, 0x66, 0x40)
+    val Shadow = Color.argb(0x4A, 0x7A, 0x5E, 0x40)
+    val ShadowAmbient = Color.argb(0xFF, 0x8A, 0x6A, 0x4A)
 
-    /** Emerald glow under the main button. */
-    val Glow = Color.argb(0xB0, 0x1F, 0x6B, 0x55)
-    val GlowAmbient = Color.argb(0xFF, 0x2E, 0x7A, 0x60)
+    /** Clay glow under the main button. */
+    val Glow = Color.argb(0x90, 0xC9, 0x6F, 0x62)
+    val GlowAmbient = Color.argb(0xFF, 0xC9, 0x6F, 0x62)
 
-    /** Light rim on card edges (reads as soft glass over a landscape). */
-    val Rim = Color.argb(0xB3, 0xFF, 0xFF, 0xFF)
+    /** Soft sand rim on card edges. */
+    val Rim = Color.argb(0x80, 0xEB, 0xDC, 0xC9)
 
-    /** Behind dialogs and sheets. */
-    val Scrim = Color.argb(0x73, 0x1C, 0x26, 0x22)
+    /** Behind dialogs and sheets: forest ink, lightly. */
+    val Scrim = Color.argb(0x5C, 0x17, 0x30, 0x2E)
 
-    val Ripple = Color.argb(0x1F, 0x16, 0x54, 0x46)
-    val RippleOnEmerald = Color.argb(0x33, 0xFF, 0xFF, 0xFF)
+    val Ripple = Color.argb(0x1F, 0x47, 0x53, 0x42)
+    val RippleOnAccent = Color.argb(0x33, 0xFF, 0xFF, 0xFF)
 
     /** Test tools only (debug / pilot build): amber with a dashed outline, never on the main screens. */
     val TestInk = Color.rgb(0x8A, 0x5E, 0x1E)
@@ -93,23 +101,21 @@ object Palette {
 }
 
 /**
- * Type scale (DESIGN_SYSTEM_V1 §3). Manrope for the interface, Cormorant
- * Garamond for quotes; both bundled, so the phone's font setting never
- * changes the look. [leading] is the distance between baselines in em
- * (0 = the font's own line height), as measured on the references.
+ * Type scale (MAMA_DESIGN_SYSTEM_V2 «Типографика»). Manrope only, quotes
+ * included; bundled, so the phone's font setting never changes the look.
+ * [leading] is the distance between baselines in em (0 = the font's own
+ * line height).
  */
 enum class Typo(
     val sizeSp: Float,
     private val weight: Int,
     private val tracking: Float = 0f,
     private val leading: Float = 0f,
-    private val serif: Boolean = false,
-    private val italic: Boolean = false,
     private val caps: Boolean = false,
     private val tabular: Boolean = false,
 ) {
-    /** Screen title: "Всё готово", "Срыв — это часть пути". */
-    DISPLAY(34f, 800, tracking = -0.025f, leading = 1.08f),
+    /** Screen title: "Всё готово", "Этот путь продолжается". */
+    DISPLAY(31f, 800, tracking = -0.022f, leading = 1.1f),
 
     /** Sheet title, big card title. */
     HEADLINE(23f, 800, tracking = -0.015f, leading = 1.14f),
@@ -144,9 +150,9 @@ enum class Typo(
     /** Big numbers: lock timer, values on the home screen. */
     NUMBER(32f, 800, tracking = -0.02f, tabular = true),
 
-    /** Serif quote: lock screen, quote cards. */
-    QUOTE(21f, 500, leading = 1.18f, serif = true),
-    QUOTE_ITALIC(21f, 500, leading = 1.18f, serif = true, italic = true),
+    /** A quiet thought: quote cards, the motivation screen. */
+    QUOTE(19f, 600, tracking = -0.005f, leading = 1.32f),
+    QUOTE_ITALIC(19f, 500, tracking = -0.005f, leading = 1.32f),
 
     /** Sans quote: home screen. */
     QUOTE_SANS(15f, 500, leading = 1.38f),
@@ -154,13 +160,11 @@ enum class Typo(
 
     fun applyTo(view: TextView) {
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        val face = if (serif) MamaFonts.wordmark(view.context, weight) else MamaFonts.ui(view.context, weight)
-        // Cormorant has no bundled italic: the framework slants the upright face.
-        if (italic) view.setTypeface(face, Typeface.ITALIC) else view.typeface = face
+        view.typeface = MamaFonts.ui(view.context, weight)
         view.letterSpacing = tracking
         if (leading > 0f) {
             // Baseline-to-baseline distance relative to the font's own line height (ascent + descent).
-            val factor = leading / if (serif) CORMORANT_LINE else MANROPE_LINE
+            val factor = leading / MANROPE_LINE
             // Before Android 9 the last line is shortened too, which could cut descenders: never tighter there.
             view.setLineSpacing(0f, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) factor else maxOf(factor, 1f))
         } else {
@@ -172,9 +176,8 @@ enum class Typo(
     }
 
     private companion object {
-        /** (ascent + descent) / em of the bundled fonts (hhea / OS/2 typo metrics). */
+        /** (ascent + descent) / em of Manrope (hhea / OS/2 typo metrics). */
         const val MANROPE_LINE = 1.366f
-        const val CORMORANT_LINE = 1.211f
     }
 }
 
@@ -196,13 +199,15 @@ object Spacing {
     const val BUTTON = 52
 }
 
-/** Corner radii in dp. */
+/** Corner radii in dp (MAMA_DESIGN_SYSTEM_V2 «Скругления»). */
 object Radii {
-    const val CARD = 20
-    const val CARD_SMALL = 16
-    const val CHIP = 14
-    const val TAG = 8
-    const val CHECK = 7
-    const val SHEET = 26
+    const val CARD = V2.CARD
+    const val CARD_SMALL = 18
+    const val CHIP = 16
+
+    /** Tags and pills: fully rounded at their height. */
+    const val TAG = 100
+    const val CHECK = 8
+    const val SHEET = V2.CARD_LARGE
     const val SEGMENT = 3
 }

@@ -24,6 +24,13 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import app.mama.ui.design.CircleStyle
+import app.mama.ui.design.DesignKit
+import app.mama.ui.design.NoteTone
+import app.mama.ui.design.Palette
+import app.mama.ui.design.Radii
+import app.mama.ui.design.Typo
+import app.mama.ui.design.V2
 
 /** A button that fades when disabled, so an unavailable action looks unavailable. */
 class BrandButtonView(context: Context) : TextView(context) {
@@ -84,11 +91,16 @@ class PhotoBackground(private val context: Context, private val scene: Scene) : 
 }
 
 /**
- * The MAMA design system: every screen is assembled from these components
- * (names in brackets match the design spec). [night] switches to the dark
- * photographic variant used on dashboard, lock, failure and success screens.
+ * The first component kit (names in brackets match the old design spec),
+ * still used by a few screens: permissions, the series choice, the reason,
+ * settings, the FLEX planner, pickers and payment sheets. In the light
+ * variant its pieces are the components of [DesignKit] or drawn in the same
+ * earth language (MAMA_DESIGN_SYSTEM_V2), so these screens look like the
+ * rest. [night] is the old dark photographic variant.
  */
 class Kit(val context: Context, val night: Boolean = false) {
+    /** The shared components the light variant is made of. */
+    private val design by lazy { DesignKit(context) }
 
     fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()
     fun dpf(v: Float): Float = v * context.resources.displayMetrics.density
@@ -169,26 +181,34 @@ class Kit(val context: Context, val night: Boolean = false) {
 
     // ---------- [MamaCard] ----------
 
-    fun card(paddingDp: Int = 18, radiusDp: Int = 18) = column(paddingDp).apply {
-        background = if (night) shape(MamaColors.NightGlass, radiusDp, MamaColors.NightLine) else shape(MamaColors.PureCard, radiusDp, MamaColors.Border)
+    fun card(paddingDp: Int = 18, radiusDp: Int = Radii.CARD) = column(paddingDp).apply {
+        if (night) {
+            background = shape(MamaColors.NightGlass, radiusDp, MamaColors.NightLine)
+        } else {
+            background = design.surface(MamaColors.PureCard, radiusDp)
+            design.elevate(this, 2f)
+        }
     }
 
     // ---------- [MamaPrimaryButton] / [MamaSecondaryButton] ----------
 
+    /** The clay main action ([DesignKit.primaryButton]); a [trailing] icon shows as its "→". */
     fun primaryButton(label: String, trailing: Icon? = null, onClick: () -> Unit): BrandButtonView =
-        button(label, trailing, MamaColors.Emerald, MamaColors.White, null, onClick).apply {
-            background = pressable(gradient(MamaColors.EmeraldActive, MamaColors.Emerald, 28), 28, MamaColors.RippleOnDark)
-        }
+        design.primaryButton(label, arrow = trailing != null, onClick = onClick)
 
     fun secondaryButton(label: String, trailing: Icon? = null, onClick: () -> Unit): BrandButtonView =
         if (night) {
             button(label, trailing, MamaColors.NightGlass, MamaColors.OnNight, MamaColors.NightLine, onClick)
         } else {
-            button(label, trailing, MamaColors.PureCard, MamaColors.Emerald, MamaColors.Border, onClick)
+            design.secondaryButton(label, trailing, onClick)
         }
 
     fun textButton(label: String, onClick: () -> Unit): BrandButtonView =
-        button(label, null, Color.TRANSPARENT, if (night) MamaColors.OnNight else MamaColors.Emerald, null, onClick).apply { minHeight = dp(44) }
+        if (night) {
+            button(label, null, Color.TRANSPARENT, MamaColors.OnNight, null, onClick).apply { minHeight = dp(44) }
+        } else {
+            design.linkButton(label, onClick = onClick)
+        }
 
     private fun button(label: String, trailing: Icon?, fill: Int, fg: Int, stroke: Int?, onClick: () -> Unit) =
         BrandButtonView(context).apply {
@@ -210,8 +230,13 @@ class Kit(val context: Context, val night: Boolean = false) {
 
     // ---------- step header + [MamaProgressIndicator] ----------
 
-    /** Back arrow, centred MAMA, "2 из 5", thin progress line (reference screens 2–5). */
-    fun stepHeader(step: Int?, total: Int, onBack: (() -> Unit)?): View = column().apply {
+    /** Back arrow, centred MAMA, "2 из 5" and the steps of the path; light: [DesignKit.stepHeader]. */
+    fun stepHeader(step: Int?, total: Int, onBack: (() -> Unit)?): View {
+        if (!night) return if (step != null) design.stepHeader(step, total, onBack) else design.topBar(onBack)
+        return nightStepHeader(step, total, onBack)
+    }
+
+    private fun nightStepHeader(step: Int?, total: Int, onBack: (() -> Unit)?): View = column().apply {
         val bar = FrameLayout(context)
         if (onBack != null) {
             bar.addView(FrameLayout(context).apply {
@@ -238,16 +263,22 @@ class Kit(val context: Context, val night: Boolean = false) {
 
     // ---------- [MamaSectionHeader] ----------
 
-    fun sectionHeader(title: String, subtitle: String? = null, center: Boolean = false): View = column().apply {
-        addView(text(title, MamaType.H1, ink, center), fill())
-        subtitle?.let { addView(text(it, MamaType.BODY, muted, center), gap(8)) }
-    }
+    fun sectionHeader(title: String, subtitle: String? = null, center: Boolean = false): View =
+        if (night) {
+            column().apply {
+                addView(text(title, MamaType.H1, ink, center), fill())
+                subtitle?.let { addView(text(it, MamaType.BODY, muted, center), gap(8)) }
+            }
+        } else {
+            design.titleBlock(title, subtitle, center)
+        }
 
     // ---------- [MamaSelectableCard] ----------
 
     /**
-     * A list row card: icon circle, title, subtitle, optional trailing text.
-     * Selected = emerald gradient with light text and a check in a circle.
+     * A choice card: icon circle, title, subtitle, optional trailing text.
+     * Selected: sage mist with an olive outline, a filled circle and a check;
+     * the clay of the main button stays the only strong colour.
      */
     fun selectableCard(
         icon: Icon,
@@ -257,31 +288,28 @@ class Kit(val context: Context, val night: Boolean = false) {
         trailing: String? = null,
         onClick: () -> Unit,
     ): View = row().apply {
-        setPadding(dp(14), dp(12), dp(14), dp(12))
-        minimumHeight = dp(72)
-        background = if (selected) {
-            pressable(gradient(MamaColors.EmeraldActive, MamaColors.Emerald, 18), 18, MamaColors.RippleOnDark)
-        } else {
-            pressable(shape(MamaColors.PureCard, 18, MamaColors.Border), 18)
-        }
-        addView(
-            if (selected) iconCircle(icon, 42, Color.argb(0x33, 0xFF, 0xFF, 0xFF), MamaColors.White) else iconCircle(icon, 42),
-        )
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        minimumHeight = dp(76)
+        val base = if (selected) shape(Palette.SageSelected, Radii.CARD, Palette.OliveLine, 1.6f) else design.surface(MamaColors.PureCard, Radii.CARD)
+        background = pressable(base, Radii.CARD)
+        design.elevate(this, if (selected) 2.5f else 2f)
+        addView(design.iconCircle(icon, 44, if (selected) CircleStyle.FILLED else CircleStyle.MINT))
         val texts = column()
-        texts.addView(text(title, MamaType.TITLE, if (selected) MamaColors.White else MamaColors.Graphite))
-        texts.addView(text(subtitle, MamaType.SMALL, if (selected) MamaColors.OliveLight else MamaColors.TextSecondary), gap(3))
+        texts.addView(design.text(title, Typo.VALUE))
+        texts.addView(design.text(subtitle, Typo.CAPTION, Palette.InkMuted), gap(4))
         addView(texts, weight().apply { leftMargin = dp(14) })
         trailing?.let {
-            addView(text(it, MamaType.TITLE, if (selected) MamaColors.White else MamaColors.Graphite), wrap().apply { leftMargin = dp(8) })
+            addView(design.text(it, Typo.VALUE), wrap().apply { leftMargin = dp(8) })
         }
         if (selected) {
             addView(FrameLayout(context).apply {
-                background = oval(MamaColors.White)
-                addView(icon(Icon.CHECK, MamaColors.Emerald, 14), FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER))
+                background = oval(Palette.OliveDeep)
+                addView(icon(Icon.CHECK, Palette.OnAccent, 14), FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER))
             }, size(24).apply { leftMargin = dp(10) })
         } else {
-            addView(icon(Icon.CHEVRON_RIGHT, MamaColors.TextSecondary, 18), size(18).apply { leftMargin = dp(8) })
+            addView(icon(Icon.CHEVRON_RIGHT, Palette.InkSoft, 18), size(18).apply { leftMargin = dp(8) })
         }
+        isSelected = selected
         clickable(this, onClick)
     }
 
@@ -346,32 +374,34 @@ class Kit(val context: Context, val night: Boolean = false) {
     // ---------- [MamaPermissionCard] ----------
 
     fun permissionCard(icon: Icon, title: String, why: String, status: PermissionStatus, onClick: () -> Unit): View = row().apply {
-        setPadding(dp(14), dp(12), dp(14), dp(12))
-        minimumHeight = dp(72)
-        val base = shape(MamaColors.PureCard, 18, MamaColors.Border)
-        background = if (status == PermissionStatus.GRANTED) base else pressable(base, 18)
-        addView(iconCircle(icon, 42))
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        minimumHeight = dp(76)
+        val base = design.surface(MamaColors.PureCard, Radii.CARD)
+        background = if (status == PermissionStatus.GRANTED) base else pressable(base, Radii.CARD)
+        design.elevate(this, 2f)
+        addView(design.iconCircle(icon, 44))
         val texts = column()
-        texts.addView(text(title, MamaType.TITLE))
-        texts.addView(text(why, MamaType.SMALL, MamaColors.TextSecondary), gap(3))
+        texts.addView(design.text(title, Typo.VALUE).apply { textSize = 16f })
+        texts.addView(design.text(why, Typo.CAPTION, Palette.InkMuted), gap(4))
         addView(texts, weight().apply { leftMargin = dp(14); rightMargin = dp(10) })
         when (status) {
             PermissionStatus.GRANTED -> addView(FrameLayout(context).apply {
-                background = oval(MamaColors.Emerald)
+                background = oval(Palette.OliveDeep)
                 addView(icon(Icon.CHECK, MamaColors.White, 14), FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER))
             }, size(24))
             PermissionStatus.REQUIRED -> addView(statusBadge("Нужно", Tone.WARNING))
-            PermissionStatus.MISSING -> addView(icon(Icon.CHEVRON_RIGHT, MamaColors.TextSecondary, 18))
+            PermissionStatus.MISSING -> addView(icon(Icon.CHEVRON_RIGHT, Palette.InkSoft, 18))
         }
         if (status != PermissionStatus.GRANTED) clickable(this, onClick)
     }
 
     // ---------- [MamaStatusBadge] ----------
 
+    /** A fully rounded status pill; "Нужно" is clay on pale clay, never an alarm. */
     fun statusBadge(label: String, tone: Tone): TextView = text(label, MamaType.SMALL, inkOf(tone)).apply {
         typeface = MamaFonts.ui(context, 700)
-        background = shape(fillOf(tone), 12)
-        setPadding(dp(10), dp(5), dp(10), dp(5))
+        background = shape(fillOf(tone), Radii.TAG)
+        setPadding(dp(11), dp(5), dp(11), dp(5))
     }
 
     fun fillOf(tone: Tone) = when (tone) {
@@ -392,7 +422,15 @@ class Kit(val context: Context, val night: Boolean = false) {
 
     // ---------- [MamaInfoCard] ----------
 
-    fun infoCard(message: CharSequence, icon: Icon = Icon.INFO, tone: Tone = Tone.NEUTRAL, title: String? = null): View = row().apply {
+    /** A calm notice; light: [DesignKit.noteCard] (a warning is warm earth and clay, never red). */
+    fun infoCard(message: CharSequence, icon: Icon = Icon.INFO, tone: Tone = Tone.NEUTRAL, title: String? = null): View =
+        if (night) {
+            nightInfoCard(message, icon, tone, title)
+        } else {
+            design.noteCard(message, title, if (tone == Tone.WARNING || tone == Tone.DANGER) NoteTone.CARE else NoteTone.INFO, icon)
+        }
+
+    private fun nightInfoCard(message: CharSequence, icon: Icon, tone: Tone, title: String?): View = row().apply {
         gravity = Gravity.TOP
         setPadding(dp(16), dp(14), dp(16), dp(14))
         background = when {
@@ -435,8 +473,11 @@ class Kit(val context: Context, val night: Boolean = false) {
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
     }
 
-    /** Square check box + text (review screen). */
-    fun checkRow(label: String, checked: Boolean, onToggle: (Boolean) -> Unit): View = row().apply {
+    /** Square check box + text (review screen); light: [DesignKit.checkRow]. */
+    fun checkRow(label: String, checked: Boolean, onToggle: (Boolean) -> Unit): View =
+        if (night) nightCheckRow(label, checked, onToggle) else design.checkRow(label, checked, onToggle)
+
+    private fun nightCheckRow(label: String, checked: Boolean, onToggle: (Boolean) -> Unit): View = row().apply {
         gravity = Gravity.TOP
         setPadding(0, dp(6), 0, dp(6))
         val box = FrameLayout(context).apply {
@@ -479,22 +520,13 @@ class Kit(val context: Context, val night: Boolean = false) {
 
     // ---------- inputs ----------
 
-    fun textField(hint: String, inputType: Int = InputType.TYPE_CLASS_TEXT, multiLine: Boolean = false): EditText = EditText(context).apply {
-        this.hint = hint
-        this.inputType = inputType or if (multiLine) InputType.TYPE_TEXT_FLAG_MULTI_LINE else 0
-        if (!multiLine) setSingleLine()
-        MamaType.BODY.applyTo(this)
-        setTextColor(MamaColors.Graphite)
-        setHintTextColor(MamaColors.EmeraldSoft)
-        minHeight = dp(54)
-        gravity = if (multiLine) Gravity.TOP or Gravity.START else Gravity.CENTER_VERTICAL
-        setPadding(dp(16), dp(14), dp(16), dp(14))
-        background = fieldBackground()
-    }
+    /** A text field ([DesignKit.textField]). */
+    fun textField(hint: String, inputType: Int = InputType.TYPE_CLASS_TEXT, multiLine: Boolean = false): EditText =
+        design.textField(hint, inputType, multiLine)
 
     fun fieldBackground(): Drawable = StateListDrawable().apply {
-        addState(intArrayOf(android.R.attr.state_focused), shape(MamaColors.PureCard, 16, MamaColors.Emerald, 1.5f))
-        addState(intArrayOf(), shape(MamaColors.PureCard, 16, MamaColors.Border))
+        addState(intArrayOf(android.R.attr.state_focused), shape(MamaColors.PureCard, Radii.CARD_SMALL, Palette.OliveLine, 1.6f))
+        addState(intArrayOf(), shape(MamaColors.PureCard, Radii.CARD_SMALL, MamaColors.Border))
     }
 
     fun segmented(labels: List<String>, selected: Int, onPick: (Int) -> Unit): View = row().apply {
@@ -508,7 +540,7 @@ class Kit(val context: Context, val night: Boolean = false) {
                 gravity = Gravity.CENTER
                 minHeight = dp(50)
                 setTextColor(if (on) MamaColors.White else MamaColors.Graphite)
-                background = if (on) pressable(gradient(MamaColors.EmeraldActive, MamaColors.Emerald, 26), 26, MamaColors.RippleOnDark) else pressable(shape(MamaColors.WarmCard, 26), 26)
+                background = if (on) pressable(shape(Palette.OliveDeep, 26), 26, MamaColors.RippleOnDark) else pressable(shape(MamaColors.WarmCard, 26, V2.Sand, 1f), 26)
                 clickable(this) { onPick(i) }
             }
             addView(b, weight().apply { if (i > 0) leftMargin = dp(10) })

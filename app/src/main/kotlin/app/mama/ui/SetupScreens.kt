@@ -101,12 +101,6 @@ internal fun MainActivity.nextLabel() = if (editing) "Готово" else "Дал
 /** Steps with a counter (DESIGN_SYSTEM_V1 §12.2): permissions come before the wizard, the review is its last step. */
 private fun MainActivity.counted(): List<Step> = steps().filter { it != Step.PERMISSIONS } + Step.REVIEW
 
-private fun MainActivity.header(s: Step): View {
-    val index = counted().indexOf(s)
-    if (editing || index < 0) return kit.stepHeader(null, 0) { back() }
-    return kit.stepHeader(index + 1, counted().size) { back() }
-}
-
 /** UI v1 step header: "‹ · M A M A · N из M" and segments; only "‹" while editing. */
 internal fun MainActivity.stepBar(s: Step): View {
     val index = counted().indexOf(s)
@@ -220,7 +214,7 @@ internal fun MainActivity.permissionsScreen(): Pair<View, Boolean> {
     val cta = kit.primaryButton("Продолжить") {
         if (Requirement.missingRequired(this).isEmpty()) go(nextStep(Step.PERMISSIONS)) else startSetupAll()
     }
-    return lightFrame(header(Step.PERMISSIONS), b, cta)
+    return lightFrame(stepBar(Step.PERMISSIONS), b, cta)
 }
 
 // ---------------- 3. Series ----------------
@@ -253,7 +247,7 @@ internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
         ), kit.gap(14))
     }
     val cta = kit.primaryButton("Далее", Icon.ARROW_RIGHT) { go(nextStep(Step.SERIES)) }
-    return lightFrame(header(Step.SERIES), b, cta)
+    return lightFrame(stepBar(Step.SERIES), b, cta)
 }
 
 /** Restart prices shown before start (from the core's [app.mama.core.SeriesKind]). */
@@ -453,7 +447,7 @@ internal fun MainActivity.promiseScreen(): Pair<View, Boolean> {
             go(nextStep(Step.PROMISE))
         }
     }
-    return lightFrame(header(Step.PROMISE), b, cta)
+    return lightFrame(stepBar(Step.PROMISE), b, cta)
 }
 
 // ---------------- 7. Review ----------------

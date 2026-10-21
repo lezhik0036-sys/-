@@ -55,11 +55,11 @@ object DesignPreviews {
         addView(k.titleBlock("Палитра", "Светлая тема: айвори, изумруд, тёплый песок. Без красного."))
         val swatches = listOf(
             "bg" to Palette.Bg, "card" to Palette.Card, "cardQuiet" to Palette.CardQuiet, "line" to Palette.Line,
-            "emeraldDeep" to Palette.EmeraldDeep, "emeraldLight" to Palette.EmeraldLight, "emeraldInk" to Palette.EmeraldInk, "emeraldBorder" to Palette.EmeraldBorder,
-            "mintBadge" to Palette.MintBadge, "mintSelected" to Palette.MintSelected, "mintTag" to Palette.MintTag, "progressOff" to Palette.ProgressOff,
+            "emeraldDeep" to Palette.OliveDeep, "emeraldLight" to Palette.Sage, "emeraldInk" to Palette.OliveInk, "emeraldBorder" to Palette.OliveLine,
+            "mintBadge" to Palette.SageBadge, "mintSelected" to Palette.SageSelected, "mintTag" to Palette.SageTag, "progressOff" to Palette.ProgressOff,
             "ringArc" to Palette.RingArc, "ringTrack" to Palette.RingTrack, "sand" to Palette.Sand, "sandSoft" to Palette.SandSoft,
             "olive" to Palette.Olive, "ink" to Palette.Ink, "inkMuted" to Palette.InkMuted, "inkSoft" to Palette.InkSoft,
-            "testInk" to Palette.TestInk, "testFill" to Palette.TestFill, "testLine" to Palette.TestLine, "onEmerald" to Palette.OnEmerald,
+            "testInk" to Palette.TestInk, "testFill" to Palette.TestFill, "testLine" to Palette.TestLine, "onEmerald" to Palette.OnAccent,
         )
         swatches.chunked(4).forEachIndexed { r, line ->
             val row = k.row().apply { gravity = Gravity.TOP }
@@ -75,7 +75,7 @@ object DesignPreviews {
         addView(section(k, "Главная кнопка · прогресс"), k.gap(20))
         addView(View(context).apply {
             background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Palette.EmeraldLight, Palette.EmeraldDeep),
+                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Palette.Sage, Palette.OliveDeep),
             ).apply { cornerRadius = k.dpf(20f) }
         }, LinearLayout.LayoutParams(-1, k.dp(26)).apply { topMargin = k.dp(10) })
         addView(k.segments(4, 7), k.gap(12))
@@ -109,7 +109,7 @@ object DesignPreviews {
                 addView(k.text(style.name.replace('_', ' '), Typo.TAG, Palette.InkSoft).apply { textSize = 9.5f })
                 addView(k.text("${style.sizeSp.toString().removeSuffix(".0")} sp", Typo.CAPTION, Palette.InkSoft).apply { textSize = 10.5f }, k.gap(2))
             }, LinearLayout.LayoutParams(k.dp(84), -2))
-            row.addView(k.text(sample, style, if (style == Typo.BUTTON) Palette.EmeraldInk else Palette.Ink).apply { maxLines = 1 }, k.weight())
+            row.addView(k.text(sample, style, if (style == Typo.BUTTON) Palette.OliveInk else Palette.Ink).apply { maxLines = 1 }, k.weight())
             addView(row, k.gap(if (i == 0) 6 else 11))
         }
         addView(k.text("Manrope — интерфейс · Cormorant Garamond — цитаты", Typo.CAPTION, Palette.InkMuted), k.gap(16))

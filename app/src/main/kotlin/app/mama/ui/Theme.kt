@@ -5,41 +5,44 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.widget.TextView
+import app.mama.ui.design.V2
 
 /**
- * MAMA palette (design reference). Roughly 80 % neutrals, 15 % emerald,
- * 5 % olive / warning accents. Every colour in the app comes from here.
+ * Colours of the first component kit ([Kit]: permissions, the series choice,
+ * the reason, settings, pickers). Its names are historical; the values are
+ * the earth palette of MAMA Design System v2 ([V2]), so these screens speak
+ * the same language: "Emerald" is deep olive, "Warning" is clay, never red.
  */
 object MamaColors {
-    val WarmIvory = Color.rgb(0xF7, 0xF4, 0xEC)
-    val PureCard = Color.rgb(0xFC, 0xFA, 0xF5)
-    val WarmCard = Color.rgb(0xEE, 0xE9, 0xDF)
-    val Emerald = Color.rgb(0x28, 0x59, 0x4A)
-    val EmeraldActive = Color.rgb(0x3E, 0x73, 0x5F)
-    val EmeraldSoft = Color.rgb(0xA8, 0xBF, 0xAF)
-    val Olive = Color.rgb(0x83, 0x89, 0x6A)
-    val OliveLight = Color.rgb(0xD9, 0xDC, 0xCB)
-    val Graphite = Color.rgb(0x26, 0x2A, 0x27)
-    val TextSecondary = Color.rgb(0x70, 0x75, 0x6E)
+    val WarmIvory = V2.Milk
+    val PureCard = V2.Card
+    val WarmCard = V2.WarmBg
+    val Emerald = V2.OliveDeep
+    val EmeraldActive = V2.Olive
+    val EmeraldSoft = V2.Sage
+    val Olive = V2.Olive
+    val OliveLight = V2.OliveLight
+    val Graphite = V2.Ink
+    val TextSecondary = V2.InkMuted
     val Night = Color.rgb(0x09, 0x17, 0x14)
     val NightSurface = Color.rgb(0x10, 0x27, 0x20)
     val NightSoft = Color.rgb(0x1D, 0x3A, 0x30)
     val ProgressGlow = Color.rgb(0xC6, 0xD3, 0x9D)
-    val Warning = Color.rgb(0xC8, 0x75, 0x61)
-    val DangerSoft = Color.rgb(0xF1, 0xDD, 0xD6)
-    val Success = Color.rgb(0x5D, 0x82, 0x69)
+    val Warning = V2.ClayInk
+    val DangerSoft = V2.ClaySoft
+    val Success = V2.Olive
     val White = Color.WHITE
 
     // Derived from the palette.
 
     /** Card borders on light screens. */
-    val Border = Color.rgb(0xE6, 0xE0, 0xD3)
+    val Border = V2.Line
 
-    /** Emerald, pressed. */
-    val EmeraldDeep = Color.rgb(0x1E, 0x47, 0x3B)
+    /** Deep olive, pressed. */
+    val EmeraldDeep = Color.rgb(0x3B, 0x46, 0x37)
 
     /** Icon circles and selected-row tints on light screens. */
-    val EmeraldTint = Color.rgb(0xE4, 0xEC, 0xE4)
+    val EmeraldTint = V2.OliveLight
 
     /** Text and icons on night screens. */
     val OnNight = Color.rgb(0xF3, 0xF1, 0xEA)
@@ -49,7 +52,7 @@ object MamaColors {
     val NightGlass = Color.argb(0xC8, 0x10, 0x27, 0x20)
     val NightLine = Color.argb(0x38, 0xF3, 0xF1, 0xEA)
 
-    val Ripple = Color.argb(0x22, 0x28, 0x59, 0x4A)
+    val Ripple = Color.argb(0x1F, 0x47, 0x53, 0x42)
     val RippleOnDark = Color.argb(0x30, 0xFF, 0xFF, 0xFF)
 }
 
@@ -59,9 +62,6 @@ object MamaFonts {
 
     /** Manrope, the interface font, at a given weight (200–800). */
     fun ui(context: Context, weight: Int): Typeface = variable(context, "fonts/Manrope.ttf", weight)
-
-    /** Cormorant Garamond, for the MAMA wordmark (300–700). */
-    fun wordmark(context: Context, weight: Int): Typeface = variable(context, "fonts/CormorantGaramond.ttf", weight)
 
     @Synchronized
     private fun variable(context: Context, path: String, weight: Int): Typeface = cache.getOrPut("$path@$weight") {
@@ -75,15 +75,14 @@ object MamaFonts {
 enum class MamaType(
     val sizeSp: Float,
     private val weight: Int,
-    private val wordmark: Boolean = false,
     private val tracking: Float = 0f,
     private val leading: Float = 1.25f,
     private val tabular: Boolean = false,
     private val caps: Boolean = false,
 ) {
     /** Hero wordmark (welcome, lock, dashboards). */
-    WORDMARK_XL(52f, 500, wordmark = true, tracking = 0.08f, leading = 1.0f),
-    WORDMARK(30f, 600, wordmark = true, tracking = 0.12f, leading = 1.0f),
+    WORDMARK_XL(52f, 500, tracking = 0.08f, leading = 1.0f),
+    WORDMARK(30f, 600, tracking = 0.12f, leading = 1.0f),
 
     /** "MAMA" in the step header. */
     HEADER(17f, 700, tracking = 0.14f),
@@ -106,7 +105,7 @@ enum class MamaType(
 
     fun applyTo(view: TextView) {
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        view.typeface = if (wordmark) MamaFonts.wordmark(view.context, weight) else MamaFonts.ui(view.context, weight)
+        view.typeface = MamaFonts.ui(view.context, weight)
         view.letterSpacing = tracking
         view.setLineSpacing(0f, leading)
         view.isAllCaps = caps

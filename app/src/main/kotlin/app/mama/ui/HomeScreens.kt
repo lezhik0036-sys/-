@@ -449,7 +449,7 @@ private fun MainActivity.pathCard(item: Statistics.PathItem, thisYear: Int): Vie
         texts.addView(d.text(title, Typo.TITLE))
         texts.addView(d.text(caption, Typo.LABEL, Palette.InkMuted), d.gap(4))
         row.addView(texts, d.weight())
-        value?.let { row.addView(d.text(it, Typo.HEADLINE, Palette.EmeraldInk), d.wrap().apply { leftMargin = d.dp(12) }) }
+        value?.let { row.addView(d.text(it, Typo.HEADLINE, Palette.OliveInk), d.wrap().apply { leftMargin = d.dp(12) }) }
         card.addView(row, d.gap(if (card.childCount == 0) 0 else 10))
     }
     fun note(icon: Icon, text: String, color: Int) {
@@ -486,7 +486,7 @@ private fun MainActivity.pathCard(item: Statistics.PathItem, thisYear: Int): Vie
                 head(listOf("FLEX"))
                 main("Пройдено ${periods(r.successfulNights)}", null, "Использовано ${r.consumedNights ?: 0} из ${r.plannedNights} · $dates")
                 if (r.result == HistoryResult.COMPLETED) {
-                    note(Icon.CHECK, "Все ${r.plannedNights} периодов использованы", Palette.EmeraldInk)
+                    note(Icon.CHECK, "Все ${r.plannedNights} периодов использованы", Palette.OliveInk)
                 } else {
                     note(Icon.CALENDAR, "Срок пакета закончился", Palette.InkMuted)
                 }
@@ -495,7 +495,7 @@ private fun MainActivity.pathCard(item: Statistics.PathItem, thisYear: Int): Vie
                 main(nights(r.plannedNights, r.window), "${r.successfulNights} из ${r.plannedNights}", listOfNotNull(dates, r.window?.let(::window)).joinToString(" · "))
                 card.addView(d.segments(r.successfulNights, r.plannedNights), d.gap(14))
                 when {
-                    r.result == HistoryResult.COMPLETED -> note(Icon.SPROUT, "Серия пройдена", Palette.EmeraldInk)
+                    r.result == HistoryResult.COMPLETED -> note(Icon.SPROUT, "Серия пройдена", Palette.OliveInk)
                     item.continuedLater -> note(Icon.REFRESH, "Ты продолжил путь позже", Palette.InkMuted)
                     else -> note(Icon.SPROUT, "Этот путь продолжается", Palette.InkMuted)
                 }
@@ -739,7 +739,7 @@ internal fun MainActivity.flexPlannerScreen(flex: FlexPackage): Pair<View, Boole
     b.addView(kit.hintRow(Icon.INFO, "Время начала не может быть в прошлом. FLEX-день расходуется в момент начала."), kit.gap(10))
     b.addView(kit.hintRow(Icon.GLOBE, "Часовой пояс: ${zone.id}"), kit.gap(10))
     val cta = kit.primaryButton(if (flexStartNow) "Начать FLEX-период" else "Запланировать") { submitFlexPeriod() }
-    return lightFrame(kit.stepHeader(null, 0) { flexPlanning = false; render() }, b, cta)
+    return lightFrame(design.topBar({ flexPlanning = false; render() }), b, cta)
 }
 
 private fun MainActivity.defaultFlexEnd(start: LocalDateTime): LocalDateTime = if (flexStartNow) {

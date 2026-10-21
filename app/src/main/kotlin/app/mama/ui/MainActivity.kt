@@ -429,28 +429,12 @@ class MainActivity : Activity() {
     // ---------------- frames ----------------
 
     /**
-     * Light wizard frame: step header, scrolling body, sticky bottom action
-     * area (reference screens 2–6). Returns (view, light status bar).
+     * A screen on the earth page without a nature window: header, scrolling
+     * body, sticky bottom action area, navigation ([DesignKit.screen]).
+     * Returns (view, light status bar).
      */
-    internal fun lightFrame(header: View?, body: View, footer: View?, nav: View? = null): Pair<View, Boolean> {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(MamaColors.WarmIvory)
-        }
-        header?.let { root.addView(it, kit.fill().apply { leftMargin = kit.dp(12); rightMargin = kit.dp(16) }) }
-        root.addView(ScrollView(this).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-            addView(body)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        footer?.let {
-            root.addView(it, kit.fill().apply {
-                leftMargin = kit.dp(20); rightMargin = kit.dp(20); topMargin = kit.dp(8); bottomMargin = kit.dp(14)
-            })
-        }
-        nav?.let { root.addView(it, kit.fill()) }
-        return root to true
-    }
+    internal fun lightFrame(header: View?, body: View, footer: View?, nav: View? = null): Pair<View, Boolean> =
+        design.screen(null, header = header, body = body, cta = footer, nav = nav) to true
 
     /** Night frame: landscape behind everything (reference screens 1, 7, 8, 10). */
     internal fun nightFrame(scene: Scene, body: View, footer: View? = null, nav: View? = null): Pair<View, Boolean> {
@@ -482,9 +466,7 @@ class MainActivity : Activity() {
         layout: SceneLayout = SceneLayout.HEADER,
     ): Pair<View, Boolean> = design.screen(scenery, layout, header, body, footer, nav) to true
 
-    internal fun body(paddingTopDp: Int = 18) = kit.column().apply {
-        setPadding(kit.dp(20), kit.dp(paddingTopDp), kit.dp(20), kit.dp(24))
-    }
+    internal fun body(paddingTopDp: Int = 18) = design.body(paddingTopDp)
 
     // ---------------- countdown ticker ----------------
 
