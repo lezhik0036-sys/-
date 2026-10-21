@@ -211,7 +211,7 @@ class LockOverlay(private val service: LockService) : LockActions {
                 rebind()
             }
             EmergencyCalls.Start.NoDialer -> {
-                emergencyMessage = "Не удалось открыть набор номера. Заблокируйте телефон кнопкой питания и нажмите " +
+                emergencyMessage = "Не удалось открыть набор номера. Заблокируй телефон кнопкой питания и нажми " +
                     "«Экстренный вызов» на экране блокировки телефона."
                 rebind()
             }
@@ -241,7 +241,7 @@ class LockOverlay(private val service: LockService) : LockActions {
         message = when (val r = Mama.requestCode(service, ExitKind.END_SESSION)) {
             is Mama.CodeRequest.Sent -> null
             is Mama.CodeRequest.Rejected -> Texts.codeRequestError(r.reason, r.retryAt, s.plan.zone)
-            Mama.CodeRequest.SmsFailed -> "Не удалось отправить SMS. Проверьте связь и попробуйте ещё раз."
+            Mama.CodeRequest.SmsFailed -> "Не удалось отправить SMS. Проверь связь и попробуй ещё раз."
         }
         input.clear()
         rebind()
@@ -275,7 +275,7 @@ class LockOverlay(private val service: LockService) : LockActions {
             is LockEngine.CodeResult.Wrong -> "Неверный код."
             is LockEngine.CodeResult.Exhausted ->
                 "Попытки закончились. Новый код можно запросить в ${Texts.time(result.retryAt, s.plan.zone)}."
-            is LockEngine.CodeResult.NoActiveCode -> "Код больше не действует. Запросите новый."
+            is LockEngine.CodeResult.NoActiveCode -> "Код больше не действует. Запроси новый."
             null -> null
         }
         service.onStateChanged()

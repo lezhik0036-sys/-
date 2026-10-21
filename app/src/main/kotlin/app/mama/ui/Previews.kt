@@ -51,6 +51,8 @@ object Previews {
         "failure_path", "path",
         // Design System v2 (earth): the end of a FLEX package, 5 of 7 done, 1 ended early.
         "flex_result",
+        // The onboarding before the first use, pages 1–3.
+        "onboarding_1", "onboarding_2", "onboarding_3",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -132,6 +134,7 @@ object Previews {
                 ),
             ).also { if (name == "failure_path") scrollTo(it.first, OPEN_PATH) }
             "path" -> a.statisticsScreen(sampleHistory(), null, null, standalone = true)
+            "onboarding_1", "onboarding_2", "onboarding_3" -> a.onboardingScreen(name.last().digitToInt())
             "flex_result" -> a.flexResultScreen(FlexPackage("p", now.minus(20, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 6, successful = 5))
             "success" -> a.successScreen(
                 series(7, SeriesStatus.COMPLETED),

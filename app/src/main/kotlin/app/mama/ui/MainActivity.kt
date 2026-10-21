@@ -30,6 +30,7 @@ import app.mama.core.SessionMode
 import app.mama.platform.Mama
 import app.mama.ui.design.DesignKit
 import app.mama.ui.design.SceneLayout
+import app.mama.ui.design.SceneMood
 import app.mama.ui.design.Scenery
 import java.time.Duration
 import java.time.LocalDateTime
@@ -61,10 +62,10 @@ class MainActivity : Activity() {
     internal val prefs by lazy { getSharedPreferences("mama_setup", Context.MODE_PRIVATE) }
     internal val kit by lazy { Kit(this) }
 
-    /** UI v1 components (docs/DESIGN_SYSTEM_V1.md); screens move to it group by group. */
+    /** The components of MAMA Design System v2 (docs/MAMA_DESIGN_SYSTEM_V2.md). */
     internal val design by lazy { DesignKit(this) }
 
-    /** MAMA Design System v2 (docs/MAMA_DESIGN_SYSTEM_V2.md): Welcome, ACTIVE and Recovery so far. */
+    /** What only the hero screens need on top of [design] (the accent in a title, the earth page). */
     internal val v2 by lazy { app.mama.ui.design.DesignKitV2(this) }
 
     internal var mode = SessionMode.SLEEP
@@ -87,6 +88,13 @@ class MainActivity : Activity() {
 
     /** "Мой путь" (the statistics) was opened from the welcome, success or recovery screen, which have no tab bar. */
     internal var pathOpen = false
+
+    /**
+     * The short onboarding shown once before the first use, between the
+     * welcome and the setup: its page (1–3), or 0 when it is not shown. Only
+     * pages in front of the wizard; the setup itself is unchanged.
+     */
+    internal var onboardingPage = 0
 
     /** "Цена слова" chosen for the series about to start (kopecks), or null. Never carried forward. */
     internal var commitmentKop: Long? = null
@@ -128,6 +136,7 @@ class MainActivity : Activity() {
         if (choice == Choice.TEST && !FeatureFlags.TEST_MODE_ENABLED) choice = Choice.SEVEN
         // Back on the same wizard step after a screen rotation or recreation.
         savedInstanceState?.getString(STATE_STEP)?.let { s -> runCatching { step = Step.valueOf(s) } }
+        onboardingPage = savedInstanceState?.getInt(STATE_ONBOARDING) ?: 0
         savedInstanceState?.getString(STATE_RESTART_STEP)?.let { s -> runCatching { restartStep = Step.valueOf(s); restartFlow = true } }
         start = runCatching { LocalTime.parse(prefs.getString("start", null)) }.getOrDefault(start)
         end = runCatching { LocalTime.parse(prefs.getString("end", null)) }.getOrDefault(end)
@@ -184,6 +193,7 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_STEP, step.name)
+        outState.putInt(STATE_ONBOARDING, onboardingPage)
         if (restartFlow) outState.putString(STATE_RESTART_STEP, restartStep.name)
     }
 
@@ -286,6 +296,7 @@ class MainActivity : Activity() {
         when {
             preview != null -> super.onBackPressed()
             pathOpen -> closePath()
+            onboardingPage > 0 -> onboardingBack()
             flexPlanning -> { flexPlanning = false; render() }
             restartFlow -> {
                 if (restartStep == Step.COMMITMENT) restartStep = Step.TIME else restartFlow = false
@@ -383,6 +394,8 @@ class MainActivity : Activity() {
                     }
                 }
             }
+            // Before the first use: the onboarding pages in front of the setup.
+            onboardingPage > 0 -> onboardingScreen(onboardingPage) to "onboarding-$onboardingPage"
             else -> {
                 onWizard = true
                 wizardScreen() to "wizard-$step"
@@ -443,7 +456,8 @@ class MainActivity : Activity() {
         footer: View?,
         nav: View? = null,
         layout: SceneLayout = SceneLayout.HEADER,
-    ): Pair<View, Boolean> = design.screen(scenery, layout, header, body, footer, nav) to true
+        mood: SceneMood = SceneMood.CALM,
+    ): Pair<View, Boolean> = design.screen(scenery, layout, header, body, footer, nav, mood) to true
 
     internal fun body(paddingTopDp: Int = 18) = design.body(paddingTopDp)
 
@@ -512,7 +526,7 @@ class MainActivity : Activity() {
             if (left.isEmpty()) {
                 if (onWizard && step == Step.PERMISSIONS) step = nextStep(Step.PERMISSIONS)
             } else {
-                alert("Остались разрешения", left.joinToString("\n") { "• ${it.title}" } + "\n\nНажмите «Продолжить» ещё раз.")
+                alert("Остались разрешения", left.joinToString("\n") { "• ${it.title}" } + "\n\nНажми «Продолжить» ещё раз.")
             }
             render()
             return
@@ -565,6 +579,7 @@ class MainActivity : Activity() {
     companion object {
         const val EXTRA_PREVIEW = "mama.preview"
         private const val STATE_STEP = "step"
+        private const val STATE_ONBOARDING = "onboarding"
         private const val STATE_RESTART_STEP = "restartStep"
         internal const val DRAFT_OPEN = "draft.open"
         internal const val DRAFT_TIME_SET = "draft.timeSet"
@@ -572,6 +587,9 @@ class MainActivity : Activity() {
 
         /** "<series id>:<nights done>" whose motivation screen was seen. */
         internal const val MOTIVATION_SEEN = "motivation.seen"
+
+        /** The onboarding was gone through once (a UI flag only). */
+        internal const val ONBOARDING_SEEN = "onboarding.seen"
         private const val PICK_CONTACT = 10
         private const val SETUP_ALL = 20
     }

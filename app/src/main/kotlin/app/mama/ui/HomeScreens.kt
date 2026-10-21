@@ -32,6 +32,7 @@ import app.mama.platform.Protection
 import app.mama.ui.design.NoteTone
 import app.mama.ui.design.Palette
 import app.mama.ui.design.SceneLayout
+import app.mama.ui.design.SceneMood
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.SummaryItem
@@ -76,20 +77,30 @@ private fun MainActivity.homeTitle(b: LinearLayout, title: String, state: String
 private fun MainActivity.homePhrase(placement: Placement, key: String): String =
     MotivationRotation.of(this).phrase(placement, key, maxLength = 40).text
 
-/**
- * The home photo along a running series: calm at the start, movement in
- * the middle, light at the end — morning, day, evening for the first,
- * middle and last third of the days (3 days: one each). Only a picture:
- * the series itself does not change.
- */
-internal fun progressScenery(series: Series): Scenery {
+/** The third of a running series the current day is in: 0 the start, 1 the middle, 2 the end (3 days: one each). */
+private fun stage(series: Series): Int {
     val n = series.kind.periods
     val day = minOf(series.completedPeriods + 1, n)
-    return when ((day - 1) * 3 / n) {
-        0 -> Scenery.MORNING
-        1 -> Scenery.DAY
-        else -> Scenery.EVENING
-    }
+    return (day - 1) * 3 / n
+}
+
+/**
+ * The home photo along a running series: its energy grows with the path —
+ * a quiet misted morning at the start, a living day in the middle, a light
+ * golden evening at the end (MAMA_DESIGN_SYSTEM_V2 «Свет»). Only a picture:
+ * the series itself does not change.
+ */
+internal fun progressScenery(series: Series): Scenery = when (stage(series)) {
+    0 -> Scenery.MORNING
+    1 -> Scenery.DAY
+    else -> Scenery.EVENING
+}
+
+/** The light of [progressScenery]: quiet, calm, bright. */
+internal fun progressMood(series: Series): SceneMood = when (stage(series)) {
+    0 -> SceneMood.QUIET
+    1 -> SceneMood.CALM
+    else -> SceneMood.BRIGHT
 }
 
 /** An evening or night window counts nights; a daytime one counts days. */
@@ -217,14 +228,12 @@ internal fun MainActivity.seriesDashboard(
         SeriesStatus.ACTIVATING -> b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(14))
         else -> Unit
     }
-    val scenery = when {
-        series.status == SeriesStatus.SCHEDULED -> Scenery.EVENING
-        series.committed -> progressScenery(series)
-        else -> Scenery.MORNING
-    }
+    // Before the first lock: the quiet morning of a path about to begin.
+    val scenery = if (series.committed) progressScenery(series) else Scenery.MORNING
+    val mood = if (series.committed) progressMood(series) else SceneMood.QUIET
     // Days as segments once the series runs; before that only the wordmark.
     val header = if (series.committed) homeHeader("$day из $n", day, n) else homeHeader(null, 0, 0)
-    return v1Frame(scenery, header, b, null, nav(), SceneLayout.HERO)
+    return v1Frame(scenery, header, b, null, nav(), SceneLayout.HERO, mood)
 }
 
 /** The window, trusted contact, "Цена слова" and a held Restart of a series: real values, short notes. */
@@ -303,7 +312,7 @@ private fun MainActivity.needsAttentionScreen(
     b.addView(d.secondaryButton("Изменить условия", Icon.CALENDAR) { beginEditing(series) }, d.gap(10))
     b.addView(d.linkButton("Отменить запуск") { confirmCancelLaunch(series) }, d.gap(4))
     b.addView(d.summaryCard(null, seriesDetails(series, shownWindow(series), sampleCommitment, sampleRestart)), d.gap(18))
-    return v1Frame(Scenery.EVENING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO)
+    return v1Frame(Scenery.MORNING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO, SceneMood.QUIET)
 }
 
 private fun MainActivity.relaunch() {
@@ -336,7 +345,7 @@ internal fun MainActivity.sessionDashboard(session: Session, state: () -> LockSt
     if (state() is LockState.Waiting) {
         b.addView(d.linkButton("Отменить до начала") { Mama.cancelBeforeStart(this); render() }, d.gap(10))
     }
-    return v1Frame(Scenery.MORNING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO)
+    return v1Frame(Scenery.MORNING, homeHeader(null, 0, 0), b, null, nav(), SceneLayout.HERO, SceneMood.QUIET)
 }
 
 // ---------------- tabs ----------------
@@ -377,7 +386,7 @@ internal fun MainActivity.statisticsScreen(
     if (stats.isEmpty) return statisticsEmpty(header, tabs)
     val b = d.body(18)
 
-    // The main number over the evening window: the nights already chosen.
+    // A clean page (MAMA_DESIGN_SYSTEM_V2: statistics without a picture): the nights already chosen first.
     val (label, each) = when (stats.unit) {
         Statistics.PeriodUnit.NIGHTS -> "Ночей пройдено" to "Каждая — решение в пользу себя."
         Statistics.PeriodUnit.DAYS -> "Дней пройдено" to "Каждый — решение в пользу себя."
@@ -385,8 +394,7 @@ internal fun MainActivity.statisticsScreen(
     }
     b.addView(d.text(label, Typo.SUBTITLE, Palette.Ink), d.fill())
     b.addView(d.text(stats.nightsDone.toString(), Typo.DISPLAY, Palette.Ink).apply { textSize = 76f }, d.wrap())
-    b.addView(d.text(each, Typo.SUBTITLE, Palette.Ink), d.wrap().apply { topMargin = d.dp(2) })
-    heroSpace(b, 96)
+    b.addView(d.text(each, Typo.SUBTITLE, Palette.InkMuted), d.wrap().apply { topMargin = d.dp(2) })
 
     // Only what exists: a row with nothing to say is left out, never shown as zero.
     val rows = buildList {
@@ -402,7 +410,7 @@ internal fun MainActivity.statisticsScreen(
             ))
         }
     }
-    if (rows.isNotEmpty()) b.addView(d.summaryCard(null, rows), d.fill())
+    if (rows.isNotEmpty()) b.addView(d.summaryCard(null, rows), d.gap(26))
 
     val pathTitle = d.text("Твой путь", Typo.HEADLINE)
     b.addView(pathTitle, d.gap(30))
@@ -418,10 +426,10 @@ internal fun MainActivity.statisticsScreen(
             }
         })
     }
-    return v1Frame(Scenery.EVENING, header, b, null, tabs).also { it.first.tag = STATISTICS_SCREEN }
+    return (design.screen(null, header = header, body = b, nav = tabs) to true).also { it.first.tag = STATISTICS_SCREEN }
 }
 
-/** No history yet: the beginning of the path, a morning photo, no numbers. */
+/** No history yet: the beginning of the path, a quiet morning photo, no numbers. */
 private fun MainActivity.statisticsEmpty(header: View, tabs: View?): Pair<View, Boolean> {
     val d = design
     val b = d.body(26)
@@ -430,7 +438,7 @@ private fun MainActivity.statisticsEmpty(header: View, tabs: View?): Pair<View, 
         narrow = true,
         lead = "Здесь появятся решения, которыми ты будешь гордиться.",
     ))
-    return v1Frame(Scenery.MORNING, header, b, null, tabs, layout = SceneLayout.FULL).also { it.first.tag = STATISTICS_EMPTY }
+    return v1Frame(Scenery.MORNING, header, b, null, tabs, layout = SceneLayout.FULL, mood = SceneMood.QUIET).also { it.first.tag = STATISTICS_EMPTY }
 }
 
 /** One card of "Твой путь": calm facts, never a verdict. */
@@ -542,15 +550,13 @@ internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
 internal const val RECOVERY_SCREEN = "recovery_screen"
 internal const val RESTART_CTA = "restart_cta"
 
-/** MAMA's round portrait on Recovery: a crop of the approved welcome art, until a supportive illustration of her exists. */
-internal const val MAMA_PORTRAIT = "art/mama_portrait_v2.webp"
-
 /**
- * A series ended early (Design System v2): the milky page, MAMA beside the
- * person as a small round portrait, no red, no warning, no verdict. "Этот
- * путь продолжается" and the support come first, the nights done as a pill,
- * Restart as the natural way on (with a new time). Nothing about a return of
- * «Цена слова» before it has really come.
+ * A series ended early: a return to the path, never a verdict. The production
+ * photo of the path to the lake at sunrise ([Scenery.RECOVERY]) under the
+ * words "Этот путь продолжается" and the support; the nights done as a pill;
+ * Restart as the natural way on (with a new time), the one main action. No
+ * red, no warning. Nothing about a return of «Цена слова» before it has
+ * really come.
  */
 internal fun MainActivity.failureScreen(
     series: Series,
@@ -558,15 +564,11 @@ internal fun MainActivity.failureScreen(
     sampleCommitment: app.mama.core.Commitment? = null,
 ): Pair<View, Boolean> {
     val v = v2
-    val b = v.k.column().apply {
-        gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(v.dp(Spacing.SCREEN), v.dp(6), v.dp(Spacing.SCREEN), v.dp(28))
-        clipToPadding = false
-    }
-    b.addView(v.portrait(MAMA_PORTRAIT, 132))
-    b.addView(v.text("Этот путь продолжается", Typo.DISPLAY, V2.Ink, center = true).apply { textSize = 30f }, v.k.gap(12))
-    b.addView(v.text("Один сложный вечер не отменяет твоего решения.", Typo.SUBTITLE, V2.InkMuted, center = true), v.k.gap(10))
-    b.addView(v.pill(doneLine(series), Icon.SPROUT), v.k.centered(16))
+    val b = design.body(22)
+    b.addView(design.titleBlock("Этот путь продолжается", narrow = true, lead = "Один сложный вечер не отменяет твоего решения."))
+    b.addView(v.pill(doneLine(series), Icon.SPROUT), design.wrap().apply { topMargin = design.dp(14) })
+    // The path itself: light ahead, the way back in view.
+    heroSpace(b, 168)
 
     // Restart: the way on, the one main action of the screen.
     val offer = v.card(paddingDp = 20, radiusDp = V2.CARD_LARGE).apply { clipToPadding = false }
@@ -583,7 +585,7 @@ internal fun MainActivity.failureScreen(
         beginRestart(series.kind)
         render()
     }.apply { tag = RESTART_CTA }, v.k.gap(18))
-    b.addView(offer, v.k.gap(24))
+    b.addView(offer, v.k.gap(Spacing.GUTTER))
 
     commitmentNote(series.id, sampleCommitment)?.let { b.addView(v.note(it.title, it.message, it.icon, warm = it.care), v.k.gap(Spacing.GUTTER)) }
     if (freeInDays > 0) {
@@ -598,17 +600,15 @@ internal fun MainActivity.failureScreen(
         render()
     }, v.k.gap(22))
     b.addView(v.link("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }, v.k.centered(6))
-    val screen = design.screen(null, header = design.topBar(null), body = b)
-    screen.background = v.page()
-    return (screen to true).also { it.first.tag = RECOVERY_SCREEN }
+    return v1Frame(Scenery.RECOVERY, design.topBar(null), b, null, layout = SceneLayout.HERO).also { it.first.tag = RECOVERY_SCREEN }
 }
 
 // ---------------- 12. Success ----------------
 
 /**
- * The series is done: a calm recognition of the path walked, an evening
- * over the lake. A grown-up reward — no confetti: the result, «Цена слова»
- * kept, and the way on.
+ * The series is done: the brightest screen of MAMA — open space, the sun over
+ * the lake, the path walked and an inner victory. A grown-up reward, no
+ * confetti: the result, «Цена слова» kept, and the way on.
  */
 internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.mama.core.Commitment? = null): Pair<View, Boolean> {
     val d = design
@@ -617,9 +617,11 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     val unit = if (countsNights(series.window)) plural(done, "ночь", "ночи", "ночей") else plural(done, "день", "дня", "дней")
     val b = d.body(22)
     // The result in ink, one thought per line: it is the reward of the screen.
-    b.addView(d.titleBlock("Ты сделал это.", narrow = true, lead = "$done $unit.\n$done ${plural(done, "решение", "решения", "решений")} в пользу себя."))
-    // No badges: the title is the reward, the photo carries the light.
-    heroSpace(b, 198)
+    b.addView(d.titleBlock("Ты сделал это.", narrow = true, lead = "$done $unit.\n$done ${plural(done, "решение", "решения", "решений")} в пользу себя.").apply {
+        (getChildAt(0) as android.widget.TextView).textSize = 36f
+    })
+    // No badges: the title is the reward, the open sky and the sun carry the light.
+    heroSpace(b, 236)
     // The result: every day of the series, done.
     val result = d.card(paddingDp = 20)
     result.addView(d.valueRow(Icon.SPROUT, "Твой результат · ${Texts.seriesName(series.kind)}", "$done из $n").view)
@@ -631,7 +633,7 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     b.addView(d.text("Платить не нужно: Restart бывает только после срыва.", Typo.CAPTION, Palette.InkMuted, center = true), d.gap(16))
     val next = d.primaryButton("Новая серия", large = true) { closeDraft(); Mama.dismissSeries(this@successScreen); render() }
     val path = d.linkButton("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }
-    return v1Frame(Scenery.EVENING, d.topBar(null), b, d.bottomCta(next, path), layout = SceneLayout.HERO)
+    return v1Frame(Scenery.EVENING, d.topBar(null), b, d.bottomCta(next, path), layout = SceneLayout.HERO, mood = SceneMood.BRIGHT)
 }
 
 // ---------------- motivation ----------------
@@ -659,7 +661,7 @@ internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> 
     b.addView(d.segments(done, n), d.gap(14))
     val next = d.primaryButton("Продолжить", large = true) { closeMotivation(series) }
     // The whole photo, as on the lock: one thought and the landscape, the air in between.
-    return v1Frame(progressScenery(series), d.topBar(null), b, d.bottomCta(next), layout = SceneLayout.FULL)
+    return v1Frame(progressScenery(series), d.topBar(null), b, d.bottomCta(next), layout = SceneLayout.FULL, mood = progressMood(series))
 }
 
 /** The motivation screen was seen for this night: back to the home screen. */
@@ -798,5 +800,5 @@ internal fun MainActivity.flexResultScreen(flex: FlexPackage): Pair<View, Boolea
         }
     }
     val home = d.linkButton("На главную") { Mama.dismissFlex(this); render() }
-    return v1Frame(Scenery.EVENING, d.topBar(null), b, d.bottomCta(next, home), layout = SceneLayout.HERO)
+    return v1Frame(Scenery.DAY, d.topBar(null), b, d.bottomCta(next, home), layout = SceneLayout.HERO)
 }

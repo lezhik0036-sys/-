@@ -17,18 +17,20 @@ import kotlin.math.sin
  * that warms towards the bottom, two soft circles of light coral and light
  * olive, and the ground — low layered hills of light olive, sage and sand
  * with two leaf sprigs growing from them. The earth holds the screen; it
- * stays light, so nothing on it ever has to compete with it.
+ * stays light, so nothing on it ever has to compete with it. [quiet]: the
+ * stillest page (the lock) — no circles, no sprigs, two faint hills.
  */
 class EarthPage(
     private val density: Float,
     private val ground: Boolean = true,
     private val leaves: Boolean = true,
+    private val quiet: Boolean = false,
 ) : Drawable() {
     override fun draw(canvas: Canvas) {
         val b = bounds
         canvas.save()
         canvas.translate(b.left.toFloat(), b.top.toFloat())
-        EarthPainter.paint(canvas, b.width().toFloat(), b.height().toFloat(), density, ground, leaves)
+        EarthPainter.paint(canvas, b.width().toFloat(), b.height().toFloat(), density, ground, leaves && !quiet, quiet)
         canvas.restore()
     }
 
@@ -54,21 +56,31 @@ internal object EarthPainter {
         Hill(62f, 9f, 1.0f, 1.3f, Color.argb(0x99, 0xE4, 0xD3, 0xBD)),
     )
 
+    /** The quiet page: only the far light olive hill and the near sand, both fainter. */
+    private val quietHills = listOf(
+        Hill(118f, 12f, 0.4f, 0.8f, Color.argb(0x66, 0xDC, 0xE2, 0xD4)),
+        Hill(70f, 8f, 4.0f, 0.7f, Color.argb(0x73, 0xEB, 0xDC, 0xC9)),
+    )
+
     @Synchronized
-    fun paint(canvas: Canvas, w: Float, h: Float, density: Float, ground: Boolean = true, leaves: Boolean = true) {
+    fun paint(canvas: Canvas, w: Float, h: Float, density: Float, ground: Boolean = true, leaves: Boolean = true, quiet: Boolean = false) {
         p.reset()
         p.isAntiAlias = true
         p.shader = LinearGradient(0f, 0f, 0f, h, V2.Milk, V2.WarmBg, Shader.TileMode.CLAMP)
         canvas.drawRect(0f, 0f, w, h, p)
         p.shader = null
-        p.color = Color.argb(0x2A, 0xE6, 0xA0, 0x97)
-        canvas.drawCircle(-24 * density, h * 0.62f, 96 * density, p)
-        p.color = Color.argb(0x34, 0xDC, 0xE2, 0xD4)
-        canvas.drawCircle(w + 30 * density, h * 0.48f, 110 * density, p)
+        if (!quiet) {
+            p.color = Color.argb(0x2A, 0xE6, 0xA0, 0x97)
+            canvas.drawCircle(-24 * density, h * 0.62f, 96 * density, p)
+            p.color = Color.argb(0x34, 0xDC, 0xE2, 0xD4)
+            canvas.drawCircle(w + 30 * density, h * 0.48f, 110 * density, p)
+        }
         if (ground) {
             // On a short screen the ground stays low: never more than a fifth of the page.
             val scale = minOf(1f, h / (density * 750f))
-            for (hill in hills) ridge(canvas, w, h, h - hill.topDp * density * scale, hill.ampDp * density * scale, hill.phase, hill.waves, hill.color)
+            for (hill in if (quiet) quietHills else hills) {
+                ridge(canvas, w, h, h - hill.topDp * density * scale, hill.ampDp * density * scale, hill.phase, hill.waves, hill.color)
+            }
         }
         if (leaves) {
             sprig(canvas, density, 18 * density, h - 22 * density, -58f, Color.argb(0x8C, 0xA9, 0xB4, 0x9C), filled = true)

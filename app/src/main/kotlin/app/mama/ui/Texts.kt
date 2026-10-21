@@ -44,7 +44,7 @@ object Texts {
 
     fun flexPlanError(e: app.mama.core.FlexEngine.PlanError) = when (e) {
         app.mama.core.FlexEngine.PlanError.START_IN_PAST ->
-            "Время начала уже прошло.\nВыберите текущее или будущее время."
+            "Время начала уже прошло.\nВыбери текущее или будущее время."
         app.mama.core.FlexEngine.PlanError.TOO_SHORT -> "Минимальный период FLEX — 3 часа."
         app.mama.core.FlexEngine.PlanError.TOO_LONG -> "Максимальный период FLEX — 24 часа."
         app.mama.core.FlexEngine.PlanError.END_BEFORE_START -> "Время окончания должно быть позже времени начала."
@@ -181,7 +181,7 @@ object Texts {
 
     fun codeRequestError(e: LockEngine.CodeRequestError, retryAt: Instant?, zone: ZoneId) = when (e) {
         LockEngine.CodeRequestError.NOT_LOCKED -> "Блокировка сейчас не активна."
-        LockEngine.CodeRequestError.ALREADY_PENDING -> "Код уже отправлен. Введите его или дождитесь " +
+        LockEngine.CodeRequestError.ALREADY_PENDING -> "Код уже отправлен. Введи его или дождись " +
             (retryAt?.let { "${time(it, zone)}, когда он истечёт." } ?: "его истечения.")
         LockEngine.CodeRequestError.COOLDOWN -> "Все попытки израсходованы. Новый код можно запросить в " +
             (retryAt?.let { time(it, zone) } ?: "—") + "."

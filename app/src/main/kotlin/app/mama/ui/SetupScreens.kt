@@ -27,6 +27,8 @@ import app.mama.ui.MainActivity.Step
 import app.mama.ui.design.HeroIllustration
 import app.mama.ui.design.NoteTone
 import app.mama.ui.design.Palette
+import app.mama.ui.design.SceneLayout
+import app.mama.ui.design.SceneMood
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.SummaryItem
@@ -143,20 +145,22 @@ private fun shortDuration(d: Duration): String {
 // ---------------- 1. Welcome ----------------
 
 /**
- * The approved welcome art (docs/design-reference/welcome_v2_mockup.webp, the
- * source of truth): its illustration down to the wave, the page under the
- * wave transparent. Cut from the mockup, never redrawn.
+ * The welcome window: the production photo of a quiet dawn over the lake
+ * (`scenes/v1/dawn.webp`) in the grade of every nature window, misted towards
+ * the water and ending in the soft wave; the page under the wave transparent.
+ * Its own asset: no other state shows it.
  */
-internal const val WELCOME_ART = "art/welcome_mama_v2.webp"
+internal const val WELCOME_ART = "art/welcome_dawn.webp"
 
 /** Tag of the welcome illustration (tests). */
 internal const val WELCOME_HERO = "welcome_hero"
 
 /**
- * The first screen (Design System v2): MAMA and the people around her on
- * top, ending in the wave of the approved art; the welcome as real text on
- * the milky page; "Начать свой путь" always in view and "Мой путь" under
- * it. On a short screen the text scrolls under the button and fades there.
+ * The first screen: nature first — a quiet dawn over the lake ending in the
+ * soft wave; the welcome as real text on the milky page; "Начать свой путь"
+ * always in view and "Мой путь" under it. On a short screen the text
+ * scrolls under the button and fades there. Before the first use the button
+ * leads through the onboarding into the same setup as before.
  */
 internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
     val d = v2
@@ -181,7 +185,11 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         textSize = if (compact) 15f else 16f
     }, d.k.gap(if (compact) 10 else 14))
     body.addView(text, d.k.fill())
-    val start = d.primary("Начать свой путь") { beginDraft(); go(Step.PERMISSIONS) }
+    val start = d.primary("Начать свой путь") {
+        beginDraft()
+        if (!prefs.getBoolean(MainActivity.ONBOARDING_SEEN, false)) onboardingPage = 1
+        go(Step.PERMISSIONS)
+    }
     // A quiet way to everything already done, at any time between series (3A.1).
     val path = d.link("Мой путь") { openPath() }.apply { tag = OPEN_PATH }
     val screen = design.screen(null, header = null, body = body, cta = design.bottomCta(start, path))
@@ -192,6 +200,46 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         setFadingEdgeLength(d.dp(32))
     }
     return screen to true
+}
+
+// ---------------- Onboarding ----------------
+
+/** The three onboarding pages, in order. */
+internal val ONBOARDING = listOf(
+    "Тебе не нужно становиться сильнее. Тебе нужен ритм.",
+    "Днём ты принимаешь решение. Ночью MAMA помогает его сохранить.",
+    "Начнём с нескольких ночей.",
+)
+
+/**
+ * One onboarding page (1–3): the dawn of the welcome goes on, its light
+ * growing page by page (quiet, calm, bright); one line under it; the pages
+ * as steps of a path. After the last one: the setup, as before.
+ */
+internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
+    val d = design
+    val b = d.body(0)
+    // Room for the dawn (it ends in its wave a little above the words).
+    val heroDp = (resources.configuration.screenWidthDp * 1.14f).toInt() - 96
+    b.addView(View(this), LinearLayout.LayoutParams(1, d.dp(heroDp)))
+    b.addView(d.text(ONBOARDING[page - 1], Typo.DISPLAY).apply { textSize = 28f }, d.fill())
+    val next = d.primaryButton("Далее", large = true) {
+        if (page < ONBOARDING.size) {
+            onboardingPage = page + 1
+        } else {
+            prefs.edit().putBoolean(MainActivity.ONBOARDING_SEEN, true).apply()
+            onboardingPage = 0
+        }
+        render()
+    }
+    val mood = listOf(SceneMood.QUIET, SceneMood.CALM, SceneMood.BRIGHT)[page - 1]
+    return v1Frame(Scenery.DAWN, d.stepHeader(page, ONBOARDING.size) { onboardingBack() }, b, d.bottomCta(next), layout = SceneLayout.HERO, mood = mood)
+}
+
+/** Back from an onboarding page: the page before, or the welcome. */
+internal fun MainActivity.onboardingBack() {
+    onboardingPage--
+    if (onboardingPage == 0) back() else render()
 }
 
 // ---------------- 2. Permissions ----------------
@@ -210,7 +258,7 @@ internal fun MainActivity.permissionsScreen(): Pair<View, Boolean> {
         }
         b.addView(kit.permissionCard(req.icon, req.title, req.why, status) { req.request(this) }, kit.gap(if (i == 0) 20 else 10))
     }
-    b.addView(kit.caption("Нажмите «Продолжить»: MAMA по очереди откроет нужные экраны — включите переключатель и вернитесь назад."), kit.gap(14))
+    b.addView(kit.caption("Нажми «Продолжить»: MAMA по очереди откроет нужные экраны — включи переключатель и вернись назад."), kit.gap(14))
     val cta = kit.primaryButton("Продолжить") {
         if (Requirement.missingRequired(this).isEmpty()) go(nextStep(Step.PERMISSIONS)) else startSetupAll()
     }
@@ -323,7 +371,7 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
     }
     val cta = d.primaryButton("Далее") {
         when {
-            choice != Choice.TEST && start == end -> alert("Проверьте время", "Начало и окончание совпадают.")
+            choice != Choice.TEST && start == end -> alert("Проверь время", "Начало и окончание совпадают.")
             restartFlow -> {
                 saveForm()
                 if (FeatureFlags.WALLET_ENABLED) {
@@ -341,7 +389,12 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
     } else {
         stepBar(Step.TIME)
     }
-    return v1Frame(if (restartFlow) Scenery.RECOVERY else Scenery.DAY, header, b, d.bottomCta(cta))
+    // Restart: calm, respectful and neutral — the quiet morning, not the path of Recovery.
+    return if (restartFlow) {
+        v1Frame(Scenery.MORNING, header, b, d.bottomCta(cta), mood = SceneMood.QUIET)
+    } else {
+        v1Frame(Scenery.DAY, header, b, d.bottomCta(cta))
+    }
 }
 
 /** Phrases of the setup references (04, 06, 08, 09) in [MotivationCatalog]. */
@@ -411,7 +464,7 @@ internal fun MainActivity.readyContact(): TrustedContact? {
     val name = contactName.text.toString().trim()
     val phone = TrustedContact.normalizePhone(contactPhone.text.toString())
     if (name.isEmpty() || phone == null) {
-        alert("Доверенный контакт", "Выберите контакт или укажите имя и номер в формате +7 900 123-45-67.")
+        alert("Доверенный контакт", "Выбери контакт или укажи имя и номер в формате +7 900 123-45-67.")
         return null
     }
     return TrustedContact(name, phone)

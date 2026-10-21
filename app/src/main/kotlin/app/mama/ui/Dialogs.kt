@@ -137,7 +137,7 @@ object BrandDialog {
  */
 object DigitalTimePicker {
 
-    fun show(context: Context, title: String = "Выберите время", initial: LocalTime, onPicked: (LocalTime) -> Unit) {
+    fun show(context: Context, title: String = "Выбери время", initial: LocalTime, onPicked: (LocalTime) -> Unit) {
         val kit = Kit(context)
         val hours = digitField(kit, initial.hour)
         val minutes = digitField(kit, initial.minute)

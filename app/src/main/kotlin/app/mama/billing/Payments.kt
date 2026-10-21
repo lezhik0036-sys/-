@@ -115,7 +115,7 @@ object Checkout {
                     PurchaseResult.Paid -> onGranted(GrantSource.PAID)
                     PurchaseResult.Cancelled -> Unit
                     is PurchaseResult.Failed -> info(activity, "Оплата не прошла", result.reason)
-                    PurchaseResult.Unavailable -> info(activity, "Оплата недоступна", "Попробуйте позже.")
+                    PurchaseResult.Unavailable -> info(activity, "Оплата недоступна", "Попробуй позже.")
                 }
             }
             return

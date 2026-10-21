@@ -101,13 +101,13 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
     /** What to do on the settings screen this item opens (shown as a hint). */
     val hint: String?
         get() = when (this) {
-            OVERLAY -> "Включите «MAMA» в списке."
+            OVERLAY -> "Включи «MAMA» в списке."
             GUARD -> "Установленные приложения → «MAMA — защита блокировки» → включить. " +
                 "Если серое: Приложения → MAMA → ⋮ → «Разрешить ограниченные настройки»."
-            ADMIN -> "Нажмите «Активировать»."
-            CALL_CONTROL -> "Выберите MAMA и подтвердите."
-            EXACT_ALARMS -> "Включите разрешение для MAMA."
-            BATTERY -> "Нажмите «Разрешить»."
+            ADMIN -> "Нажми «Активировать»."
+            CALL_CONTROL -> "Выбери MAMA и подтверди."
+            EXACT_ALARMS -> "Включи разрешение для MAMA."
+            BATTERY -> "Нажми «Разрешить»."
             else -> null
         }
 

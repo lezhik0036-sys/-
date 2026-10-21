@@ -764,10 +764,11 @@ class DesignKit(val context: Context) {
 
     /**
      * The timer: a milky disc like a sun over the ground, a light olive track,
-     * a sage-to-olive arc, sprout, "Осталось", "6 ч 12 мин" and the day of the
-     * series as a pill ("День 2 из 7"). Bind with [TimerRing.set].
+     * a sage-to-olive arc, sprout (none on the lock: [sprout] false),
+     * "Осталось", "6 ч 12 мин" and the day of the series as a pill ("День 2
+     * из 7"). Bind with [TimerRing.set].
      */
-    fun timerRing(sizeDp: Int = 196): TimerRing {
+    fun timerRing(sizeDp: Int = 196, sprout: Boolean = true): TimerRing {
         // The disc and its shadow belong to the container, so the ring and the text are drawn above them.
         val root = FrameLayout(context).apply {
             background = oval(Palette.Card)
@@ -777,9 +778,9 @@ class DesignKit(val context: Context) {
         val ring = TimerRingView(context)
         root.addView(ring, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val inner = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
-        inner.addView(iconCircle(Icon.SPROUT, 44), size(44).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        if (sprout) inner.addView(iconCircle(Icon.SPROUT, 44), size(44).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(8) })
         val caption = text("Осталось", Typo.LABEL, Palette.InkMuted, center = true)
-        inner.addView(caption, centered(8))
+        inner.addView(caption, centered())
         val value = text("", Typo.NUMBER, Palette.Ink, center = true)
         inner.addView(value, centered(6))
         val day = text("", Typo.LABEL, Palette.OliveInk, center = true).apply {
@@ -883,9 +884,10 @@ class DesignKit(val context: Context) {
         body: View,
         cta: View? = null,
         nav: View? = null,
+        mood: SceneMood = SceneMood.CALM,
     ): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        background = scenery?.let { ScenicBackground(context, it, layout) } ?: EarthPage(context.resources.displayMetrics.density, ground = nav == null)
+        background = scenery?.let { ScenicBackground(context, it, layout, mood = mood) } ?: EarthPage(context.resources.displayMetrics.density, ground = nav == null)
         header?.let { addView(it, fill()) }
         addView(ScrollView(context).apply {
             isFillViewport = true

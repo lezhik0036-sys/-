@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Mirrors app.mama.ui.MamaColors for the window theme. -->
+<!-- Mirrors app.mama.ui.MamaColors for the window theme: the earth palette of
+     docs/MAMA_DESIGN_SYSTEM_V2.md (the names are historical: "emerald" is deep olive). -->
 <resources>
-    <color name="mama_background">#F7F4EC</color>
-    <color name="mama_surface">#FCFAF5</color>
-    <color name="mama_emerald">#28594A</color>
-    <color name="mama_emerald_secondary">#3E735F</color>
-    <color name="mama_olive">#83896A</color>
-    <color name="mama_text">#262A27</color>
-    <color name="mama_text_secondary">#70756E</color>
-    <color name="mama_ripple">#2228594A</color>
-    <color name="mama_selection">#665F8A72</color>
+    <color name="mama_background">#FFF9F1</color>
+    <color name="mama_surface">#FFFDF9</color>
+    <color name="mama_emerald">#475342</color>
+    <color name="mama_emerald_secondary">#69745E</color>
+    <color name="mama_olive">#8E9A80</color>
+    <color name="mama_text">#17302E</color>
+    <color name="mama_text_secondary">#53615D</color>
+    <color name="mama_ripple">#1F475342</color>
+    <color name="mama_selection">#99DCE2D4</color>
 </resources>

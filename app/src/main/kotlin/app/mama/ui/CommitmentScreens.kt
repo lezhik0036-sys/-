@@ -22,6 +22,7 @@ import app.mama.platform.Mama
 import app.mama.ui.MainActivity.Step
 import app.mama.ui.design.NoteTone
 import app.mama.ui.design.Palette
+import app.mama.ui.design.SceneMood
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.Typo
@@ -145,7 +146,12 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind, w
         else -> stepBar(Step.COMMITMENT)
     }
     // Restart is a second chance: its own light scene.
-    return v1Frame(if (restart) Scenery.RECOVERY else Scenery.DAY, header, b, d.bottomCta(go, skip))
+    // Restart: the quiet morning (neutral), not the path of Recovery.
+    return if (restart) {
+        v1Frame(Scenery.MORNING, header, b, d.bottomCta(go, skip), mood = SceneMood.QUIET)
+    } else {
+        v1Frame(Scenery.DAY, header, b, d.bottomCta(go, skip))
+    }
 }
 
 private fun MainActivity.customAmount(min: Long) {
@@ -164,7 +170,7 @@ private fun MainActivity.customAmount(min: Long) {
         val rub = field.text.toString().toLongOrNull()
         val kop = rub?.times(100)
         if (kop == null || kop < min || kop > max) {
-            error.text = "Укажите сумму от ${Texts.money(min)} до ${Texts.money(max)}."
+            error.text = "Укажи сумму от ${Texts.money(min)} до ${Texts.money(max)}."
             error.visibility = View.VISIBLE
             false
         } else {

@@ -2,6 +2,7 @@ package app.mama.lock
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.Drawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -19,6 +20,10 @@ import app.mama.ui.design.DesignKit
 import app.mama.ui.design.DesignKitV2
 import app.mama.ui.design.Palette
 import app.mama.ui.design.Radii
+import app.mama.ui.design.SceneLayout
+import app.mama.ui.design.SceneMood
+import app.mama.ui.design.ScenicBackground
+import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.TimerRing
 import app.mama.ui.design.Typo
@@ -83,24 +88,27 @@ interface LockActions {
 }
 
 /**
- * The active lock screen (MAMA_DESIGN_SYSTEM_V2 «ACTIVE»): the calmest screen
- * of MAMA, a quiet but reliable frame rather than a wall. The milky earth
- * page, "M A M A", one short phrase, the time the phone stays protected,
- * the remaining time and the day of the series in a ring like a sun over the
- * ground, and only two quiet actions — "Экстренный звонок" and "Мне
- * действительно нужно выйти" (Trusted Exit). No red, no warning signs.
- * "Экстренный звонок" opens the "Экстренные службы" page; the Trusted Exit
- * page shows the user's reason and a pause, then the code entry. Every page
- * stands on the same earth. Pure view code: all behaviour goes through
- * [LockActions].
+ * The active lock screen (MAMA_DESIGN_SYSTEM_V2 «ACTIVE»): the calmest and
+ * most minimal screen of MAMA, a quiet but reliable frame rather than a wall.
+ * The stillest earth page (no circles, no sprigs, two faint hills), "M A M A",
+ * one short phrase, the time the phone stays protected, the remaining time
+ * and the day of the series in a ring like a sun over the ground, and only
+ * two quiet actions — "Экстренный звонок" and "Мне действительно нужно выйти"
+ * (Trusted Exit). No red, no warning signs. "Экстренный звонок" opens the
+ * "Экстренные службы" page on the same page; Trusted Exit — the user's reason
+ * and a pause, then the code entry — stands under a quiet morning, calm and
+ * neutral. Pure view code: all behaviour goes through [LockActions].
  */
 class LockScreenView(private val context: Context, private val actions: LockActions) {
     private val d = DesignKit(context)
     private val v = DesignKitV2(context)
 
-    // The earth page lies on the root, so it also fills the area under the system bars;
-    // the pages over the lock stand on it too.
-    val root: FrameLayout = FrameLayout(context).apply { background = v.page() }
+    // The background lies on the root, so it also fills the area under the system bars:
+    // the stillest page behind the lock and its emergency page, a quiet morning behind Trusted Exit.
+    private val lockScene: Drawable = v.page(quiet = true)
+    private val exitScene: Drawable by lazy { ScenicBackground(context, Scenery.MORNING, SceneLayout.HEADER, mood = SceneMood.QUIET) }
+
+    val root: FrameLayout = FrameLayout(context).apply { background = lockScene }
 
     // Main page.
     private lateinit var mainPage: View
@@ -170,10 +178,10 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         callCard.addView(d.secondaryButton("Завершить звонок") { actions.hangUp() }, d.gap(10))
         col.addView(callCard, d.gap(18))
 
-        // One short line of support and when the phone is free again (v2: Manrope only).
+        // One short line of support and when the phone is free again: quiet, never loud.
         phrase = v.text("", Typo.SUBTITLE, V2.Ink, center = true).apply {
-            textSize = 21f
-            typeface = MamaFonts.ui(context, 600)
+            textSize = 19f
+            typeface = MamaFonts.ui(context, 500)
         }
         col.addView(phrase, d.gap(40).apply { leftMargin = dp(8); rightMargin = dp(8) })
         until = v.text("", Typo.SUBTITLE, V2.InkMuted, center = true).apply { textSize = 15.5f }
@@ -322,6 +330,8 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         backToCall.visibility = if (m.emergencyCallActive && m.call != Calls.CallState.NONE) View.VISIBLE else View.GONE
 
         mainPage.visibility = if (m.emergencyOpen || m.exitOpen) View.GONE else View.VISIBLE
+        val scene = if (m.exitOpen && !m.emergencyOpen) exitScene else lockScene
+        if (root.background !== scene) root.background = scene
         emergencyPage.visibility = if (m.emergencyOpen) View.VISIBLE else View.GONE
         if (m.emergencyServices != shownServices) {
             shownServices = m.emergencyServices
@@ -346,7 +356,7 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         introMessage.text = m.message.orEmpty()
         introMessage.visibility = if (m.message.isNullOrEmpty() || m.codeActive) View.GONE else View.VISIBLE
 
-        codeHint.text = "Введите код из ${m.codeLength} цифр, который отправлен доверенному контакту: " +
+        codeHint.text = "Введи код из ${m.codeLength} цифр, который отправлен доверенному контакту: " +
             "${m.contactName} ${m.contactPhone}"
         boxes.forEachIndexed { i, b ->
             b.text = m.input.getOrNull(i)?.toString().orEmpty()

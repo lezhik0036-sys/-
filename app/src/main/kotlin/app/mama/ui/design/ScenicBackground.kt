@@ -54,6 +54,25 @@ enum class Scenery {
     RECOVERY,
 }
 
+/**
+ * How much light a nature window lets in (MAMA_DESIGN_SYSTEM_V2 «Свет»): the
+ * energy grows along a series — [QUIET] at its start, before it and on the
+ * neutral screens (Trusted Exit, Restart), [CALM] in the middle, [BRIGHT] at
+ * its end and on Success.
+ */
+enum class SceneMood(
+    /** Saturation of the photo. */
+    val saturation: Float,
+    /** Share of the page colour lifted into the photo. */
+    val lift: Float,
+    /** Opacity (0–255) of the mist at the ground. */
+    val mist: Int,
+) {
+    QUIET(0.66f, 0.2f, 140),
+    CALM(0.78f, 0.14f, 110),
+    BRIGHT(0.94f, 0.07f, 70),
+}
+
 /** Where the landscape sits; the content layout never depends on it. */
 enum class SceneLayout {
     /** Top of the screen behind the title, fading into the page under the cards. */
@@ -94,6 +113,7 @@ class ScenicBackground(
     private val cornerRadius: Float = 0f,
     /** [SceneLayout.CARD_RIGHT]: share of the card width the landscape takes. */
     private val vignette: Float = 0.42f,
+    private val mood: SceneMood = SceneMood.CALM,
 ) : Drawable() {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val matrix = Matrix()
@@ -102,7 +122,7 @@ class ScenicBackground(
     override fun draw(canvas: Canvas) {
         val b = bounds
         if (b.width() <= 0 || b.height() <= 0) return
-        val bitmap = SceneCache.get(context, scenery, layout, base, b.width(), b.height(), vignette) ?: run {
+        val bitmap = SceneCache.get(context, scenery, layout, base, b.width(), b.height(), vignette, mood) ?: run {
             paint.shader = null
             paint.color = base
             box.set(b)
@@ -143,18 +163,18 @@ internal object SceneCache {
     private var bundled: Map<Scenery, String>? = null
 
     @Synchronized
-    fun get(context: Context, scenery: Scenery, layout: SceneLayout, base: Int, w: Int, h: Int, vignette: Float = 0.42f): Bitmap? {
+    fun get(context: Context, scenery: Scenery, layout: SceneLayout, base: Int, w: Int, h: Int, vignette: Float = 0.42f, mood: SceneMood = SceneMood.CALM): Bitmap? {
         // A painted screen background is soft: half resolution is enough. Photos and cards: full.
         val photo = file(context, scenery) != null
         val q = if (photo || layout == SceneLayout.CARD_BOTTOM || layout == SceneLayout.CARD_RIGHT) 1f else 0.5f
         val bw = max(1, (w * q).roundToInt())
         val bh = max(1, (h * q).roundToInt())
-        val key = "$scenery/$layout/$base/$vignette/$bw x $bh"
+        val key = "$scenery/$layout/$base/$vignette/$mood/$bw x $bh"
         cache.get(key)?.let { return it }
         val density = context.resources.displayMetrics.density * q
         val bitmap = runCatching {
             Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also {
-                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette, density)
+                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette, density, mood)
             }
         }.getOrNull() ?: return null
         cache.put(key, bitmap)
@@ -279,8 +299,20 @@ internal object ScenePainter {
         p.alpha = 255
     }
 
-    fun paint(canvas: Canvas, w: Float, h: Float, scenery: Scenery, layout: SceneLayout, base: Int, photo: Bitmap?, vignette: Float = 0.42f, density: Float = 1f) {
+    fun paint(
+        canvas: Canvas,
+        w: Float,
+        h: Float,
+        scenery: Scenery,
+        layout: SceneLayout,
+        base: Int,
+        photo: Bitmap?,
+        vignette: Float = 0.42f,
+        density: Float = 1f,
+        mood: SceneMood = SceneMood.CALM,
+    ) {
         reset()
+        this.mood = mood
         canvas.drawColor(base)
         val l = look(scenery)
         when (layout) {
@@ -295,11 +327,14 @@ internal object ScenePainter {
                 val edge = H * if (hero) 0.9f else 0.86f
                 val layer = canvas.saveLayer(0f, 0f, w, H, null)
                 if (photo != null) {
-                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, if (hero) 0.62f else 0.42f, if (hero) 1.2f else 1f)
+                    // The path of RECOVERY runs down the lower half of its photo: its sun stays high, the path in view.
+                    val path = hero && scenery == Scenery.RECOVERY
+                    val ty = if (path) 0.1f else if (hero) 0.62f else 0.42f
+                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, H, focus(scenery).first, ty, if (hero && !path) 1.2f else 1f)
                 } else {
                     landscape(canvas, w, H, l, H)
                 }
-                mist(canvas, w, H * 0.42f, edge)
+                mist(canvas, w, H * 0.42f, edge, mood.mist)
                 wave(path, w, edge, w * 0.034f, H)
                 soft(1.2f * density)
                 p.color = Color.BLACK
@@ -324,7 +359,7 @@ internal object ScenePainter {
                 } else {
                     landscape(canvas, w, H, l, h)
                 }
-                mist(canvas, w, h * 0.45f, h)
+                mist(canvas, w, h * 0.45f, h, mood.mist)
                 // Light veils: the title at the top and the cards below stay readable.
                 gradientRect(canvas, 0f, 0f, w, H * 0.40f, alpha(base, 150), alpha(base, 0))
                 gradientRect(canvas, 0f, H * 0.70f, w, h, alpha(base, 0), alpha(base, 200), mid = alpha(base, 120), midAt = 0.5f)
@@ -922,11 +957,11 @@ internal object ScenePainter {
         gradientRect(c, 0f, 0f, w, w * 0.30f, alpha(base, 110), alpha(base, 0))
     }
 
-    /** A milky mist settling from [top] down to [bottom]: thin at first, then thicker towards the ground. */
-    private fun mist(c: Canvas, w: Float, top: Float, bottom: Float) {
+    /** A milky mist settling from [top] down to [bottom]: thin at first, then [ground] (0–255) at the ground. */
+    private fun mist(c: Canvas, w: Float, top: Float, bottom: Float, ground: Int) {
         p.maskFilter = null
         p.shader = LinearGradient(
-            0f, top, 0f, bottom, intArrayOf(alpha(V2.Milk, 0), alpha(V2.Milk, 34), alpha(V2.Milk, 110)),
+            0f, top, 0f, bottom, intArrayOf(alpha(V2.Milk, 0), alpha(V2.Milk, ground * 31 / 100), alpha(V2.Milk, ground)),
             floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
         )
         c.drawRect(0f, top, w, bottom, p)
@@ -946,22 +981,26 @@ internal object ScenePainter {
         into.close()
     }
 
+    /** The light of the scene being painted ([paint]). */
+    private var mood = SceneMood.CALM
+
     /**
-     * The quiet grade of a photo: calmer colours (78 % saturation) and a milky
-     * lift (14 % of the page colour), so the sun no longer flares like a
-     * postcard and the photo sits in the palette of the page.
+     * The grade of a photo in a [SceneMood]: calmer colours and a milky lift
+     * of the page colour, so the sun no longer flares like a postcard and the
+     * photo sits in the palette of the page (CALM: 78 % saturation, 14 % lift).
      */
-    private val grade = ColorMatrixColorFilter(ColorMatrix().apply {
-        setSaturation(0.78f)
-        val k = 0.86f
-        val lift = 0.14f
-        postConcat(ColorMatrix(floatArrayOf(
-            k, 0f, 0f, 0f, lift * Color.red(V2.Milk),
-            0f, k, 0f, 0f, lift * Color.green(V2.Milk),
-            0f, 0f, k, 0f, lift * Color.blue(V2.Milk),
-            0f, 0f, 0f, 1f, 0f,
-        )))
-    })
+    private val grades = SceneMood.entries.associateWith { m ->
+        ColorMatrixColorFilter(ColorMatrix().apply {
+            setSaturation(m.saturation)
+            val k = 1f - m.lift
+            postConcat(ColorMatrix(floatArrayOf(
+                k, 0f, 0f, 0f, m.lift * Color.red(V2.Milk),
+                0f, k, 0f, 0f, m.lift * Color.green(V2.Milk),
+                0f, 0f, k, 0f, m.lift * Color.blue(V2.Milk),
+                0f, 0f, 0f, 1f, 0f,
+            )))
+        })
+    }
 
     /** Where the sun is on the bundled production photo of [s] (fractions of its width and height). */
     private fun focus(s: Scenery): Pair<Float, Float> = when (s) {
@@ -975,7 +1014,7 @@ internal object ScenePainter {
     /**
      * A production photo covering the box ([left], [top], [bw] × [bh]),
      * [zoom] times closer, placed so that its sun lands at ([tx], [ty]) of
-     * the box as far as the photo reaches, in the quiet [grade]. Scaled as a
+     * the box as far as the photo reaches, in the grade of its [SceneMood]. Scaled as a
      * whole, never stretched or redrawn.
      */
     private fun drawPhoto(c: Canvas, bitmap: Bitmap, scenery: Scenery, left: Float, top: Float, bw: Float, bh: Float, tx: Float, ty: Float, zoom: Float = 1f) {
@@ -990,7 +1029,7 @@ internal object ScenePainter {
         p.maskFilter = null
         p.shader = null
         p.isFilterBitmap = true
-        p.colorFilter = grade
+        p.colorFilter = grades.getValue(mood)
         val source = reduced(bitmap, dw)
         c.drawBitmap(source, null, RectF(x, y, x + dw, y + dh), p)
         if (source !== bitmap) source.recycle()

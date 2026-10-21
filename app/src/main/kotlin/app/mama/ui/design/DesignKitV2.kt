@@ -1,20 +1,11 @@
 package app.mama.ui.design
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.BitmapShader
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.Paint
-import android.graphics.RadialGradient
-import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
-import android.util.LruCache
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
@@ -74,8 +65,8 @@ object V2 {
 
 /**
  * What only the hero screens need on top of [DesignKit] (Welcome, the lock,
- * Recovery): the accent in a title, MAMA as a portrait, the [EarthPage]; the
- * rest are the shared components under the names those screens use.
+ * Recovery): the accent in a title and the [EarthPage]; the rest are the
+ * shared components under the names those screens use.
  */
 class DesignKitV2(val context: Context) {
     /** The shared components. */
@@ -122,47 +113,9 @@ class DesignKitV2(val context: Context) {
     fun note(title: String?, message: CharSequence, icon: Icon, warm: Boolean = false): View =
         k.noteCard(message, title, if (warm) NoteTone.CARE else NoteTone.INFO, icon)
 
-    /** The lock timer (see [DesignKit.timerRing]). */
-    fun timerRing(sizeDp: Int): TimerRing = k.timerRing(sizeDp)
+    /** The lock timer (see [DesignKit.timerRing]), without the sprout: only the time and the day. */
+    fun timerRing(sizeDp: Int): TimerRing = k.timerRing(sizeDp, sprout = false)
 
-    /** MAMA as a round portrait (a crop of the approved art), with a soft coral halo. */
-    fun portrait(asset: String, sizeDp: Int): View = object : View(context) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        private val halo = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val matrix = Matrix()
-
-        override fun onDraw(canvas: Canvas) {
-            val cx = width / 2f
-            val cy = height / 2f
-            val r = minOf(width, height) / 2f
-            halo.shader = RadialGradient(cx, cy, r, intArrayOf(Color.argb(0x66, 0xE6, 0xA0, 0x97), Color.argb(0, 0xE6, 0xA0, 0x97)), floatArrayOf(0.72f, 1f), Shader.TileMode.CLAMP)
-            canvas.drawCircle(cx, cy, r, halo)
-            val inner = r * 0.84f
-            canvas.drawCircle(cx, cy, inner + dp(3), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = V2.Card })
-            val bitmap = art(context, asset) ?: return
-            val shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-            val s = 2 * inner / minOf(bitmap.width, bitmap.height)
-            matrix.setScale(s, s)
-            matrix.postTranslate(cx - bitmap.width * s / 2, cy - bitmap.height * s / 2)
-            shader.setLocalMatrix(matrix)
-            paint.shader = shader
-            canvas.drawCircle(cx, cy, inner, paint)
-        }
-    }.apply {
-        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply { gravity = Gravity.CENTER_HORIZONTAL }
-    }
-
-    /** The page with the ground and the sprigs ([EarthPage]). */
-    fun page(ground: Boolean = true): Drawable = EarthPage(context.resources.displayMetrics.density, ground)
-
-    private companion object {
-        private val cache = object : LruCache<String, Bitmap>(4 * 1024) {
-            override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
-        }
-
-        fun art(context: Context, asset: String): Bitmap? = cache.get(asset) ?: runCatching {
-            context.assets.open(asset).use { BitmapFactory.decodeStream(it) }
-        }.getOrNull()?.also { cache.put(asset, it) }
-    }
+    /** The page with the ground and the sprigs ([EarthPage]); [quiet] for the lock. */
+    fun page(ground: Boolean = true, quiet: Boolean = false): Drawable = EarthPage(context.resources.displayMetrics.density, ground, quiet = quiet)
 }
