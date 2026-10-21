@@ -15,52 +15,59 @@ import app.mama.ui.BrandButtonView
 import app.mama.ui.Icon
 
 /**
- * The palette of MAMA Design System v2 (docs/MAMA_DESIGN_SYSTEM_V2.md), the
- * source of truth of the whole UI: nature, earth and MAMA as quiet support.
- * Milk, warm wash and sand; sage and olive; forest ink instead of black; clay
- * (MAMA Coral) only for the one main action. [Palette] names the roles.
+ * The palette of MAMA Design System v2 (docs/MAMA_DESIGN_SYSTEM_V2.md): the
+ * warm nature of the approved welcome — cream and beige pages and cards,
+ * moss green for the one main action and every choice, warm dark ink,
+ * golden light in the photos. [Palette] names the roles.
  */
 object V2 {
-    val Milk = Color.rgb(0xFF, 0xF9, 0xF1)
-    val WarmBg = Color.rgb(0xF8, 0xF0, 0xE6)
-    val Coral = Color.rgb(0xC9, 0x6F, 0x62)
-    val CoralLight = Color.rgb(0xE6, 0xA0, 0x97)
-    val OliveDeep = Color.rgb(0x47, 0x53, 0x42)
-    val Olive = Color.rgb(0x69, 0x74, 0x5E)
-    val OliveLight = Color.rgb(0xDC, 0xE2, 0xD4)
-    val Ink = Color.rgb(0x17, 0x30, 0x2E)
-    val InkMuted = Color.rgb(0x53, 0x61, 0x5D)
-    val Sand = Color.rgb(0xEB, 0xDC, 0xC9)
+    /** Page: cream at the top, warmer towards the bottom. */
+    val Milk = Color.rgb(0xFB, 0xF5, 0xEA)
+    val WarmBg = Color.rgb(0xF5, 0xEB, 0xDC)
 
-    /** Sage: the light end of the olive scale (arcs, marks, leaves). */
-    val Sage = Color.rgb(0x8E, 0x9A, 0x80)
+    /** Moss: the main action (its gradient runs from [MossLight] to [MossDeep]), choices, checks. */
+    val Moss = Color.rgb(0x52, 0x5C, 0x33)
+    val MossLight = Color.rgb(0x6A, 0x6E, 0x40)
+    val MossDeep = Color.rgb(0x42, 0x4C, 0x28)
 
-    /** Mist: a chosen card, the palest green. */
-    val Mist = Color.rgb(0xEE, 0xF1, 0xE8)
+    val OliveDeep = Moss
+    val Olive = Color.rgb(0x6E, 0x72, 0x48)
 
-    /** Pale sand: quiet surfaces. */
-    val SandLight = Color.rgb(0xF2, 0xE8, 0xDA)
+    /** Light olive-beige: pills, tags, the timer track. */
+    val OliveLight = Color.rgb(0xE9, 0xE3, 0xCC)
+    val Ink = Color.rgb(0x2B, 0x26, 0x15)
+    val InkMuted = Color.rgb(0x7A, 0x72, 0x62)
+    val Sand = Color.rgb(0xE6, 0xD6, 0xBD)
+
+    /** Sage: the light end of the moss scale (arcs, marks). */
+    val Sage = Color.rgb(0x9A, 0x9E, 0x6E)
+
+    /** Mist: a chosen card, the palest olive. */
+    val Mist = Color.rgb(0xF4, 0xF0, 0xDF)
+
+    /** Beige: icon circles and quiet surfaces. */
+    val SandLight = Color.rgb(0xEF, 0xE0, 0xCA)
 
     /** Warm earth: quote marks; its ink for text on sand. */
-    val Earth = Color.rgb(0xA3, 0x8B, 0x6D)
-    val EarthInk = Color.rgb(0x6E, 0x5B, 0x44)
+    val Earth = Color.rgb(0xB5, 0x9A, 0x6E)
+    val EarthInk = Color.rgb(0x6E, 0x5B, 0x3C)
 
-    /** Pale clay and clay ink: something still needed ("Нужно"), never an alarm. */
-    val ClaySoft = Color.rgb(0xF7, 0xE5, 0xDF)
-    val ClayInk = Color.rgb(0xA9, 0x58, 0x4B)
+    /** Something still needed ("Нужно"): warm amber on pale amber, never an alarm. */
+    val ClaySoft = Color.rgb(0xF3, 0xE4, 0xCB)
+    val ClayInk = Color.rgb(0x8A, 0x66, 0x34)
 
     /** Hints, chevrons, inactive navigation. */
-    val InkSoft = Color.rgb(0x8A, 0x95, 0x8F)
+    val InkSoft = Color.rgb(0xA3, 0x9B, 0x89)
 
     /** Dividers and outlines. */
-    val Line = Color.rgb(0xEF, 0xE5, 0xD7)
+    val Line = Color.rgb(0xEA, 0xDF, 0xCD)
 
-    /** Card surface on the milk page. */
-    val Card = Color.rgb(0xFF, 0xFD, 0xF9)
+    /** Card surface on the cream page. */
+    val Card = Color.rgb(0xFD, 0xF9, 0xF1)
 
     const val CARD_LARGE = 28
-    const val CARD = 22
-    const val BUTTON = 26
+    const val CARD = 24
+    const val BUTTON = 28
 }
 
 /**
@@ -76,10 +83,10 @@ class DesignKitV2(val context: Context) {
 
     fun text(value: CharSequence, style: Typo = Typo.BODY, color: Int = V2.Ink, center: Boolean = false): TextView = k.text(value, style, color, center)
 
-    /** [text] with [accent] in MAMA Coral ("Добро пожаловать в MAMA"). */
+    /** [text] with [accent] in moss ("Ты сделал это."). */
     fun accented(text: String, accent: String): CharSequence = SpannableString(text).apply {
         val at = text.lastIndexOf(accent)
-        if (at >= 0) setSpan(ForegroundColorSpan(V2.Coral), at, at + accent.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (at >= 0) setSpan(ForegroundColorSpan(V2.Moss), at, at + accent.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
     fun shape(fill: Int, radiusDp: Int, stroke: Int? = null, strokeDp: Float = 1f) = k.shape(fill, radiusDp, stroke, strokeDp)
@@ -116,6 +123,6 @@ class DesignKitV2(val context: Context) {
     /** The lock timer (see [DesignKit.timerRing]), without the sprout: only the time and the day. */
     fun timerRing(sizeDp: Int): TimerRing = k.timerRing(sizeDp, sprout = false)
 
-    /** The page with the ground and the sprigs ([EarthPage]); [quiet] for the lock. */
-    fun page(ground: Boolean = true, quiet: Boolean = false): Drawable = EarthPage(context.resources.displayMetrics.density, ground, quiet = quiet)
+    /** The cream page with its leaf sprigs ([EarthPage]); [quiet] for the lock. */
+    fun page(leaves: Boolean = true, quiet: Boolean = false): Drawable = EarthPage(context, leaves, quiet)
 }

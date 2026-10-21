@@ -68,9 +68,9 @@ enum class SceneMood(
     /** Opacity (0–255) of the mist at the ground. */
     val mist: Int,
 ) {
-    QUIET(0.66f, 0.2f, 140),
-    CALM(0.78f, 0.14f, 110),
-    BRIGHT(0.94f, 0.07f, 70),
+    QUIET(0.84f, 0.1f, 70),
+    CALM(0.96f, 0.04f, 36),
+    BRIGHT(1.06f, 0f, 14),
 }
 
 /** Where the landscape sits; the content layout never depends on it. */
@@ -89,16 +89,21 @@ enum class SceneLayout {
 
     /** Right side of a card (quote cards). */
     CARD_RIGHT,
+
+    /** The lower part of the screen, fading into the cream page above it (the lock). */
+    GROUND,
+
+    /** The whole box, nothing over it (a photo card). */
+    PICTURE,
 }
 
 /**
  * A window into nature (MAMA_DESIGN_SYSTEM_V2 «Образы»). Draws the
  * production photo of the scenery (`assets/scenes/v1/<scenery>.webp`),
- * cropped around its sun for the layout and quietened: calmer colours, a
- * milky lift and a mist settling towards the ground, so it reads as a calm
- * place, not a postcard. On a screen it ends in a soft wave (like the
- * approved welcome art) over the [EarthPage]; light milky veils stay where
- * text sits. The photo is never redrawn. Without the file, a light landscape
+ * cropped around its sun for the layout, in the warm golden light of its
+ * [SceneMood] with a light mist towards the ground. On a screen it dissolves
+ * softly into the cream [EarthPage] (as on the approved screens); light
+ * cream veils stay where text sits. The photo is never redrawn. Without the file, a light landscape
  * is painted in code instead (fallback), in the same place.
  *
  * Rendered once per size into a cached bitmap, then only drawn.
@@ -190,7 +195,10 @@ internal object SceneCache {
         val density = context.resources.displayMetrics.density * q
         val bitmap = runCatching {
             Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also {
-                ScenePainter.paint(Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette, density, mood, focusY)
+                ScenePainter.paint(
+                    Canvas(it), bw.toFloat(), bh.toFloat(), scenery, layout, base, photo(context, scenery), vignette, density, mood, focusY,
+                    EarthPainter.sprig(context),
+                )
             }
         }.getOrNull() ?: return null
         cache.put(key, bitmap)
@@ -327,6 +335,8 @@ internal object ScenePainter {
         density: Float = 1f,
         mood: SceneMood = SceneMood.CALM,
         focusY: Float? = null,
+        /** The leaf sprig of the page under the window. */
+        sprig: Bitmap? = null,
     ) {
         reset()
         this.mood = mood
@@ -336,12 +346,12 @@ internal object ScenePainter {
             SceneLayout.HEADER, SceneLayout.HERO -> {
                 val hero = layout == SceneLayout.HERO
                 val H = w * if (hero) 1.22f else 1.0f
-                // The page under the window: the earth on a screen, the plain colour on a card.
-                if (base == Palette.Bg) EarthPainter.paint(canvas, w, h, density)
+                // The page under the window: the cream page with its leaves on a screen, the plain colour on a card.
+                if (base == Palette.Bg) EarthPainter.paint(canvas, w, h, density, sprig)
                 reset()
                 // The window: the photo (its sun right of the subtitle on a wizard step, under it on
-                // home, a little closer), misted towards the ground and cut along a soft wave.
-                val edge = H * if (hero) 0.9f else 0.86f
+                // home, a little closer), a light mist towards the ground, dissolving softly into the page.
+                val edge = H * if (hero) 0.94f else 0.9f
                 val layer = canvas.saveLayer(0f, 0f, w, H, null)
                 if (photo != null) {
                     val framed = hero && focusY != null
@@ -350,13 +360,11 @@ internal object ScenePainter {
                 } else {
                     landscape(canvas, w, H, l, H)
                 }
-                // The mist holds on under the wave line too, where the wave dips below it.
                 mist(canvas, w, H * 0.42f, edge, mood.mist, H)
-                wave(path, w, edge, w * 0.034f, H)
-                soft(1.2f * density)
-                p.color = Color.BLACK
-                p.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT)
-                canvas.drawPath(path, p)
+                // The lower part of the window fades into the page: no edge, the page simply takes over.
+                p.shader = LinearGradient(0f, edge - w * 0.24f, 0f, edge, Color.BLACK, Color.TRANSPARENT, Shader.TileMode.CLAMP)
+                p.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                canvas.drawRect(0f, 0f, w, H, p)
                 reset()
                 canvas.restoreToCount(layer)
                 if (photo != null) {
@@ -384,6 +392,34 @@ internal object ScenePainter {
                     grain(canvas, w, h)
                     leaves(canvas, w, h * 0.22f)
                     bokeh(canvas, w, h)
+                }
+            }
+            SceneLayout.GROUND -> {
+                // Cream above, the landscape below; its upper part dissolves into the page.
+                val top = h * 0.4f
+                EarthPainter.paint(canvas, w, h, density, null)
+                reset()
+                val layer = canvas.saveLayer(0f, top, w, h, null)
+                if (photo != null) {
+                    drawPhoto(canvas, photo, scenery, 0f, top, w, h - top, focus(scenery).first, 0.3f)
+                } else {
+                    canvas.save()
+                    canvas.translate(0f, top)
+                    landscape(canvas, w, h - top, l, h - top)
+                    canvas.restore()
+                }
+                p.shader = LinearGradient(0f, top, 0f, top + (h - top) * 0.38f, Color.TRANSPARENT, Color.BLACK, Shader.TileMode.CLAMP)
+                p.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                canvas.drawRect(0f, top, w, h, p)
+                reset()
+                canvas.restoreToCount(layer)
+            }
+            SceneLayout.PICTURE -> {
+                if (photo != null) {
+                    val (fx, fy) = focus(scenery)
+                    drawPhoto(canvas, photo, scenery, 0f, 0f, w, h, fx, fy)
+                } else {
+                    landscape(canvas, w, h, l, h)
                 }
             }
             SceneLayout.CARD_BOTTOM -> {
@@ -986,19 +1022,6 @@ internal object ScenePainter {
         )
         c.drawRect(0f, top, w, maxOf(bottom, to), p)
         p.shader = null
-    }
-
-    /** The area under a soft wave around [y] (two gentle swells, like the welcome art), down to [bottom]. */
-    private fun wave(into: Path, w: Float, y: Float, amp: Float, bottom: Float) {
-        into.reset()
-        into.moveTo(-4f, bottom + 4f)
-        val steps = 48
-        for (i in 0..steps) {
-            val t = 2 * PI.toFloat() * i / steps
-            into.lineTo(w * i / steps, y + amp * (0.62f * sin(0.9f * t + 0.6f) + 0.38f * sin(1.9f * t + 1.02f)))
-        }
-        into.lineTo(w + 4f, bottom + 4f)
-        into.close()
     }
 
     /** The light of the scene being painted ([paint]). */

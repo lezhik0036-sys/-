@@ -32,8 +32,8 @@ object Palette {
     /** Border of a selected card or chip. */
     val OliveLine = V2.Olive
 
-    /** Icon circles. */
-    val SageBadge = V2.OliveLight
+    /** Icon circles: beige, a thin olive icon. */
+    val SageBadge = V2.SandLight
     val SageSelected = V2.Mist
     val SageTag = V2.OliveLight
 
@@ -55,11 +55,12 @@ object Palette {
 
     val Olive = V2.Olive
 
-    /** Clay (MAMA Coral): the one main action of a screen and its glow. */
-    val Clay = V2.Coral
-    val ClayLight = V2.CoralLight
+    /** Moss: the one main action of a screen. */
+    val Moss = V2.Moss
+    val MossLight = V2.MossLight
+    val MossDeep = V2.MossDeep
 
-    /** Something still needed ("Нужно"): clay on a pale clay pill, never an alarm. */
+    /** Something still needed ("Нужно"): warm amber on a pale pill, never an alarm. */
     val ClaySoft = V2.ClaySoft
     val ClayInk = V2.ClayInk
 
@@ -81,17 +82,17 @@ object Palette {
     val Shadow = Color.argb(0x4A, 0x7A, 0x5E, 0x40)
     val ShadowAmbient = Color.argb(0xFF, 0x8A, 0x6A, 0x4A)
 
-    /** Clay glow under the main button. */
-    val Glow = Color.argb(0x90, 0xC9, 0x6F, 0x62)
-    val GlowAmbient = Color.argb(0xFF, 0xC9, 0x6F, 0x62)
+    /** Moss shadow under the main button. */
+    val Glow = Color.argb(0x90, 0x42, 0x4C, 0x28)
+    val GlowAmbient = Color.argb(0xFF, 0x42, 0x4C, 0x28)
 
     /** Soft sand rim on card edges. */
-    val Rim = Color.argb(0x80, 0xEB, 0xDC, 0xC9)
+    val Rim = Color.argb(0x66, 0xE6, 0xD6, 0xBD)
 
-    /** Behind dialogs and sheets: forest ink, lightly. */
-    val Scrim = Color.argb(0x5C, 0x17, 0x30, 0x2E)
+    /** Behind dialogs and sheets: warm ink, lightly. */
+    val Scrim = Color.argb(0x5C, 0x2B, 0x26, 0x15)
 
-    val Ripple = Color.argb(0x1F, 0x47, 0x53, 0x42)
+    val Ripple = Color.argb(0x1F, 0x52, 0x5C, 0x33)
     val RippleOnAccent = Color.argb(0x33, 0xFF, 0xFF, 0xFF)
 
     /** Test tools only (debug / pilot build): amber with a dashed outline, never on the main screens. */
@@ -101,10 +102,11 @@ object Palette {
 }
 
 /**
- * Type scale (MAMA_DESIGN_SYSTEM_V2 «Типографика»). Manrope only, quotes
- * included; bundled, so the phone's font setting never changes the look.
- * [leading] is the distance between baselines in em (0 = the font's own
- * line height).
+ * Type scale (MAMA_DESIGN_SYSTEM_V2 «Типографика»): the serif (Cormorant
+ * Garamond) for titles, values, numbers, buttons and thoughts, with lining
+ * figures; Manrope for the small text (labels, captions, body). Both are
+ * bundled, so the phone's font setting never changes the look. [leading] is
+ * the distance between baselines in em (0 = the font's own line height).
  */
 enum class Typo(
     val sizeSp: Float,
@@ -113,30 +115,31 @@ enum class Typo(
     private val leading: Float = 0f,
     private val caps: Boolean = false,
     private val tabular: Boolean = false,
+    private val serif: Boolean = false,
 ) {
     /** Screen title: "Всё готово", "Этот путь продолжается". */
-    DISPLAY(31f, 800, tracking = -0.022f, leading = 1.1f),
+    DISPLAY(36f, 600, tracking = -0.01f, leading = 1.06f, serif = true),
 
     /** Sheet title, big card title. */
-    HEADLINE(23f, 800, tracking = -0.015f, leading = 1.14f),
+    HEADLINE(27f, 600, leading = 1.1f, serif = true),
 
     /** Card title: "7 дней", "Начать заново". */
-    TITLE(20f, 800, tracking = -0.01f, leading = 1.15f),
+    TITLE(23f, 600, leading = 1.12f, serif = true),
 
     /** Value in a summary row: "Анна", "21:00 – 07:00". */
-    VALUE(17f, 700, tracking = -0.005f, leading = 1.2f),
+    VALUE(20f, 600, leading = 1.15f, serif = true),
 
     /** Two lines under the title. */
-    SUBTITLE(17f, 500, leading = 1.3f),
+    SUBTITLE(19f, 500, leading = 1.24f, serif = true),
     BODY(15f, 500, leading = 1.38f),
 
     /** Field label: "Длительность", "Доверенный контакт". */
     LABEL(13.5f, 500, leading = 1.3f),
     CAPTION(12.5f, 500, leading = 1.32f),
-    BUTTON(16f, 700),
+    BUTTON(20f, 600, serif = true),
 
     /** "M A M A" in the top bar. */
-    WORDMARK(16f, 600, tracking = 0.36f),
+    WORDMARK(19f, 600, tracking = 0.14f, serif = true),
 
     /** "6 из 6". */
     STEP(14f, 500),
@@ -145,39 +148,41 @@ enum class Typo(
     TAG(10.5f, 800, tracking = 0.06f, caps = true),
 
     /** "500 ₽" on the "Цена слова" card. */
-    AMOUNT(40f, 800, tracking = -0.02f, tabular = true),
+    AMOUNT(46f, 500, tabular = true, serif = true),
 
     /** Big numbers: lock timer, values on the home screen. */
-    NUMBER(32f, 800, tracking = -0.02f, tabular = true),
+    NUMBER(40f, 500, tabular = true, serif = true),
 
     /** A quiet thought: quote cards, the motivation screen. */
-    QUOTE(19f, 600, tracking = -0.005f, leading = 1.32f),
-    QUOTE_ITALIC(19f, 500, tracking = -0.005f, leading = 1.32f),
+    QUOTE(22f, 500, leading = 1.22f, serif = true),
+    QUOTE_ITALIC(22f, 500, leading = 1.22f, serif = true),
 
-    /** Sans quote: home screen. */
-    QUOTE_SANS(15f, 500, leading = 1.38f),
+    /** A short line on the home screen. */
+    QUOTE_SANS(19f, 500, leading = 1.24f, serif = true),
     ;
 
     fun applyTo(view: TextView) {
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        view.typeface = MamaFonts.ui(view.context, weight)
+        view.typeface = if (serif) MamaFonts.serif(view.context, weight) else MamaFonts.ui(view.context, weight)
         view.letterSpacing = tracking
         if (leading > 0f) {
             // Baseline-to-baseline distance relative to the font's own line height (ascent + descent).
-            val factor = leading / MANROPE_LINE
+            val factor = leading / if (serif) CORMORANT_LINE else MANROPE_LINE
             // Before Android 9 the last line is shortened too, which could cut descenders: never tighter there.
             view.setLineSpacing(0f, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) factor else maxOf(factor, 1f))
         } else {
             view.setLineSpacing(0f, 1f)
         }
         view.isAllCaps = caps
-        view.fontFeatureSettings = if (tabular) "tnum" else null
+        // The serif's figures are old-style by default: lining ones read as numbers ("12", not "I2").
+        view.fontFeatureSettings = listOfNotNull("lnum".takeIf { serif }, "tnum".takeIf { tabular }).joinToString(",").ifEmpty { null }
         view.includeFontPadding = false
     }
 
     private companion object {
-        /** (ascent + descent) / em of Manrope (hhea / OS/2 typo metrics). */
+        /** (ascent + descent) / em of the bundled fonts (hhea / OS/2 typo metrics). */
         const val MANROPE_LINE = 1.366f
+        const val CORMORANT_LINE = 1.211f
     }
 }
 

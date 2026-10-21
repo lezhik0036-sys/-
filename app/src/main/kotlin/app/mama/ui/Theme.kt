@@ -63,6 +63,9 @@ object MamaFonts {
     /** Manrope, the interface font, at a given weight (200–800). */
     fun ui(context: Context, weight: Int): Typeface = variable(context, "fonts/Manrope.ttf", weight)
 
+    /** Cormorant Garamond, the serif of titles, numbers, buttons and thoughts (300–700). */
+    fun serif(context: Context, weight: Int): Typeface = variable(context, "fonts/CormorantGaramond.ttf", weight)
+
     @Synchronized
     private fun variable(context: Context, path: String, weight: Int): Typeface = cache.getOrPut("$path@$weight") {
         runCatching {

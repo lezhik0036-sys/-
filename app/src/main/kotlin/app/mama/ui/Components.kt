@@ -151,26 +151,19 @@ class Kit(val context: Context) {
         trailing: String? = null,
         onClick: () -> Unit,
     ): View = row().apply {
-        setPadding(dp(14), dp(14), dp(14), dp(14))
+        setPadding(dp(14), dp(12), dp(18), dp(12))
         minimumHeight = dp(76)
-        val base = if (selected) shape(Palette.SageSelected, Radii.CARD, Palette.OliveLine, 1.6f) else design.surface(MamaColors.PureCard, Radii.CARD)
+        // As on the approved series screen: cream rows, the chosen one outlined in moss with a moss circle.
+        val base = if (selected) shape(Palette.Card, Radii.CARD, Palette.Moss, 1.4f) else design.surface(Palette.Card, Radii.CARD)
         background = pressable(base, Radii.CARD)
-        design.elevate(this, if (selected) 2.5f else 2f)
-        addView(design.iconCircle(icon, 44, if (selected) CircleStyle.FILLED else CircleStyle.MINT))
+        design.elevate(this, if (selected) 2.5f else 1.5f)
+        addView(design.iconCircle(icon, 50, if (selected) CircleStyle.FILLED else CircleStyle.SAND))
         val texts = column()
         texts.addView(design.text(title, Typo.VALUE))
-        texts.addView(design.text(subtitle, Typo.CAPTION, Palette.InkMuted), gap(4))
-        addView(texts, weight().apply { leftMargin = dp(14) })
+        texts.addView(design.text(subtitle, Typo.CAPTION, Palette.InkMuted), gap(3))
+        addView(texts, weight().apply { leftMargin = dp(16) })
         trailing?.let {
-            addView(design.text(it, Typo.VALUE), wrap().apply { leftMargin = dp(8) })
-        }
-        if (selected) {
-            addView(FrameLayout(context).apply {
-                background = oval(Palette.OliveDeep)
-                addView(icon(Icon.CHECK, Palette.OnAccent, 14), FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER))
-            }, size(24).apply { leftMargin = dp(10) })
-        } else {
-            addView(icon(Icon.CHEVRON_RIGHT, Palette.InkSoft, 18), size(18).apply { leftMargin = dp(8) })
+            addView(design.text(it, Typo.VALUE, if (selected) Palette.Moss else Palette.Ink), wrap().apply { leftMargin = dp(8) })
         }
         isSelected = selected
         clickable(this, onClick)

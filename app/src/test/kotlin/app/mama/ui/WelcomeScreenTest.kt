@@ -4,7 +4,6 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import app.mama.ui.design.HeroIllustration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -15,24 +14,22 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
- * The welcome (Design System v2): the approved illustration on top as a view
- * of its own, whole down to its wave; the welcome as real text; "Начать свой
- * путь" always on screen and "Мой путь" under it; on a Pixel 6 and on a
- * narrower phone.
+ * The welcome, exactly as approved: the art covers the screen; the welcome as
+ * real text in its card; "Начать путь" always on screen; the three notes under
+ * it; "Мой путь" still at hand; on a Pixel 6 and on a narrower phone.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class WelcomeScreenTest {
     private val welcome = listOf(
         "Добро пожаловать в MAMA",
-        "Ты уже сделал важный шаг — выбрал больше времени для настоящей жизни.",
-        "MAMA поможет сохранить решение, когда вечером захочется его отменить.",
-        "Один вечер. Одно решение. Начнём.",
-        "Начать свой путь",
+        "Здесь ты не один. Природа напоминает: всё можно изменить. Маленькие шаги ведут к большой, свободной и осознанной жизни.",
+        "Начать путь",
+        "Забота о себе",
+        "Больше свободы",
+        "Осознанная жизнь",
         "Мой путь",
     )
 
@@ -45,8 +42,8 @@ class WelcomeScreenTest {
     private fun content(a: MainActivity) = a.findViewById<ViewGroup>(android.R.id.content)!!
 
     private fun texts(v: View): List<String> = when (v) {
-        // Non-breaking spaces read as spaces.
-        is TextView -> listOf(v.text.toString().replace('\u00A0', ' '))
+        // Non-breaking spaces and line breaks read as spaces.
+        is TextView -> listOf(v.text.toString().replace(' ', ' ').replace('\n', ' '))
         is ViewGroup -> (0 until v.childCount).flatMap { texts(v.getChildAt(it)) }
         else -> emptyList()
     }
@@ -57,17 +54,16 @@ class WelcomeScreenTest {
         return at[1] - r[1] + v.height
     }
 
-    /** The illustration is shown whole, down to its wave (900 rows of a 941 px wide art), as wide as the screen. */
-    private fun assertHero(a: MainActivity) {
+    /** The art covers the whole screen; the button is on it. */
+    private fun assertArt(a: MainActivity) {
         val root = content(a)
-        val hero = root.findViewWithTag<View>(WELCOME_HERO)
-        assertTrue(hero is HeroIllustration)
-        val whole = (hero.width * 900f / 941).roundToInt()
-        assertTrue("illustration height ${hero.height}, whole art $whole", abs(hero.height - whole) <= 1)
-        assertEquals("as wide as the screen", root.width, hero.width)
+        val art = root.findViewWithTag<View>(WELCOME_HERO)
+        assertNotNull("the welcome art", art)
+        assertEquals("as wide as the screen", root.width, art.width)
+        assertEquals("as high as the screen", root.height, art.height)
         assertNotNull("«Мой путь» stays", root.findViewWithTag<View>(OPEN_PATH))
-        val cta = root.findViewsWithText("Начать свой путь")
-        assertTrue("«Начать свой путь» is on screen", cta.isNotEmpty() && bottomIn(cta.first(), root) <= root.height && cta.first().isShown)
+        val cta = root.findViewsWithText("Начать путь")
+        assertTrue("«Начать путь» is on screen", cta.isNotEmpty() && bottomIn(cta.first(), root) <= root.height && cta.first().isShown)
     }
 
     private fun ViewGroup.findViewsWithText(text: String): List<View> =
@@ -75,27 +71,27 @@ class WelcomeScreenTest {
 
     @Test
     @Config(qualifiers = "w411dp-h914dp-xxhdpi")
-    fun `Pixel 6 - the welcome as real text under the illustration, nothing cut`() {
+    fun `Pixel 6 - the approved welcome with its real text`() {
         val a = open()
         val shown = texts(content(a))
         for (t in welcome) assertTrue("«$t» in $shown", t in shown)
-        assertFalse("the old welcome is gone", shown.any { it.contains("Ты уже решил") || it.contains("решил изменить вечер") })
-        assertHero(a)
+        assertFalse("the earlier welcomes are gone", shown.any { it.contains("Ты уже сделал важный шаг") || it.contains("Ты уже решил") })
+        assertArt(a)
     }
 
     @Test
     @Config(qualifiers = "w360dp-h720dp-xhdpi")
-    fun `a narrower phone - the same, the illustration whole`() {
+    fun `a narrower phone - the same, the art covering the screen`() {
         val a = open()
         val shown = texts(content(a))
         for (t in welcome) assertTrue("«$t» in $shown", t in shown)
-        assertHero(a)
+        assertArt(a)
     }
 
     @Test
-    fun `Начать свой путь leads into the same setup as before`() {
+    fun `Начать путь leads into the same setup as before`() {
         val a = open()
-        content(a).findViewsWithText("Начать свой путь").first().performClick()
+        content(a).findViewsWithText("Начать путь").first().performClick()
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(MainActivity.Step.PERMISSIONS, a.step)
     }

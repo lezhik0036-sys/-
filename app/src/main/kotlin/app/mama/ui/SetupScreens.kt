@@ -3,11 +3,15 @@ package app.mama.ui
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.text.Editable
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextWatcher
+import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
 import app.mama.billing.Product
@@ -24,8 +28,9 @@ import app.mama.platform.Mama
 import app.mama.platform.Promise
 import app.mama.ui.MainActivity.Choice
 import app.mama.ui.MainActivity.Step
-import app.mama.ui.design.HeroIllustration
+import app.mama.ui.design.ArtLayout
 import app.mama.ui.design.NoteTone
+import app.mama.ui.design.PageDots
 import app.mama.ui.design.Palette
 import app.mama.ui.design.SceneLayout
 import app.mama.ui.design.SceneMood
@@ -145,87 +150,118 @@ private fun shortDuration(d: Duration): String {
 // ---------------- 1. Welcome ----------------
 
 /**
- * The welcome window: the production photo of a quiet dawn over the lake
- * (`scenes/v1/dawn.webp`) in the grade of every nature window, misted towards
- * the water and ending in the soft wave; the page under the wave transparent.
- * Its own asset: no other state shows it.
+ * The approved welcome (docs/design-reference/nature_v3/01_welcome_full.webp),
+ * kept as it is: its art — the MAMA mark and line, the woman embracing the
+ * land, the golden valley, the card and the leaves around it — with the
+ * mockup's iOS status bar and its baked texts and buttons removed, so the
+ * real ones can stand in their places. 941 × 1672 px.
  */
-internal const val WELCOME_ART = "art/welcome_dawn.webp"
+internal const val WELCOME_ART = "art/welcome_nature.webp"
 
-/** Tag of the welcome illustration (tests). */
+/** Tag of the welcome art (tests). */
 internal const val WELCOME_HERO = "welcome_hero"
 
+/** Where the welcome card's content sits on the art (its pixels). */
+private object WelcomeArt {
+    const val WIDTH = 941
+    const val HEIGHT = 1672
+    val ICON_LEFTS = intArrayOf(238, 420, 604)
+    const val ICON_TOP = 1395
+    const val ICON_SIZE = 98
+}
+
 /**
- * The first screen: nature first — a quiet dawn over the lake ending in the
- * soft wave; the welcome as real text on the milky page; "Начать свой путь"
- * always in view and "Мой путь" under it. On a short screen the text
- * scrolls under the button and fades there. Before the first use the button
+ * The first screen, exactly as approved: the art covers the screen and the
+ * real title, text, "Начать путь", the three quiet notes under it and the
+ * page dots stand where the art was drawn with them; a quiet "Мой путь" in
+ * the sky (the way to everything done, 3A.1). Before the first use the button
  * leads through the onboarding into the same setup as before.
  */
 internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
-    val d = v2
-    val body = d.k.column()
-    body.addView(
-        HeroIllustration(this, WELCOME_ART, imageWidth = 941, imageHeight = 900, minShown = 900, maxShown = 900, page = V2.Milk, fadeBottom = false)
-            .apply { tag = WELCOME_HERO },
-        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
-    )
-    // A short screen (a small phone) gets slightly more compact type, so more of the welcome is in view.
-    val compact = resources.configuration.screenHeightDp < 780
-    val text = d.k.column().apply { setPadding(d.dp(Spacing.SCREEN + 4), 0, d.dp(Spacing.SCREEN + 4), d.dp(14)) }
-    // Non-breaking spaces keep "в MAMA" and "шаг —" together.
-    text.addView(d.text(d.accented("Добро пожаловать в\u00A0MAMA", "MAMA"), Typo.DISPLAY).apply { textSize = if (compact) 28f else 32f }, d.k.fill())
-    text.addView(d.text("Ты уже сделал важный шаг\u00A0— выбрал больше времени для настоящей жизни.", Typo.SUBTITLE, V2.Ink).apply {
-        if (compact) textSize = 16f
-    }, d.k.gap(if (compact) 10 else 14))
-    text.addView(d.text("MAMA поможет сохранить решение, когда вечером захочется его отменить.", Typo.BODY, V2.InkMuted).apply {
-        textSize = if (compact) 14.5f else 15.5f
-    }, d.k.gap(if (compact) 8 else 10))
-    text.addView(d.text("Один вечер. Одно решение. Начнём.", Typo.VALUE, V2.OliveDeep).apply {
-        textSize = if (compact) 15f else 16f
-    }, d.k.gap(if (compact) 10 else 14))
-    body.addView(text, d.k.fill())
-    val start = d.primary("Начать свой путь") {
+    val d = design
+    val screen = ArtLayout(this, WELCOME_ART, WelcomeArt.WIDTH, WelcomeArt.HEIGHT)
+    screen.art.apply {
+        tag = WELCOME_HERO
+        contentDescription = "MAMA — твоя тихая опора на пути к более свободной жизни"
+    }
+    // "в MAMA" a little larger, as on the art; the non-breaking space keeps it on the second line.
+    val title = SpannableString("Добро пожаловать в\u00A0MAMA").apply {
+        setSpan(RelativeSizeSpan(1.14f), length - 4, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+    screen.place(screen.text(d.text(title, Typo.DISPLAY, V2.Ink, center = true).apply {
+        typeface = MamaFonts.serif(this@welcomeScreen, 500)
+        setLineSpacing(0f, 0.9f)
+    }, 54f), 190, 1016, 752, 1150)
+    screen.place(screen.text(d.text(
+        "Здесь ты не один. Природа напоминает:\nвсё можно изменить. Маленькие шаги\nведут к большой, свободной и осознанной жизни.",
+        Typo.BODY, V2.InkMuted, center = true,
+    ).apply {
+        typeface = MamaFonts.ui(this@welcomeScreen, 400)
+        setLineSpacing(0f, 1.08f)
+    }, 25.5f), 150, 1146, 792, 1258)
+    val start = d.primaryButton("Начать путь", large = true) {
         beginDraft()
         if (!prefs.getBoolean(MainActivity.ONBOARDING_SEEN, false)) onboardingPage = 1
         go(Step.PERMISSIONS)
     }
-    // A quiet way to everything already done, at any time between series (3A.1).
-    val path = d.link("Мой путь") { openPath() }.apply { tag = OPEN_PATH }
-    val screen = design.screen(null, header = null, body = body, cta = design.bottomCta(start, path))
-    screen.background = d.page()
-    // Text that does not fit fades into a scroll above the button instead of being cut mid-line.
-    (body.parent as? ScrollView)?.apply {
-        isVerticalFadingEdgeEnabled = true
-        setFadingEdgeLength(d.dp(32))
+    screen.place(screen.text(start, 40f), 178, 1272, 768, 1372)
+    // Three quiet notes, not buttons: what the path is about.
+    listOf(Icon.SPROUT to "Забота\nо себе", Icon.MOUNTAIN to "Больше\nсвободы", Icon.SUN to "Осознанная\nжизнь").forEachIndexed { i, (icon, label) ->
+        val x = WelcomeArt.ICON_LEFTS[i]
+        screen.place(FrameLayout(this).apply {
+            background = d.oval(V2.SandLight)
+            d.elevate(this, 1f)
+            val pad = d.dp(14)
+            setPadding(pad, pad, pad, pad)
+            addView(ImageView(this@welcomeScreen).apply { setImageDrawable(IconDrawable(icon, Color.rgb(0x62, 0x5E, 0x32), 1.5f)) })
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, x, WelcomeArt.ICON_TOP, x + WelcomeArt.ICON_SIZE, WelcomeArt.ICON_TOP + WelcomeArt.ICON_SIZE)
+        screen.place(screen.text(d.text(label, Typo.LABEL, Color.rgb(0x8A, 0x82, 0x70), center = true).apply {
+            typeface = MamaFonts.ui(this@welcomeScreen, 400)
+            setLineSpacing(0f, 1.0f)
+        }, 24f), x - 52, 1500, x + WelcomeArt.ICON_SIZE + 52, 1562, center = false)
     }
+    screen.place(PageDots(this, 3, 0), 410, 1578, 532, 1602)
+    // A quiet way to everything already done, at any time between series (3A.1).
+    val path = d.linkButton("Мой путь") { openPath() }.apply {
+        tag = OPEN_PATH
+        background = d.pressable(d.shape(Color.argb(0xB8, 0xFD, 0xF9, 0xF1), 22), 22)
+    }
+    screen.place(screen.text(path, 30f), 726, 92, 918, 150)
     return screen to true
 }
 
 // ---------------- Onboarding ----------------
 
-/** The three onboarding pages, in order. */
+/** One onboarding page: its title, the line under it and a quiet line in its card. */
+internal class OnboardingPage(val title: String, val line: String, val note: String)
+
+/** The three onboarding pages (docs/design-reference/nature_v3/02–04), in order. */
 internal val ONBOARDING = listOf(
-    "Тебе не нужно становиться сильнее. Тебе нужен ритм.",
-    "Днём ты принимаешь решение. Ночью MAMA помогает его сохранить.",
-    "Начнём с нескольких ночей.",
+    OnboardingPage("Тебе не нужно становиться сильнее", "Тебе нужен ритм.", "Маленькие шаги ведут к большим переменам."),
+    OnboardingPage("Днём ты принимаешь решение.", "Ночью MAMA помогает его сохранить.", "Ты выбираешь направление. MAMA помогает идти."),
+    OnboardingPage("Начнём с нескольких ночей.", "Маленькая серия — большие изменения.", "Ты удивишься, насколько многое может измениться."),
 )
 
 /**
- * One onboarding page (1–3): the dawn of the welcome goes on, its light
- * growing page by page (quiet, calm, bright) while the view comes down from
- * the sky (a rhythm) over the horizon (day and night) to the shore where the
- * path begins; one line under it; the pages as steps of a path. After the
- * last one: the setup, as before.
+ * One onboarding page (1–3), as approved: the landscape over the whole
+ * screen, its light growing page by page (quiet, calm, bright); the title and
+ * its line in the sky; a cream card at the bottom with a quiet line, the page
+ * dots and a round "→". After the last page: the setup, as before.
  */
 internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     val d = design
-    val b = d.body(0)
-    // Room for the dawn (it ends in its wave a little above the words).
-    val heroDp = (resources.configuration.screenWidthDp * 1.14f).toInt() - 96
-    b.addView(View(this), LinearLayout.LayoutParams(1, d.dp(heroDp)))
-    b.addView(d.text(ONBOARDING[page - 1], Typo.DISPLAY).apply { textSize = 28f }, d.fill())
-    val next = d.primaryButton("Далее", large = true) {
+    val content = ONBOARDING[page - 1]
+    val narrow = (resources.displayMetrics.widthPixels * 0.84f).toInt()
+    val b = d.body(40)
+    b.addView(d.text(content.title, Typo.DISPLAY).apply { textSize = 35f; maxWidth = narrow }, d.wrap())
+    b.addView(d.text(content.line, Typo.SUBTITLE, V2.InkMuted).apply { textSize = 21f; maxWidth = narrow }, d.wrap().apply { topMargin = d.dp(14) })
+    val card = d.card(paddingDp = 22, radiusDp = V2.CARD_LARGE)
+    card.addView(d.text(content.note, Typo.QUOTE, V2.InkMuted, center = true).apply { textSize = 20f }, d.fill().apply { topMargin = d.dp(6) })
+    val row = d.row()
+    row.addView(PageDots(this, ONBOARDING.size, page - 1), LinearLayout.LayoutParams(d.dp(66), d.dp(12)))
+    row.addView(View(this), d.weight())
+    row.addView(d.roundButton(Icon.ARROW_RIGHT, "Далее") {
         if (page < ONBOARDING.size) {
             onboardingPage = page + 1
         } else {
@@ -233,10 +269,10 @@ internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
             onboardingPage = 0
         }
         render()
-    }
+    })
+    card.addView(row, d.gap(22))
     val mood = listOf(SceneMood.QUIET, SceneMood.CALM, SceneMood.BRIGHT)[page - 1]
-    val sun = listOf(0.78f, 0.31f, 0.08f)[page - 1]
-    return v1Frame(Scenery.DAWN, d.stepHeader(page, ONBOARDING.size) { onboardingBack() }, b, d.bottomCta(next), layout = SceneLayout.HERO, mood = mood, focusY = sun)
+    return v1Frame(Scenery.DAWN, null, b, card, layout = SceneLayout.FULL, mood = mood)
 }
 
 /** Back from an onboarding page: the page before, or the welcome. */

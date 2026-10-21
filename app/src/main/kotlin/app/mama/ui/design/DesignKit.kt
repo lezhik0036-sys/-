@@ -192,13 +192,15 @@ class DesignKit(val context: Context) {
         val (fill, tint) = when (style) {
             CircleStyle.MINT -> Palette.SageBadge to Palette.OliveInk
             CircleStyle.FILLED -> Palette.OliveDeep to Palette.OnAccent
-            CircleStyle.SAND -> Palette.ClaySoft to Palette.Clay
+            CircleStyle.SAND -> Palette.SandSoft to Palette.SandInk
             CircleStyle.WHITE -> Palette.Card to Palette.OliveInk
             CircleStyle.TEST -> Palette.TestFill to Palette.TestInk
         }
         background = oval(fill)
         val inner = (sizeDp * 0.52f).toInt()
-        addView(ImageView(context).apply { setImageDrawable(IconDrawable(icon, tint, 2.3f, solid = true)) }, FrameLayout.LayoutParams(dp(inner), dp(inner), Gravity.CENTER))
+        // Thin line icons in beige circles; a filled (chosen) circle keeps its solid mark.
+        val filled = style == CircleStyle.FILLED
+        addView(ImageView(context).apply { setImageDrawable(IconDrawable(icon, tint, if (filled) 2.3f else 1.7f, solid = filled)) }, FrameLayout.LayoutParams(dp(inner), dp(inner), Gravity.CENTER))
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
 
@@ -207,20 +209,20 @@ class DesignKit(val context: Context) {
     // ---------------- buttons ----------------
 
     /**
-     * The one main action of a screen: a matte clay pill (MAMA Coral), white
-     * label in the centre, "→" at the right edge, a soft clay glow; [large]
-     * for the decisive action of a screen.
+     * The one main action of a screen: a moss pill, lighter at the top, a
+     * white serif label in the centre, "→" at the right edge, a soft moss
+     * shadow; [large] for the decisive action of a screen.
      */
     fun primaryButton(label: String, arrow: Boolean = true, large: Boolean = false, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.BUTTON.applyTo(this)
-        if (large) textSize = 17f
+        if (large) textSize = 21f
         setTextColor(Palette.OnAccent)
         gravity = Gravity.CENTER
-        val height = if (large) 56 else Spacing.BUTTON + 2
+        val height = if (large) 58 else Spacing.BUTTON + 4
         minHeight = dp(height)
         minimumHeight = dp(height)
-        val pill = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(0xD0, 0x7A, 0x6C), Palette.Clay)).apply {
+        val pill = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Palette.MossLight, Palette.Moss, Palette.MossDeep)).apply {
             cornerRadius = dpf(height / 2f)
         }
         background = RippleDrawable(ColorStateList.valueOf(Palette.RippleOnAccent), pill, shape(Color.WHITE, height / 2))
@@ -238,11 +240,26 @@ class DesignKit(val context: Context) {
         clickable(this, onClick)
     }
 
-    /** A second action that does not compete: a milky pill with a sand outline, deep olive label. */
+    /** A round moss button with an icon (the "→" of the onboarding); [description] is what it says aloud. */
+    fun roundButton(icon: Icon, description: String, sizeDp: Int = 60, onClick: () -> Unit): View = FrameLayout(context).apply {
+        background = RippleDrawable(
+            ColorStateList.valueOf(Palette.RippleOnAccent),
+            GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Palette.MossLight, Palette.Moss, Palette.MossDeep)).apply { shape = GradientDrawable.OVAL },
+            oval(Color.WHITE),
+        )
+        outlineProvider = ViewOutlineProvider.BACKGROUND
+        elevate(this, 3f, Palette.Glow, Palette.GlowAmbient)
+        addView(ImageView(context).apply { setImageDrawable(IconDrawable(icon, Palette.OnAccent, 2.0f)) }, FrameLayout.LayoutParams(dp(sizeDp * 2 / 5), dp(sizeDp * 2 / 5), Gravity.CENTER))
+        contentDescription = description
+        layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+        clickable(this, onClick)
+    }
+
+    /** A second action that does not compete: a cream pill with a sand outline, a moss serif label. */
     fun secondaryButton(label: String, icon: Icon? = null, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.BUTTON.applyTo(this)
-        textSize = 15.5f
+        textSize = 18.5f
         setTextColor(Palette.OliveInk)
         gravity = Gravity.CENTER
         minHeight = dp(Spacing.BUTTON)
@@ -261,7 +278,7 @@ class DesignKit(val context: Context) {
     fun linkButton(label: String, color: Int = Palette.OliveInk, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.BUTTON.applyTo(this)
-        textSize = 15.5f
+        textSize = 18f
         setTextColor(color)
         gravity = Gravity.CENTER
         minHeight = dp(44)
@@ -278,15 +295,15 @@ class DesignKit(val context: Context) {
      */
     fun quietAction(icon: Icon, label: String, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
-        Typo.LABEL.applyTo(this)
-        textSize = 15f
+        Typo.VALUE.applyTo(this)
+        textSize = 17f
         setTextColor(Palette.InkMuted)
         gravity = Gravity.CENTER
         minHeight = dp(46)
         minimumHeight = dp(46)
         setPadding(dp(18), dp(10), dp(20), dp(10))
         // Nearly opaque: the sprigs of the earth page stay behind it, never show through.
-        background = pressable(shape(Color.argb(0xF2, 0xFA, 0xF3, 0xEA), 23, Color.argb(0xB3, 0xEB, 0xDC, 0xC9), 1f), 23)
+        background = pressable(shape(Color.argb(0xF2, 0xFD, 0xF9, 0xF1), 23, Color.argb(0xB3, 0xE6, 0xD6, 0xBD), 1f), 23)
         val d = IconDrawable(icon, Palette.Olive, 1.8f, solid = true).apply { setBounds(0, 0, dp(18), dp(18)) }
         setCompoundDrawables(d, null, null, null)
         compoundDrawablePadding = dp(10)
@@ -354,6 +371,39 @@ class DesignKit(val context: Context) {
         (Color.green(a) + (Color.green(b) - Color.green(a)) * t).toInt(),
         (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t).toInt(),
     )
+
+    /**
+     * The days of a series as a path of circles (1 … [total]): the [done]
+     * ones moss with a check, the day now ([current], 1-based) ringed in moss,
+     * the rest quiet beige; the number of each day under it.
+     */
+    fun dayCircles(done: Int, total: Int, current: Int? = null): View = row().apply {
+        gravity = Gravity.CENTER_HORIZONTAL
+        val size = if (total > 7) 30 else 36
+        for (i in 1..total) {
+            val item = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
+            val circle = FrameLayout(context).apply {
+                background = when {
+                    i <= done -> oval(Palette.Moss)
+                    i == current -> oval(Palette.Card, Palette.Moss, 2f)
+                    else -> oval(Palette.Card, V2.Sand, 1.5f)
+                }
+                val mark = if (i <= done) Palette.OnAccent else if (i == current) Palette.Moss else V2.Sand
+                addView(ImageView(context).apply { setImageDrawable(IconDrawable(Icon.CHECK, mark, 2.2f)) }, FrameLayout.LayoutParams(dp(size / 2), dp(size / 2), Gravity.CENTER))
+            }
+            item.addView(circle, size(size))
+            item.addView(text("$i", Typo.CAPTION, if (i <= (current ?: done)) Palette.Ink else Palette.InkSoft, center = true), centered(5))
+            addView(item, weight())
+        }
+        contentDescription = "Пройдено $done из $total"
+    }
+
+    /** A number in a small card with its label under it ("17 · Ночей пройдено"). */
+    fun tile(value: CharSequence, label: String): View = card(paddingDp = 14).apply {
+        gravity = Gravity.CENTER_HORIZONTAL
+        addView(text(value, Typo.NUMBER, Palette.Ink, center = true).apply { textSize = 34f; maxLines = 1 }, centered())
+        addView(text(label, Typo.CAPTION, Palette.InkMuted, center = true), centered(4))
+    }
 
     // ---------------- chips, tags, badges ----------------
 
@@ -834,9 +884,9 @@ class DesignKit(val context: Context) {
 
     // ---------------- navigation ----------------
 
-    /** Milky bottom navigation: Главная · Статистика · Настройки, under a hairline. */
+    /** Cream bottom navigation: Главная · Статистика · Настройки, under a hairline. */
     fun bottomNav(selected: Int, onPick: (Int) -> Unit): View = column().apply {
-        setBackgroundColor(Color.argb(0xF5, 0xFC, 0xF6, 0xEE))
+        setBackgroundColor(Color.argb(0xF5, 0xFB, 0xF5, 0xEA))
         addView(divider())
         val items = row().apply { setPadding(dp(8), dp(6), dp(8), dp(8)) }
         listOf(Icon.HOME to "Главная", Icon.CHART to "Статистика", Icon.GEAR to "Настройки").forEachIndexed { i, (ic, label) ->
@@ -889,7 +939,7 @@ class DesignKit(val context: Context) {
         focusY: Float? = null,
     ): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        background = scenery?.let { ScenicBackground(context, it, layout, mood = mood, focusY = focusY) } ?: EarthPage(context.resources.displayMetrics.density, ground = nav == null)
+        background = scenery?.let { ScenicBackground(context, it, layout, mood = mood, focusY = focusY) } ?: EarthPage(context, leaves = nav == null)
         header?.let { addView(it, fill()) }
         addView(ScrollView(context).apply {
             isFillViewport = true

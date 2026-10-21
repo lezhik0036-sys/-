@@ -1,6 +1,5 @@
 package app.mama.ui
 
-import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.view.ViewTreeObserver
@@ -33,6 +32,7 @@ import app.mama.ui.design.NoteTone
 import app.mama.ui.design.Palette
 import app.mama.ui.design.SceneLayout
 import app.mama.ui.design.SceneMood
+import app.mama.ui.design.ScenicBackground
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.SummaryItem
@@ -199,6 +199,8 @@ internal fun MainActivity.seriesDashboard(
                 motivationOpen = true
                 render()
             }
+            // The days as a path: done, today, still ahead.
+            b.addView(d.dayCircles(series.completedPeriods, n, day), d.gap(18))
         }
         series.status == SeriesStatus.ACTIVATING ->
             homeTitle(b, "MAMA включает защиту", "Проверяем защиту", Icon.SHIELD, "Это займёт несколько секунд.")
@@ -231,8 +233,8 @@ internal fun MainActivity.seriesDashboard(
     // Before the first lock: the quiet morning of a path about to begin.
     val scenery = if (series.committed) progressScenery(series) else Scenery.MORNING
     val mood = if (series.committed) progressMood(series) else SceneMood.QUIET
-    // Days as segments once the series runs; before that only the wordmark.
-    val header = if (series.committed) homeHeader("$day из $n", day, n) else homeHeader(null, 0, 0)
+    // The day counter once the series runs (the days themselves are the circles); before that only the wordmark.
+    val header = if (series.committed) homeHeader("$day из $n", 0, 0) else homeHeader(null, 0, 0)
     return v1Frame(scenery, header, b, null, nav(), SceneLayout.HERO, mood)
 }
 
@@ -392,14 +394,16 @@ internal fun MainActivity.statisticsScreen(
         Statistics.PeriodUnit.DAYS -> "Дней пройдено" to "Каждый — решение в пользу себя."
         Statistics.PeriodUnit.NIGHTS_AND_DAYS -> "Ночей и дней пройдено" to "Каждое — решение в пользу себя."
     }
-    b.addView(d.text(label, Typo.SUBTITLE, Palette.Ink), d.fill())
-    b.addView(d.text(stats.nightsDone.toString(), Typo.DISPLAY, Palette.Ink).apply { textSize = 76f }, d.wrap())
-    b.addView(d.text(each, Typo.SUBTITLE, Palette.InkMuted), d.wrap().apply { topMargin = d.dp(2) })
+    // The numbers as tiles: the nights already chosen first. Only what exists: nothing is shown as zero.
+    val tiles = d.row().apply { gravity = Gravity.TOP }
+    fun tile(value: String, caption: String) = tiles.addView(d.tile(value, caption), d.weight().apply { if (tiles.childCount > 0) leftMargin = d.dp(10) })
+    tile(stats.nightsDone.toString(), label)
+    if (stats.seriesCompleted > 0) tile(stats.seriesCompleted.toString(), "Серий завершено")
+    stats.best?.let { tile("${it.done} из ${it.planned}", "Лучший результат") }
+    b.addView(tiles, d.fill())
+    b.addView(d.text(each, Typo.SUBTITLE, Palette.InkMuted, center = true), d.gap(14))
 
-    // Only what exists: a row with nothing to say is left out, never shown as zero.
     val rows = buildList {
-        if (stats.seriesCompleted > 0) add(SummaryItem(Icon.CHECK, "Серий завершено", stats.seriesCompleted.toString()))
-        stats.best?.let { add(SummaryItem(Icon.STAR, "Лучший результат", "${it.done} из ${it.planned}")) }
         if (stats.restartsStarted > 0) {
             add(SummaryItem(Icon.REFRESH, "Продолжил после срыва", "${stats.restartsStarted} ${plural(stats.restartsStarted, "раз", "раза", "раз")}"))
         }
@@ -410,7 +414,7 @@ internal fun MainActivity.statisticsScreen(
             ))
         }
     }
-    if (rows.isNotEmpty()) b.addView(d.summaryCard(null, rows), d.gap(26))
+    if (rows.isNotEmpty()) b.addView(d.summaryCard(null, rows), d.gap(20))
 
     val pathTitle = d.text("Твой путь", Typo.HEADLINE)
     b.addView(pathTitle, d.gap(30))
@@ -564,19 +568,19 @@ internal fun MainActivity.failureScreen(
     sampleCommitment: app.mama.core.Commitment? = null,
 ): Pair<View, Boolean> {
     val v = v2
-    val b = design.body(22)
-    b.addView(design.titleBlock("Этот путь продолжается", narrow = true, lead = "Один сложный вечер не отменяет твоего решения."))
-    b.addView(v.pill(doneLine(series), Icon.SPROUT), design.wrap().apply { topMargin = design.dp(14) })
+    val b = design.body(22).apply { gravity = Gravity.CENTER_HORIZONTAL }
+    b.addView(design.titleBlock("Этот путь продолжается", center = true, lead = "Один сложный вечер не отменяет твоего решения."))
+    b.addView(v.pill(doneLine(series), Icon.SPROUT), design.centered(14))
     // The path itself: light ahead, the way back in view.
-    heroSpace(b, 168)
+    heroSpace(b, 176)
 
     // Restart: the way on, the one main action of the screen.
     val offer = v.card(paddingDp = 20, radiusDp = V2.CARD_LARGE).apply { clipToPadding = false }
     val head = v.k.row().apply { gravity = Gravity.TOP }
-    head.addView(v.bubble(Icon.REFRESH, V2.Coral, Color.argb(0x40, 0xE6, 0xA0, 0x97), 52))
+    head.addView(v.bubble(Icon.REFRESH, V2.Moss, V2.SandLight, 52))
     val texts = v.k.column()
     texts.addView(v.text("Попробовать снова", Typo.HEADLINE, V2.Ink))
-    texts.addView(v.text("Restart · ${Texts.price(series.kind.restartPriceRub)}", Typo.VALUE, V2.Coral), v.k.gap(4))
+    texts.addView(v.text("Restart · ${Texts.price(series.kind.restartPriceRub)}", Typo.VALUE, V2.Moss), v.k.gap(4))
     texts.addView(v.text("Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново.", Typo.LABEL, V2.InkMuted), v.k.gap(6))
     head.addView(texts, v.k.weight().apply { leftMargin = v.dp(14) })
     offer.addView(head, v.k.fill())
@@ -618,8 +622,8 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     val unit = if (countsNights(series.window)) plural(done, "ночь", "ночи", "ночей") else plural(done, "день", "дня", "дней")
     val b = d.body(22)
     // The result in ink, one thought per line: it is the reward of the screen.
-    b.addView(d.titleBlock("Ты сделал это.", narrow = true, lead = "$done $unit.\n$done ${plural(done, "решение", "решения", "решений")} в пользу себя.").apply {
-        (getChildAt(0) as android.widget.TextView).textSize = 36f
+    b.addView(d.titleBlock("Ты сделал это.", center = true, lead = "$done $unit.\n$done ${plural(done, "решение", "решения", "решений")} в пользу себя.").apply {
+        (getChildAt(0) as android.widget.TextView).textSize = 40f
     })
     // No badges: the title is the reward, the open sky and the sun carry the light.
     heroSpace(b, 236)
@@ -650,19 +654,25 @@ internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> 
     val d = design
     val n = series.kind.periods
     val done = series.completedPeriods
-    val b = d.body(26)
+    val b = d.body(18)
     val phrase = MotivationRotation.of(this).phrase(Placement.SUCCESS, "${series.id}:night-$done", maxLength = 70).text
-    b.addView(d.text(phrase, Typo.QUOTE, Palette.Ink).apply {
-        textSize = 28f
-        maxWidth = (resources.displayMetrics.widthPixels * 0.82f).toInt()
-    }, d.wrap())
-    b.addView(d.text("— MAMA", Typo.TAG, Palette.InkSoft), d.wrap().apply { topMargin = d.dp(14) })
-    b.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f).apply { topMargin = d.dp(200) })
+    // The landscape of this stage as a card; the thought in a card resting on it.
+    val photo = View(this).apply {
+        background = ScenicBackground(this@motivationScreen, progressScenery(series), SceneLayout.PICTURE, Palette.Card, d.dpf(V2.CARD_LARGE.toFloat()), mood = progressMood(series))
+        outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        clipToOutline = true
+        d.elevate(this, 2f)
+    }
+    b.addView(photo, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(250)))
+    val thought = d.card(paddingDp = 22, radiusDp = V2.CARD_LARGE)
+    thought.addView(d.text(phrase, Typo.QUOTE, Palette.Ink).apply { textSize = 24f }, d.fill())
+    thought.addView(d.text("— MAMA", Typo.TAG, Palette.InkSoft), d.wrap().apply { topMargin = d.dp(12) })
+    b.addView(thought, d.fill().apply { topMargin = -d.dp(44); leftMargin = d.dp(14); rightMargin = d.dp(14) })
+    b.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f).apply { topMargin = d.dp(18) })
     b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap())
-    b.addView(d.segments(done, n), d.gap(14))
+    b.addView(d.dayCircles(done, n), d.gap(14))
     val next = d.primaryButton("Продолжить", large = true) { closeMotivation(series) }
-    // The whole photo, as on the lock: one thought and the landscape, the air in between.
-    return v1Frame(progressScenery(series), d.topBar(null), b, d.bottomCta(next), layout = SceneLayout.FULL, mood = progressMood(series))
+    return lightFrame(d.topBar(null), b, d.bottomCta(next))
 }
 
 /** The motivation screen was seen for this night: back to the home screen. */

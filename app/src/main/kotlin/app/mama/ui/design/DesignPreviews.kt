@@ -52,13 +52,13 @@ object DesignPreviews {
     // ---------------- palette ----------------
 
     private fun palette(k: DesignKit) = page(k, "Палитра") {
-        addView(k.titleBlock("Палитра", "Природа и земля: молоко, песок, шалфей, олива; глина — только главное действие. Без красного."))
+        addView(k.titleBlock("Палитра", "Тёплая природа: крем, беж, песок, олива; мох — главное действие и выбор. Без красного."))
         val swatches = listOf(
             "milk" to V2.Milk, "warm" to V2.WarmBg, "card" to Palette.Card, "line" to Palette.Line,
             "sand" to V2.Sand, "sandLight" to V2.SandLight, "earth" to V2.Earth, "earthInk" to V2.EarthInk,
             "mist" to V2.Mist, "oliveLight" to V2.OliveLight, "sage" to V2.Sage, "olive" to V2.Olive,
             "oliveDeep" to V2.OliveDeep, "ink" to V2.Ink, "inkMuted" to V2.InkMuted, "inkSoft" to V2.InkSoft,
-            "clay" to V2.Coral, "clayLight" to V2.CoralLight, "claySoft" to V2.ClaySoft, "clayInk" to V2.ClayInk,
+            "moss" to V2.Moss, "mossLight" to V2.MossLight, "amberSoft" to V2.ClaySoft, "amberInk" to V2.ClayInk,
             "testInk" to Palette.TestInk, "testFill" to Palette.TestFill, "testLine" to Palette.TestLine, "onAccent" to Palette.OnAccent,
         )
         swatches.chunked(4).forEachIndexed { r, line ->
@@ -73,7 +73,7 @@ object DesignPreviews {
             addView(row, k.gap(if (r == 0) 20 else 12))
         }
         addView(section(k, "Главная кнопка · путь"), k.gap(20))
-        addView(k.primaryButton("Начать свой путь") {}, k.gap(10))
+        addView(k.primaryButton("Начать путь") {}, k.gap(10))
         addView(k.segments(4, 7), k.gap(14))
     }
 
@@ -108,7 +108,7 @@ object DesignPreviews {
             row.addView(k.text(sample, style, if (style == Typo.BUTTON) Palette.OliveInk else Palette.Ink).apply { maxLines = 1 }, k.weight())
             addView(row, k.gap(if (i == 0) 6 else 11))
         }
-        addView(k.text("Manrope — весь интерфейс, цитаты тоже", Typo.CAPTION, Palette.InkMuted), k.gap(16))
+        addView(k.text("Cormorant Garamond — заголовки, числа, кнопки, мысли · Manrope — мелкий текст", Typo.CAPTION, Palette.InkMuted), k.gap(16))
     }
 
     // ---------------- buttons, chips, tags ----------------
