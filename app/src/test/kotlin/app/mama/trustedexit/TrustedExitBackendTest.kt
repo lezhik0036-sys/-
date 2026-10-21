@@ -5,13 +5,19 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The server-authoritative Trusted Exit backend (its debug stand-in): the
  * backend owns the code, the 3-attempt rule, expiry and lock, and never
  * returns the code. These tests inject a known code so they can submit it,
- * but the code is never exposed through the API itself.
+ * but the code is never exposed through the API itself. Robolectric is used
+ * only so the backend's android.util.Log calls are shadowed.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class TrustedExitBackendTest {
 
     private var now = 0L

@@ -55,8 +55,10 @@ class MamaTrustedExitTest {
         TrustedExit.online = { true }
         TrustedExit.backend = newBackend()
         Mama.reconcile(context)
-        // A session locked right now, so Trusted Exit is available.
-        val start = Mama.start(context, LockPlan(Instant.now(), Instant.now() + Duration.ofHours(1), zone), contact)
+        // A session already locked (start a minute ago), so Trusted Exit is available.
+        // A start of exactly "now" can fall in the same millisecond as the millisecond-truncated
+        // trusted clock and read as Waiting instead of Locked, so start clearly in the past.
+        val start = Mama.start(context, LockPlan(Instant.now().minus(Duration.ofMinutes(1)), Instant.now() + Duration.ofHours(1), zone), contact)
         assertTrue(start is Mama.StartResult.Started)
         assertTrue(Mama.state(context) is LockState.Locked)
     }
