@@ -222,6 +222,25 @@ class RestartGateTest {
         assertNotNull("the 30-day cooldown is untouched", Mama.entitlements(context).standardFailedAt)
     }
 
+    // The rule: a copilka credit of the needed length is used in priority — the paid Restart is never
+    // offered while such a credit exists; it is spent, the balance is untouched, the cooldown stays.
+    @Test
+    fun `a credit of the needed length is preferred over the paid Restart`() {
+        seed(
+            Snapshot(
+                series = null,
+                entitlements = Entitlements(standardFailedAt = Instant.now().minus(Duration.ofDays(3)), standardCredits = mapOf(SeriesKind.THREE to 1)),
+                wallet = Wallet(availableKop = 44_000_00), // money is available, yet the credit is used, not charged
+            ),
+        )
+        Mama.reconcile(context)
+        val r = Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP)
+        assertEquals(Mama.SeriesStart.Started, r)
+        assertTrue("the paid Restart must not be offered when a credit of this length exists", r !is Mama.SeriesStart.Waiting)
+        assertEquals(0, Mama.standardCredits(context, SeriesKind.THREE))
+        assertEquals("the balance is untouched: the credit was used, not paid", 44_000_00L, Mama.wallet(context).availableKop)
+    }
+
     // A credit for one length does not cover another: a different length still hits the Restart/wait gate.
     @Test
     fun `a credit for one length does not cover another`() {
