@@ -162,7 +162,7 @@ success). Без отдельной команды не меняется. Экр
 | № | Ключ | Экран | Когда показывается | Код | Референс | Статус |
 |---|---|---|---|---|---|---|
 | 01 | `welcome` | «Добро пожаловать в MAMA»: арт v2 сверху, текст и «Начать свой путь →» — нативные; «Мой путь» | Первый запуск, нет серии | `SetupScreens.welcomeScreen` | `welcome_v2_mockup.webp` | v2 |
-| 48 | `welcome_narrow` | То же приветствие на узком телефоне (360 × 720 dp) | Тур скриншотов | `SetupScreens.welcomeScreen` | `welcome_v2_mockup.webp` | v2 |
+| 49 | `welcome_narrow` | То же приветствие на узком телефоне (360 × 720 dp) | Тур скриншотов | `SetupScreens.welcomeScreen` | `welcome_v2_mockup.webp` | v2 |
 | 02 | `permissions` | «Подготовим MAMA» — разрешения | Перед мастером и «Исправить защиту» | `SetupScreens.permissionsScreen` | — | — |
 
 ## Мастер STANDARD: 6 шагов
@@ -228,7 +228,7 @@ FLEX: 1 Выбор · 2 Контакт · 3 Причина · 4 Проверка
 |---|---|---|---|---|---|---|
 | 24 | `flex` | FLEX: пакет и дни | Активный пакет FLEX | `HomeScreens.flexDashboard` | стиль `13-dashboard_active.webp` | G1 (в стиле) |
 | 25 | `flex_plan` | FLEX: даты и время периода | «Запланировать FLEX-период» | `HomeScreens.flexPlannerScreen` | стиль `04-time.webp` | — |
-| — | `flex_result` | Итог FLEX | Пакет закончился | `HomeScreens.flexResultScreen` | стиль `20-failure.webp` | — |
+| 48 | `flex_result` | Итог FLEX | Пакет закончился | `HomeScreens.flexResultScreen` | стиль `20-failure.webp` | — |
 
 ## Вкладки и настройки
 

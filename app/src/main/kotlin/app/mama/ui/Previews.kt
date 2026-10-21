@@ -49,6 +49,8 @@ object Previews {
         "stats_history", "stats_empty",
         // UI v1 3A.1: the recovery screen at its "Посмотреть мой путь"; "Мой путь" opened after a completed series.
         "failure_path", "path",
+        // Design System v2 (earth): the end of a FLEX package, 5 of 7 done, 1 ended early.
+        "flex_result",
     )
 
     private val zone: ZoneId = ZoneId.of("Europe/Moscow")
@@ -130,6 +132,7 @@ object Previews {
                 ),
             ).also { if (name == "failure_path") scrollTo(it.first, OPEN_PATH) }
             "path" -> a.statisticsScreen(sampleHistory(), null, null, standalone = true)
+            "flex_result" -> a.flexResultScreen(FlexPackage("p", now.minus(20, ChronoUnit.DAYS), GrantSource.TEST_NO_PAYMENT, used = 6, successful = 5))
             "success" -> a.successScreen(
                 series(7, SeriesStatus.COMPLETED),
                 Commitment("preview", 5_000_00, now.minus(7, ChronoUnit.DAYS), CommitmentState.RELEASED, now),

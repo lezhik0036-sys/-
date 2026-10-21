@@ -777,10 +777,14 @@ private fun MainActivity.submitFlexPeriod() {
 internal fun MainActivity.flexResultScreen(flex: FlexPackage): Pair<View, Boolean> {
     val d = design
     val b = d.body(22)
-    b.addView(d.titleBlock("FLEX завершён", narrow = true, lead = "Успешно: ${flex.successful} из ${FlexPackage.PERIODS}"))
-    heroSpace(b, 198)
+    b.addView(d.titleBlock("FLEX завершён", narrow = true))
+    heroSpace(b, 230)
+    // The same words as before, now in a result card like the end of a series.
     val result = d.card(paddingDp = 20)
-    result.addView(d.valueRow(if (flex.earnedReward) Icon.CHECK else Icon.INFINITY, "Твой результат · MAMA FLEX", "${flex.successful} из ${FlexPackage.PERIODS}").view)
+    result.addView(d.row().apply {
+        addView(d.iconCircle(if (flex.earnedReward) Icon.CHECK else Icon.INFINITY, 52))
+        addView(d.text("Успешно: ${flex.successful} из ${FlexPackage.PERIODS}", Typo.TITLE), d.weight().apply { leftMargin = d.dp(16) })
+    })
     result.addView(kit.dots(FlexPackage.PERIODS, flex.successful, flex.used - flex.successful), d.gap(18))
     b.addView(result, d.gap(Spacing.GUTTER))
     val credits = Mama.entitlements(this).freeFlexCredits
