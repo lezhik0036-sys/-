@@ -5,6 +5,7 @@ import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -46,6 +47,16 @@ class RestartCooldownChainTest {
         assertEquals(SeriesStatus.BROKEN, broken.series!!.status)
         // "Вернуться на главную": the broken series is forgotten, the failure date kept.
         return broken.copy(series = null)
+    }
+
+    /** Folds every period of an ACTIVE series to its end, completing the whole series. */
+    private fun completeAll(active: Snapshot, kind: SeriesKind): Snapshot {
+        var s = active
+        repeat(kind.periods) {
+            val end = s.session!!.plan.end
+            s = flow.fold(s.copy(session = lock.advance(s.session!!, end)), id(), end)
+        }
+        return s
     }
 
     @Test
@@ -109,5 +120,50 @@ class RestartCooldownChainTest {
         assertEquals(break2, ent.standardFailedAt)
         // 30 days from break2 is 22 Nov; measured at break2 that is 30 days, not 28.
         assertEquals(30, StandardRules.daysUntilFreeStart(ent, break2))
+    }
+
+    // Rehabilitation: finishing a paid Restart clears the cooldown, so the next standard series is free.
+    // 44000 -> break -> Restart price -> (44000 - price) -> SUCCESS -> next series FREE. For 99 / 179 / 299.
+    @Test
+    fun `a completed paid Restart rehabilitates - the next standard series is free`() {
+        for (kind in SeriesKind.entries) {
+            ids = 0
+            val price = kind.restartPriceRub.toLong()
+            var s = breakAndDismiss(
+                startFreeActive(Snapshot(wallet = Wallet(availableKop = 44_000 * rub)), kind, t("2026-10-21T10:00:00Z")),
+                t("2026-10-21T12:00:00Z"),
+            )
+            // Paid Restart: the length's price leaves the balance, the series starts.
+            val active = startPaidActive(s, kind, t("2026-10-23T10:00:00Z"))
+            assertEquals((44_000 - price) * rub, active.wallet.availableKop, "paid Restart of $kind charges its price")
+            // Completed in full → rehabilitated: the cooldown is cleared.
+            val done = completeAll(active, kind)
+            assertEquals(SeriesStatus.COMPLETED, done.series!!.status)
+            assertNull(done.entitlements.standardFailedAt, "a completed series clears the cooldown for $kind")
+            val later = t("2026-11-05T10:00:00Z")
+            assertTrue(StandardRules.canStartFree(done.entitlements, later), "$kind: free start available after success")
+            assertEquals(StartSource.Free, StandardRules.startSource(done.entitlements, kind, later, done.wallet.availableKop))
+            // And the next series actually starts free: the balance is not charged again.
+            val next = startFreeActive(done.copy(series = null), kind, later)
+            assertEquals((44_000 - price) * rub, next.wallet.availableKop, "$kind: the next start costs nothing")
+        }
+    }
+
+    // 44000 -> break -> Restart price -> (44000 - price) -> BREAK -> Restart price -> (44000 - 2*price). For 99 / 179 / 299.
+    @Test
+    fun `break, Restart, break, Restart charges the length price each time`() {
+        for (kind in SeriesKind.entries) {
+            ids = 0
+            val price = kind.restartPriceRub.toLong()
+            var s = breakAndDismiss(
+                startFreeActive(Snapshot(wallet = Wallet(availableKop = 44_000 * rub)), kind, t("2026-10-21T10:00:00Z")),
+                t("2026-10-21T12:00:00Z"),
+            )
+            s = startPaidActive(s, kind, t("2026-10-23T10:00:00Z"))
+            assertEquals((44_000 - price) * rub, s.wallet.availableKop)
+            s = breakAndDismiss(s, t("2026-10-23T12:00:00Z"))
+            s = startPaidActive(s, kind, t("2026-10-25T10:00:00Z"))
+            assertEquals((44_000 - 2 * price) * rub, s.wallet.availableKop)
+        }
     }
 }

@@ -255,4 +255,22 @@ class RestartGateTest {
         val texts = failureTexts().joinToString(" | ")
         assertTrue("expected the Restart price 299 shown: $texts", texts.contains("299"))
     }
+
+    // Rehabilitation through the real reconcile: a completed series (e.g. a paid Restart, balance already 43 901)
+    // clears the cooldown, so the next standard series starts free without any charge.
+    @Test
+    fun `a completed series clears the cooldown and the next start is free`() {
+        val failedAt = Instant.now().minus(Duration.ofDays(3))
+        val completed = Series(
+            "old", SeriesKind.THREE, windowIn(10), mom, SessionMode.SLEEP, startedAt = failedAt,
+            completedPeriods = 3, status = SeriesStatus.COMPLETED, endedAt = Instant.now().minusSeconds(5),
+        )
+        seed(Snapshot(series = completed, entitlements = Entitlements(standardFailedAt = failedAt), wallet = Wallet(availableKop = 43_901_00)))
+
+        val r = Mama.reconcile(context)
+        assertNull("success rehabilitates — the cooldown is cleared", r.snapshot.entitlements.standardFailedAt)
+        assertEquals(StartSource.Free, Mama.startSource(context, SeriesKind.THREE))
+        assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP))
+        assertEquals("the free start charges nothing", 43_901_00L, Mama.wallet(context).availableKop)
+    }
 }
