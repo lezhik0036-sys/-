@@ -117,6 +117,7 @@ class TrustedExitSafetyGateTest {
                     attemptsLeft = handle?.attemptsLeft ?: Mama.policy.maxAttempts,
                     resendAt = resendAt, codeLength = Mama.policy.codeLength, input = input.toString(),
                     message = message, diagnostics = diagnostics(handle?.challengeId, codeActive),
+                    testCode = if (FeatureFlags.TEST_MODE && codeActive) TestCodeSink.codeFor(handle?.challengeId) else null,
                 ),
             )
         }
@@ -188,12 +189,6 @@ class TrustedExitSafetyGateTest {
         else -> null
     }
 
-    private fun byDescription(v: View, desc: String): View? = when {
-        v.isClickable && v.contentDescription?.toString() == desc -> v
-        v is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { byDescription(v.getChildAt(it), desc) }
-        else -> null
-    }
-
     /** VISIBLE all the way up to the screen root: what the tester can actually read. */
     private fun visibleUpTo(view: View, root: View): Boolean {
         var v: View? = view
@@ -207,10 +202,6 @@ class TrustedExitSafetyGateTest {
 
     private fun tap(ui: LockUi, text: String) {
         (firstClickable(ui.view.root, text) ?: error("no tappable «$text» on the lock screen")).performClick()
-    }
-
-    private fun tapBack(ui: LockUi) {
-        (byDescription(ui.view.root, "Назад") ?: error("no back arrow on the lock screen")).performClick()
     }
 
     private fun typeOnKeypad(ui: LockUi, code: String) {
@@ -264,12 +255,11 @@ class TrustedExitSafetyGateTest {
         val (ui, code) = openExitWithCode()
         assertEquals("a 5-digit TEST CODE", 5, code.length)
         assertTrue(code.all { it.isDigit() })
-        // Back on the lock screen the TEST CODE is shown, so the tester can read it before entering.
-        tapBack(ui)
-        val shown = firstText(ui.view.root) { it.startsWith("TEST CODE: ") }
-        assertNotNull("the lock screen shows a TEST CODE line", shown)
-        assertTrue("it shows the real code: ${shown!!.text}", shown.text.toString().contains(code))
-        assertTrue("the TEST CODE is visible to the tester", visibleUpTo(shown, ui.view.root))
+        // The exit page shows a prominent banner with the code, right above the input.
+        assertNotNull("the banner is labelled as the unlock code", firstText(ui.view.root) { it.contains("Код для разблокировки") })
+        val shown = firstText(ui.view.root) { it == code }
+        assertNotNull("the banner shows the real code", shown)
+        assertTrue("the TEST CODE is visible to the tester", visibleUpTo(shown!!, ui.view.root))
     }
 
     @Test

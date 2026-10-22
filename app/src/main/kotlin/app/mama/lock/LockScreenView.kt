@@ -1,9 +1,13 @@
 package app.mama.lock
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.view.Gravity
+import android.widget.Toast
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -14,6 +18,7 @@ import app.mama.core.EmergencyService
 import app.mama.platform.Calls
 import app.mama.ui.BrandButtonView
 import app.mama.ui.Icon
+import app.mama.ui.MamaFonts
 import app.mama.ui.Texts
 import app.mama.ui.design.DesignKit
 import app.mama.ui.design.DesignKitV2
@@ -56,6 +61,8 @@ data class LockModel(
     val input: String,
     val message: String?,
     val diagnostics: String?,
+    /** TEST/DEBUG only: the guaranteed-exit code, shown in a prominent banner on the exit page; null in production. */
+    val testCode: String? = null,
     /** "Экстренные службы" page open. */
     val emergencyOpen: Boolean = false,
     /** Services listed there (from the phone's own emergency list). */
@@ -131,6 +138,9 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
     // Exit page.
     private lateinit var exitPage: View
+    private lateinit var testBanner: View
+    private lateinit var testCodeText: TextView
+    private var testCodeValue: String? = null
     private lateinit var intro: LinearLayout
     private lateinit var promiseBlock: LinearLayout
     private lateinit var promiseText: TextView
@@ -276,6 +286,10 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
         // Code entry.
         codePage = d.column()
+        // TEST/DEBUG: a prominent, high-contrast TEST CODE banner right above the input, so a tester
+        // can never miss the code (no real SMS is sent in a test build). Hidden in production.
+        testBanner = buildTestBanner()
+        codePage.addView(testBanner, d.fill())
         codePage.addView(d.title("Доверенный выход"), d.gap(18))
         codeHint = d.text("", Typo.BODY, Palette.InkMuted).also { codePage.addView(it, d.gap(10)) }
         val boxRow = d.row().apply { gravity = Gravity.CENTER }
@@ -298,6 +312,45 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
         col.addView(body, d.fill())
         return page(col)
+    }
+
+    /**
+     * TEST/DEBUG only: the guaranteed-exit code in a solid, high-contrast card —
+     * a "ТЕСТОВЫЙ РЕЖИМ" tag, a large bold monospace code, a note that no real
+     * SMS is sent, and copy / resend actions. Opaque (never veiled by the scene)
+     * so the code is impossible to miss. Bound from [LockModel.testCode]; shown
+     * only when a code is active, and never in a release build.
+     */
+    private fun buildTestBanner(): View = d.column().apply {
+        background = d.shape(Palette.TestFill, Radii.CARD, Palette.TestLine, 2f)
+        setPadding(dp(18), dp(16), dp(18), dp(16))
+        d.elevate(this, 2f)
+        addView(d.text("ТЕСТОВЫЙ РЕЖИМ", Typo.TAG, Palette.TestInk).apply {
+            typeface = MamaFonts.ui(context, 800)
+            isAllCaps = true
+        })
+        addView(d.text("Код для разблокировки", Typo.LABEL, Palette.SandInk), d.gap(10))
+        testCodeText = TextView(context).apply {
+            textSize = 42f
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            setTextColor(Palette.Ink)
+            letterSpacing = 0.22f
+            includeFontPadding = false
+        }
+        addView(testCodeText, d.gap(6))
+        addView(d.text("В тестовой сборке SMS не отправляется — используй этот код.", Typo.CAPTION, Palette.SandInk), d.gap(10))
+        val row = d.row()
+        row.addView(d.testButton("Скопировать код") { copyTestCode() }, d.weight())
+        row.addView(d.testButton("Показать код ещё раз") { actions.requestCode() }, d.weight().apply { leftMargin = dp(10) })
+        addView(row, d.gap(14))
+    }
+
+    private fun copyTestCode() {
+        val code = testCodeValue ?: return
+        runCatching {
+            context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("MAMA TEST CODE", code))
+        }
+        Toast.makeText(context, "Код скопирован", Toast.LENGTH_SHORT).show()
     }
 
     private fun keypad(): View {
@@ -373,6 +426,10 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         introMessage.text = m.message.orEmpty()
         introMessage.visibility = if (m.message.isNullOrEmpty() || m.codeActive) View.GONE else View.VISIBLE
 
+        // TEST/DEBUG: the prominent code banner above the input (null/hidden in production).
+        testCodeValue = m.testCode
+        testCodeText.text = m.testCode.orEmpty()
+        testBanner.visibility = if (m.testCode.isNullOrEmpty()) View.GONE else View.VISIBLE
         codeHint.text = "Введи код из ${m.codeLength} цифр, который отправлен доверенному контакту: " +
             "${m.contactName} ${m.contactPhone}"
         boxes.forEachIndexed { i, b ->

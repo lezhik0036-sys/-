@@ -221,11 +221,13 @@ object Previews {
                 contactName = contact.name, contactPhone = Texts.phone(contact.phone), dayLabel = Texts.dayOf(3, 7),
                 phrase = MotivationCatalog.pick(Placement.LOCK_NIGHT, "preview", maxLength = 60).text,
                 promise = "Хочу нормально высыпаться и чувствовать себя лучше утром.",
-                call = Calls.CallState.NONE, exitOpen = name == "exit" || name == "code", codeActive = name == "code",
+                call = Calls.CallState.NONE,
+                exitOpen = name == "exit" || name == "code" || name == "lock_test_code",
+                codeActive = name == "code" || name == "lock_test_code",
                 attemptsLeft = 3, resendAt = if (name == "code") now + Duration.ofSeconds(57) else null, codeLength = 5,
-                input = if (name == "code") "47" else "", message = null,
-                // Field-test evidence (debug preview only): the guaranteed-exit TEST CODE as the tester sees it.
-                diagnostics = if (name == "lock_test_code") "TEST CODE: 12345\nТестовый режим — блокировка максимум 15 минут" else null,
+                input = if (name == "code") "47" else "", message = null, diagnostics = null,
+                // Field-test evidence (debug preview only): the prominent guaranteed-exit TEST CODE banner.
+                testCode = if (name == "code" || name == "lock_test_code") "12345" else null,
                 emergencyOpen = name == "emergency",
                 emergencyServices = app.mama.core.EmergencyNumberCatalog.RUSSIA_FALLBACK,
             ),
