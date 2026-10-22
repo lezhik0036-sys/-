@@ -313,33 +313,38 @@ internal fun MainActivity.permissionsScreen(): Pair<View, Boolean> {
 // ---------------- 3. Series ----------------
 
 internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
-    val b = body()
-    b.addView(kit.sectionHeader("Выбери свою серию", "Сколько дней ты готов не менять своё решение?"))
+    val d = design
+    val b = d.body(22)
+    b.addView(d.titleBlock("Выбери путь", "Сколько дней ты готов держать слово?", narrow = true))
     var first = true
-    fun option(c: Choice, icon: Icon, title: String, subtitle: String, trailing: String? = null) {
-        b.addView(kit.selectableCard(icon, title, subtitle, choice == c, trailing) { choice = c; saveForm(); render() }, kit.gap(if (first) 22 else 10))
+    // Rich choice cards (reference «Выбери путь»): icon, name, a short meaning, the real Restart price,
+    // a selected state and a "РЕКОМЕНДУЕМ" badge; a calm landscape grows inside each card.
+    fun option(c: Choice, icon: Icon, title: String, body: String, tag: String? = null, scenery: Scenery? = Scenery.DAWN) {
+        b.addView(d.selectableCard(icon, title, body, choice == c, tag, scenery) { choice = c; saveForm(); render() }, d.gap(if (first) 24 else Spacing.GUTTER))
         first = false
     }
     if (FeatureFlags.TEST_MODE_ENABLED) {
-        option(Choice.TEST, Icon.FLASK, "Тестовый режим — 15 минут", "Только для тестирования. Ровно 15 минут. Бесплатно.")
+        option(Choice.TEST, Icon.FLASK, "Тестовый режим", "Ровно 15 минут блокировки. Только для проверки — бесплатно, не входит в серии.", scenery = null)
     }
-    option(Choice.THREE, Icon.LEAF, "3 дня", "Restart при срыве — ${Texts.price(SeriesPrices.THREE)}")
-    option(Choice.FIVE, Icon.LEAF, "5 дней", "Restart при срыве — ${Texts.price(SeriesPrices.FIVE)}")
-    option(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Restart при срыве — ${Texts.price(SeriesPrices.SEVEN)}")
+    option(Choice.THREE, Icon.LEAF, "3 дня", "Короткий старт. Три ночи телефон под защитой. Restart при срыве — ${Texts.price(SeriesPrices.THREE)}.", scenery = Scenery.DAWN)
+    option(Choice.FIVE, Icon.LEAF, "5 дней", "Ровный ритм. Пять ночей подряд. Restart при срыве — ${Texts.price(SeriesPrices.FIVE)}.", scenery = Scenery.MORNING)
+    option(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Полная неделя — самый сильный результат. Restart при срыве — ${Texts.price(SeriesPrices.SEVEN)}.", tag = "РЕКОМЕНДУЕМ", scenery = Scenery.DAY)
     val free = Mama.entitlements(this).freeFlexCredits > 0
     option(
         Choice.FLEX, Icon.INFINITY, "FLEX",
-        "${FlexPackage.PERIODS} периодов за ${FlexPackage.VALIDITY.toDays()} дней. Пройди 7 из 7 — следующий FLEX бесплатно.",
-        if (free) "Бесплатно" else Texts.price(FlexPackage.PRICE_RUB),
+        "${FlexPackage.PERIODS} гибких периодов за ${FlexPackage.VALIDITY.toDays()} дней — сам выбираешь даты. " +
+            (if (free) "Сейчас бесплатно." else "${Texts.price(FlexPackage.PRICE_RUB)}.") + " Пройди 7 из 7 — следующий FLEX бесплатно.",
+        tag = if (free) "БЕСПЛАТНО" else null,
+        scenery = Scenery.EVENING,
     )
     val wait = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this))
     if (wait > 0 && choice.series != null) {
-        b.addView(kit.infoCard(
+        b.addView(d.noteCard(
             "Телефон при этом не заблокирован. Сразу — только Restart сорванной серии.",
-            Icon.CALENDAR, Tone.WARNING, "Следующая бесплатная серия через ${Texts.days(wait.toInt())}",
-        ), kit.gap(14))
+            "Следующая бесплатная серия через ${Texts.days(wait.toInt())}", NoteTone.CARE, Icon.CALENDAR,
+        ), d.gap(14))
     }
-    val cta = kit.primaryButton("Далее", Icon.ARROW_RIGHT) { go(nextStep(Step.SERIES)) }
+    val cta = d.primaryButton("Далее") { go(nextStep(Step.SERIES)) }
     return lightFrame(stepBar(Step.SERIES), b, cta)
 }
 
