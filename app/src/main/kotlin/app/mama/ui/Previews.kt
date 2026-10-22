@@ -39,7 +39,7 @@ import java.time.temporal.ChronoUnit
 object Previews {
     val names = listOf(
         "welcome", "permissions", "series", "time", "contact", "promise", "review",
-        "dashboard", "lock", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
+        "dashboard", "lock", "lock_test_code", "exit", "code", "failure", "success", "flex", "flex_plan", "stats", "settings", "time_test",
         "commitment", "restart_commitment", "dashboard_active", "edit", "cancel_launch",
         "needs_attention", "restart_scheduled", "emergency", "restart_time",
     ) + app.mama.ui.design.DesignPreviews.names + listOf(
@@ -155,7 +155,7 @@ object Previews {
             "stats", "stats_history" -> { a.tab = 1; a.statisticsScreen(sampleHistory(), series(3), null, showPath = name == "stats_history") }
             "stats_empty" -> { a.tab = 1; a.statisticsScreen(emptyList(), null, null) }
             "settings" -> { a.tab = 2; a.settingsScreen() }
-            "lock", "exit", "code", "emergency" -> lock(a, name)
+            "lock", "lock_test_code", "exit", "code", "emergency" -> lock(a, name)
             else -> a.welcomeScreen()
         }
     }
@@ -223,7 +223,9 @@ object Previews {
                 promise = "Хочу нормально высыпаться и чувствовать себя лучше утром.",
                 call = Calls.CallState.NONE, exitOpen = name == "exit" || name == "code", codeActive = name == "code",
                 attemptsLeft = 3, resendAt = if (name == "code") now + Duration.ofSeconds(57) else null, codeLength = 5,
-                input = if (name == "code") "47" else "", message = null, diagnostics = null,
+                input = if (name == "code") "47" else "", message = null,
+                // Field-test evidence (debug preview only): the guaranteed-exit TEST CODE as the tester sees it.
+                diagnostics = if (name == "lock_test_code") "TEST CODE: 12345\nТестовый режим — блокировка максимум 15 минут" else null,
                 emergencyOpen = name == "emergency",
                 emergencyServices = app.mama.core.EmergencyNumberCatalog.RUSSIA_FALLBACK,
             ),
