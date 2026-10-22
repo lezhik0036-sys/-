@@ -658,6 +658,7 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
                 items += SummaryItem(Icon.COINS, "Цена слова", if (c != null) Texts.money(c) else "Без цены слова", null, open(Step.COMMITMENT))
             }
             fact(Icon.REFRESH, "Restart при срыве — ${Texts.price(kind.restartPriceRub)}. Старт серии бесплатный.")
+            if (FeatureFlags.TEST_MODE) fact(Icon.FLASK, "Тестовый режим — блокировка максимум 15 минут.")
             fact(Icon.HEART, reasonLine, open(Step.PROMISE))
             ctaLabel = "Начать ${Texts.seriesName(kind)}"
             needsAgreement = true
@@ -724,6 +725,7 @@ internal fun MainActivity.startChosen() {
             Mama.SeriesStart.Busy -> return alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
             is Mama.SeriesStart.Waiting -> return offerStartDuringCooldown(choice.series!!, r.days, contact)
             is Mama.SeriesStart.NotEnoughBalance -> return notEnoughBalance { commitmentKop = null; startChosen() }
+            Mama.SeriesStart.TrustedExitUnavailable -> return alert("Trusted Exit недоступен", "Серия не запущена.")
             Mama.SeriesStart.Rejected -> return alert("Не получилось", "Серию сейчас нельзя начать.")
         }
     }
@@ -767,6 +769,7 @@ private fun MainActivity.payStartDuringCooldown(kind: app.mama.core.SeriesKind, 
             }
             is Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; payStartDuringCooldown(kind, contact) }
             Mama.SeriesStart.Busy -> alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
+            Mama.SeriesStart.TrustedExitUnavailable -> alert("Trusted Exit недоступен", "Серия не запущена.")
             is Mama.SeriesStart.Waiting, Mama.SeriesStart.Rejected -> alert("Не получилось", "Серию сейчас нельзя начать.")
         }
     }

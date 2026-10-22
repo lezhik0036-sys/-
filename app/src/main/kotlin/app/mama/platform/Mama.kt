@@ -52,11 +52,21 @@ import java.util.UUID
 object Mama {
     private const val TAG = "MAMA"
 
-    val policy = CorePolicy()
+    val policy = CorePolicy(maxLockDuration = testLockCap())
     private val engine = LockEngine(policy)
     private val recovery = Recovery(engine)
     private val flow = SeriesFlow(engine, policy)
     private val flexEngine = FlexEngine(engine, policy)
+
+    /**
+     * TEST/DEBUG safety cap for every lock ([TestMode.DURATION] = 15 min), so a
+     * test device can never be stuck for the full chosen time. Off under
+     * Robolectric, where the unit suite deliberately exercises real durations;
+     * the cap itself is covered by core LockEngine tests. Null (no cap) in a
+     * production build.
+     */
+    private fun testLockCap(): java.time.Duration? =
+        if (FeatureFlags.TEST_MODE && android.os.Build.FINGERPRINT != "robolectric") TestMode.DURATION else null
 
     @Volatile private var cached: Reconciliation? = null
 
@@ -188,6 +198,9 @@ object Mama {
         /** Not enough internal balance for the chosen "Цена слова" (or the Restart from balance). */
         data class NotEnoughBalance(val availableKop: Long) : SeriesStart
         data object Rejected : SeriesStart
+
+        /** The Trusted Exit readiness check failed: the series is not started, so the device is never locked without a way out. */
+        data object TrustedExitUnavailable : SeriesStart
     }
 
     /**
@@ -222,6 +235,8 @@ object Mama {
     ): SeriesStart {
         val r = reconcile(context)
         if (!idle(r)) return SeriesStart.Busy
+        // Trusted Exit readiness check: never lock the device for a series we have no way out of.
+        if (!TrustedExit.ready(context)) return SeriesStart.TrustedExitUnavailable
         val ent = r.snapshot.entitlements
         // The one shared rule for every start entry point: free while the wait is over, else a paid Restart.
         if (StandardRules.startSource(ent, kind, r.trustedNow, r.snapshot.wallet.availableKop) !is StartSource.Free) {
@@ -256,6 +271,7 @@ object Mama {
     fun restartSeries(context: Context, source: GrantSource, time: LaunchTime, commitmentKop: Long? = null): SeriesStart {
         val r = reconcile(context)
         if (r.snapshot.series?.status != SeriesStatus.BROKEN || r.state != LockState.Free) return SeriesStart.Rejected
+        if (!TrustedExit.ready(context)) return SeriesStart.TrustedExitUnavailable
         Log.i(TAG, "Restart of ${r.snapshot.series?.kind} granted: $source")
         val result = flow.restart(r.snapshot, source, time, UUID.randomUUID().toString(), UUID.randomUUID().toString(), commitmentKop, r.trustedNow)
         return saveStart(context, result)
@@ -293,6 +309,7 @@ object Mama {
         // A series already running — or a double tap that reached this far — takes no second
         // charge and starts no second series: the running series makes this Busy.
         if (!idle(r)) return SeriesStart.Busy
+        if (!TrustedExit.ready(context)) return SeriesStart.TrustedExitUnavailable
         // Paid Restart is only the cooldown gate: when a free start is available it must never charge.
         if (StandardRules.canStartFree(r.snapshot.entitlements, r.trustedNow)) return SeriesStart.Rejected
         Log.i(TAG, "Paid start of $kind during the free-start cooldown: $source")

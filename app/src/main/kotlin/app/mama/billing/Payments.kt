@@ -42,6 +42,16 @@ interface Payments {
 
 object FeatureFlags {
     /**
+     * The real TEST/DEBUG build flag (`BuildConfig.TEST_MODE`): true in debug
+     * (and in the field-test APK), false in release/production. Gates the test
+     * safety net — the 15-minute lock cap, the Trusted Exit TEST CODE and the
+     * readiness check — so a production build can never cap locks or reveal a
+     * code. Unlike [TEST_MODE_ENABLED] (the standalone 15-minute test lock
+     * feature), this follows the build type.
+     */
+    val TEST_MODE: Boolean get() = app.mama.BuildConfig.TEST_MODE
+
+    /**
      * Real payments are paused for the test version. TODO(payments): plug a
      * store [Payments] implementation in [Billing] and switch this on.
      */

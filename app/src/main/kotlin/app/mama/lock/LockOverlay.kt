@@ -10,6 +10,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import app.mama.billing.FeatureFlags
 import app.mama.core.ExitKind
+import app.mama.trustedexit.TestCodeSink
 import app.mama.trustedexit.TrustedExitStore
 import app.mama.core.Session
 import app.mama.core.TestMode
@@ -144,7 +145,7 @@ class LockOverlay(private val service: LockService) : LockActions {
                 codeLength = Mama.policy.codeLength,
                 input = input.toString(),
                 message = message,
-                diagnostics = if (FeatureFlags.TEST_MODE_ENABLED) diagnostics() else null,
+                diagnostics = if (FeatureFlags.TEST_MODE_ENABLED) diagnostics(handle?.challengeId, codeActive) else null,
                 emergencyOpen = emergencyOpen,
                 emergencyServices = (emergency as? EmergencyCalls.Availability.Numbers)?.services.orEmpty(),
                 emergencyNote = emergencyMessage ?: if (emergency is EmergencyCalls.Availability.NoTelephony) NO_TELEPHONY else null,
@@ -176,8 +177,20 @@ class LockOverlay(private val service: LockService) : LockActions {
         return Texts.mode(s.plan.mode)
     }
 
-    /** Test builds: what the guard saw over the system lock screen, for tuning on real phones. */
-    private fun diagnostics(): String = "MAMA ${Texts.version(service)} · " + if (GuardService.running) {
+    /**
+     * Test builds: the guaranteed-exit TEST CODE and the 15-minute note on top
+     * (TEST_MODE only, never a release build), then what the guard saw over the
+     * system lock screen, for tuning on real phones.
+     */
+    private fun diagnostics(challengeId: String?, codeActive: Boolean): String = listOfNotNull(
+        // The code the (simulated) delivery would have sent to the contact: shown here so a test
+        // device always has a way out without a real SMS. codeFor returns null outside a TEST build.
+        (if (codeActive) TestCodeSink.codeFor(challengeId) else null)?.let { "TEST CODE: $it" },
+        if (FeatureFlags.TEST_MODE) "Тестовый режим — блокировка максимум 15 минут" else null,
+        guardDiagnostics(),
+    ).joinToString("\n")
+
+    private fun guardDiagnostics(): String = "MAMA ${Texts.version(service)} · " + if (GuardService.running) {
         "защита включена · выкл. экрана ${GuardService.screenOffs}" +
             (GuardService.keyguardApps.takeIf { it.isNotEmpty() }?.let { " · приложения: $it" } ?: "") +
             "\nэкран блокировки: ${GuardService.keyguardIds.joinToString(" ")}"

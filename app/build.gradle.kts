@@ -13,8 +13,8 @@ android {
         applicationId = "app.mama"
         minSdk = 26
         targetSdk = 35
-        versionCode = 41
-        versionName = "0.8.10-test10"
+        versionCode = 42
+        versionName = "0.8.11-test11"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -26,10 +26,14 @@ android {
         debug {
             // Pilot test credits for the internal balance: debug builds only.
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "true")
+            // TEST/DEBUG safety: cap every lock to 15 min, show the Trusted Exit TEST CODE,
+            // run the readiness check. Never true in a release/production build.
+            buildConfigField("boolean", "TEST_MODE", "true")
         }
         release {
             isMinifyEnabled = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
+            buildConfigField("boolean", "TEST_MODE", "false")
         }
     }
 

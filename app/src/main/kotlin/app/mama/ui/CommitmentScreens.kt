@@ -228,6 +228,7 @@ private fun MainActivity.payRestartFromBalance(kind: SeriesKind, time: app.mama.
                 closeDraft()
             }
             is Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; finishRestart(kind) }
+            Mama.SeriesStart.TrustedExitUnavailable -> alert("Trusted Exit недоступен", "Серия не запущена.")
             else -> alert("Не получилось", "Restart сейчас недоступен.")
         }
         render()
@@ -249,6 +250,7 @@ private fun MainActivity.startRestartFree(kind: SeriesKind, time: app.mama.core.
             closeDraft()
         }
         is Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; finishRestart(kind) }
+        Mama.SeriesStart.TrustedExitUnavailable -> alert("Trusted Exit недоступен", "Серия не запущена.")
         else -> alert("Не получилось", "Серию сейчас нельзя начать.")
     }
     render()

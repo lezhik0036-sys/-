@@ -30,6 +30,14 @@ data class CorePolicy(
     /** Longest lock that can be scheduled. */
     val maxDuration: Duration = Duration.ofHours(24),
     /**
+     * A hard cap on how long ANY single lock may actually last, applied when a
+     * session is created: the lock's end is clamped to start + this. Null means
+     * no cap (production). TEST/DEBUG builds set it (15 minutes) so a test
+     * device can never be locked for the full chosen time — the safety net
+     * behind the whole test build (see the app's TEST_MODE).
+     */
+    val maxLockDuration: Duration? = null,
+    /**
      * ACTIVATING is a short technical state: if strict protection is not
      * confirmed within this time after the first lock started, the series
      * goes to NEEDS_ATTENTION. The clock waits while the phone has not been

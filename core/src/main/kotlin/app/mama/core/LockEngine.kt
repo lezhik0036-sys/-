@@ -31,12 +31,17 @@ class LockEngine(
     fun create(id: String, plan: LockPlan, contact: TrustedContact, now: Instant): CreateResult {
         if (!plan.end.isAfter(now)) return CreateResult.Rejected(CreateError.ALREADY_ENDED)
         val effectiveStart = maxOf(plan.start, now)
-        val length = Duration.between(effectiveStart, plan.end)
+        // TEST/DEBUG safety cap: no single lock may outlast [CorePolicy.maxLockDuration], whatever
+        // time the user chose, so a test device is never stuck. Null in production: the plan stands.
+        val capped = policy.maxLockDuration
+            ?.let { cap -> if (plan.end.isAfter(effectiveStart + cap)) plan.copy(end = effectiveStart + cap) else plan }
+            ?: plan
+        val length = Duration.between(effectiveStart, capped.end)
         if (length < policy.minDuration) return CreateResult.Rejected(CreateError.TOO_SHORT)
-        if (Duration.between(plan.start, plan.end) > policy.maxDuration) {
+        if (Duration.between(capped.start, capped.end) > policy.maxDuration) {
             return CreateResult.Rejected(CreateError.TOO_LONG)
         }
-        val session = Session(id = id, plan = plan, contact = contact, status = SessionStatus.SCHEDULED)
+        val session = Session(id = id, plan = capped, contact = contact, status = SessionStatus.SCHEDULED)
         return CreateResult.Created(advance(session, now))
     }
 
