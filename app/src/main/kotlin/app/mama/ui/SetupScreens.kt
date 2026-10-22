@@ -30,11 +30,9 @@ import app.mama.platform.Promise
 import app.mama.ui.MainActivity.Choice
 import app.mama.ui.MainActivity.Step
 import app.mama.ui.design.ArtLayout
-import app.mama.ui.design.CircleStyle
 import app.mama.ui.design.NoteTone
 import app.mama.ui.design.PageDots
 import app.mama.ui.design.Palette
-import app.mama.ui.design.SceneLayout
 import app.mama.ui.design.SceneMood
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
@@ -244,79 +242,43 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
 
 // ---------------- Onboarding ----------------
 
-/** One onboarding page: its title, the line under it and a quiet line in its card. */
-internal class OnboardingPage(val title: String, val line: String, val note: String)
-
-/** The three onboarding pages (docs/design-reference/nature_v3/02–04), in order. */
-internal val ONBOARDING = listOf(
-    OnboardingPage("Тебе не нужно становиться сильнее", "Тебе нужен ритм.", "Маленькие шаги ведут к большим переменам."),
-    OnboardingPage("Днём ты принимаешь решение.", "Ночью MAMA помогает его сохранить.", "Ты выбираешь направление. MAMA помогает идти."),
-    OnboardingPage("Начнём с нескольких ночей.", "Маленькая серия — большие изменения.", "Ты удивишься, насколько многое может измениться."),
-)
-
 /**
- * One onboarding page (1–3): the same words, card and round "→" on each, but
- * its own picture and light, so the three read as three steps, not one
- * screen three times (quiet, calm, bright):
- * 1. Rhythm: the dawn lake over the whole screen, the title in its sky.
- * 2. Day and night: the valley by day as a framed picture, the title on the
- *    cream page under it and the turn from the sun to the moon.
- * 3. A few nights: the title and the first nights on the cream page, the
- *    morning shore rising from the bottom.
- * After the last page: the setup, as before.
+ * The single "Как работает MAMA" screen before the first use. It replaced the
+ * three near-empty motivational pages with one useful screen that explains the
+ * mechanics: you choose a series and a time, you name a trusted contact, and
+ * Trusted Exit is always there if you truly need to leave early — then straight
+ * into the setup. [page] is ignored (kept for the caller and the preview tour).
  */
 internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     val d = design
-    val content = ONBOARDING[page - 1]
-    val narrow = (resources.displayMetrics.widthPixels * 0.86f).toInt()
-    fun title() = d.text(content.title, Typo.DISPLAY).apply { textSize = 40f; maxWidth = narrow }
-    fun line() = d.text(content.line, Typo.SUBTITLE, V2.Ink).apply { textSize = 23f; maxWidth = narrow; alpha = 0.82f }
-    val card = d.card(paddingDp = 24, radiusDp = V2.CARD_LARGE)
-    card.addView(d.text(content.note, Typo.QUOTE, V2.Ink, center = true).apply { textSize = 23f }, d.fill().apply { topMargin = d.dp(8) })
-    val row = d.row()
-    row.addView(PageDots(this, ONBOARDING.size, page - 1), LinearLayout.LayoutParams(d.dp(66), d.dp(12)))
-    row.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
-    row.addView(d.roundButton(Icon.ARROW_RIGHT, "Далее") {
-        if (page < ONBOARDING.size) {
-            onboardingPage = page + 1
-        } else {
-            prefs.edit().putBoolean(MainActivity.ONBOARDING_SEEN, true).apply()
-            onboardingPage = 0
-        }
+    val b = d.body(26)
+    b.addView(d.titleBlock(
+        "Как работает MAMA",
+        "Три шага — и телефон под защитой твоего решения.",
+        narrow = true,
+    ))
+    // The mechanics as three calm rows: what you choose, and the way out that always stays.
+    b.addView(d.rowsCard(listOf(
+        d.infoRow(
+            Icon.CALENDAR, "Выбираешь серию и время", strong = true,
+            note = "Сколько дней держать телефон под защитой и в каком спокойном окне.",
+        ),
+        d.infoRow(
+            Icon.PERSON, "Назначаешь доверенный контакт", strong = true,
+            note = "Близкого человека, который поддержит и поможет выйти, если это будет действительно нужно.",
+        ),
+        d.infoRow(
+            Icon.SHIELD, "Выход всегда есть — Trusted Exit", strong = true,
+            note = "Если нужно выйти раньше, это можно сделать через доверенный контакт. Без осуждения.",
+        ),
+    )), d.gap(24))
+    b.addView(d.quoteCard("Ты выбираешь направление. MAMA помогает идти.", signature = "MAMA"), d.gap(Spacing.GUTTER))
+    val cta = d.primaryButton("Начать настройку") {
+        prefs.edit().putBoolean(MainActivity.ONBOARDING_SEEN, true).apply()
+        onboardingPage = 0
         render()
-    })
-    card.addView(row, d.gap(22))
-    return when (page) {
-        1 -> {
-            val b = d.body(40)
-            b.addView(title(), d.wrap())
-            b.addView(line(), d.wrap().apply { topMargin = d.dp(16) })
-            v1Frame(Scenery.DAWN, null, b, card, layout = SceneLayout.FULL, mood = SceneMood.QUIET)
-        }
-        2 -> {
-            val b = d.body(24)
-            // The day: the valley in full light, framed like a picture; the rest of the page is cream.
-            b.addView(d.photoBand(Scenery.DAY, SceneMood.CALM), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(260), 1f))
-            b.addView(title(), d.wrap().apply { topMargin = d.dp(26) })
-            b.addView(line(), d.wrap().apply { topMargin = d.dp(12) })
-            // From the decision by day to the night MAMA keeps it.
-            val turn = d.row().apply { gravity = Gravity.CENTER_VERTICAL }
-            turn.addView(d.iconCircle(Icon.SUN, 52, CircleStyle.SAND))
-            turn.addView(View(this).apply { setBackgroundColor(V2.Sand) }, LinearLayout.LayoutParams(0, d.dp(2), 1f).apply { leftMargin = d.dp(12); rightMargin = d.dp(12) })
-            turn.addView(d.iconCircle(Icon.MOON, 52, CircleStyle.FILLED))
-            turn.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            b.addView(turn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = d.dp(22); leftMargin = d.dp(36); rightMargin = d.dp(36) })
-            lightFrame(null, b, card)
-        }
-        else -> {
-            val b = d.body(40)
-            b.addView(title(), d.wrap())
-            b.addView(line(), d.wrap().apply { topMargin = d.dp(16) })
-            // A few nights: the first one ready, the next two ahead.
-            b.addView(d.dayCircles(0, 3, 1).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(d.dp(210), LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = d.dp(28) })
-            v1Frame(Scenery.MORNING, null, b, card, layout = SceneLayout.GROUND, mood = SceneMood.BRIGHT)
-        }
     }
+    return v1Frame(Scenery.DAWN, d.topBar({ onboardingBack() }), b, cta, mood = SceneMood.QUIET)
 }
 
 /** Back from an onboarding page: the page before, or the welcome. */

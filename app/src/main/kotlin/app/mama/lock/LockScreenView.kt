@@ -113,7 +113,6 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
     // Main page.
     private lateinit var mainPage: View
-    private lateinit var dayTop: TextView
     private lateinit var phrase: TextView
     private lateinit var phraseCard: View
     private lateinit var until: TextView
@@ -170,9 +169,9 @@ class LockScreenView(private val context: Context, private val actions: LockActi
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(Spacing.SCREEN), dp(40), dp(Spacing.SCREEN), dp(22))
         }
-        // The day of the series on top, as a quiet heading.
-        dayTop = d.text("", Typo.VALUE, V2.Ink, center = true).apply { textSize = 24f }
-        col.addView(dayTop, d.centered())
+        // "Время для себя": a calm focus title; the day of the series moves into the ring below.
+        col.addView(d.text("Время для себя", Typo.DISPLAY, V2.Ink, center = true).apply { textSize = 34f }, d.centered())
+        col.addView(d.text("Сейчас ты в фокусе.", Typo.SUBTITLE, V2.InkMuted, center = true), d.centered(8))
 
         callCard = d.card(Spacing.INNER).apply { gravity = Gravity.CENTER_HORIZONTAL }
         callInfo = d.text("", Typo.HEADLINE, Palette.Ink, center = true).also { callCard.addView(it, d.fill()) }
@@ -332,10 +331,8 @@ class LockScreenView(private val context: Context, private val actions: LockActi
         val minutes = maxOf(0L, (left.toMillis() + 59_999) / 60_000)
         val total = Duration.between(m.start, m.end).toMillis().coerceAtLeast(1)
         val progress = 1f - left.toMillis().coerceIn(0, total).toFloat() / total
-        // The day is the heading of the screen, not a line in the ring.
-        ring.set(minutes / 60, minutes % 60, progress, "")
-        dayTop.text = m.dayLabel
-        dayTop.visibility = if (m.dayLabel.isEmpty()) View.INVISIBLE else View.VISIBLE
+        // The day of the series sits inside the ring, under the remaining time ("День 2 из 7").
+        ring.set(minutes / 60, minutes % 60, progress, m.dayLabel)
         phrase.text = m.phrase
         phraseCard.visibility = if (m.phrase.isEmpty()) View.GONE else View.VISIBLE
         until.text = "Телефон под защитой до ${Texts.time(m.end, m.zone)}"

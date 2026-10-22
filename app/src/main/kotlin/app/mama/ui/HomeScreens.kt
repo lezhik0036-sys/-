@@ -575,10 +575,19 @@ internal fun MainActivity.failureScreen(
     freeInDays: Long = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this)),
     sampleCommitment: app.mama.core.Commitment? = null,
 ): Pair<View, Boolean> {
+    val d = design
     val v = v2
-    val b = design.body(22).apply { gravity = Gravity.CENTER_HORIZONTAL }
-    b.addView(design.titleBlock("Этот путь продолжается", center = true, lead = "Один сложный вечер не отменяет твоего решения."))
-    b.addView(v.pill(doneLine(series), Icon.SPROUT), design.centered(14))
+    val n = series.kind.periods
+    val done = series.completedPeriods
+    val noun = if (countsNights(series.window)) "ночей" else "дней"
+    val b = d.body(22)
+    // "Срыв — это часть пути": the fact of what was done, never a verdict. Left-aligned over the path.
+    b.addView(d.titleBlock(
+        "Срыв — это часть пути",
+        subtitle = "Самое сильное решение — мягко вернуться к цели.",
+        narrow = true,
+        lead = "Ты прошёл $done из $n $noun. Это уже результат.",
+    ))
     // The path itself: light ahead, the way back in view.
     heroSpace(b, 176)
 
@@ -587,15 +596,15 @@ internal fun MainActivity.failureScreen(
     val head = v.k.row().apply { gravity = Gravity.TOP }
     head.addView(v.bubble(Icon.REFRESH, V2.Moss, V2.SandLight, 52))
     val texts = v.k.column()
-    texts.addView(v.text("Попробовать снова", Typo.HEADLINE, V2.Ink))
+    texts.addView(v.text("Начать заново", Typo.HEADLINE, V2.Ink))
     // The source comes from the one shared resolver: free once the 30-day wait is over, else a paid Restart.
     val priceLine = when (val source = Mama.startSource(this, series.kind)) {
-        is app.mama.core.StartSource.PaidRestart -> "Restart · ${Texts.price(source.priceRub)}"
-        is app.mama.core.StartSource.PaidRestartInsufficientFunds -> "Restart · ${Texts.price(source.priceRub)}"
-        app.mama.core.StartSource.Free -> "Бесплатно"
+        is app.mama.core.StartSource.PaidRestart -> "Restart серии · ${Texts.price(source.priceRub)}"
+        is app.mama.core.StartSource.PaidRestartInsufficientFunds -> "Restart серии · ${Texts.price(source.priceRub)}"
+        app.mama.core.StartSource.Free -> "Новая серия · бесплатно"
     }
     texts.addView(v.text(priceLine, Typo.VALUE, V2.Moss), v.k.gap(4))
-    texts.addView(v.text("Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново.", Typo.LABEL, V2.InkMuted), v.k.gap(6))
+    texts.addView(v.text("Можно начать новую серию — ${Texts.seriesName(series.kind)}, с первого дня — прямо сейчас. Это не откат, а новый шаг к себе.", Typo.LABEL, V2.InkMuted), v.k.gap(6))
     head.addView(texts, v.k.weight().apply { leftMargin = v.dp(14) })
     offer.addView(head, v.k.fill())
     offer.addView(v.primary("Начать заново") {
@@ -612,11 +621,17 @@ internal fun MainActivity.failureScreen(
             "Без Restart — бесплатно, телефон при этом не заблокирован.", Icon.CALENDAR,
         ), v.k.gap(Spacing.GUTTER))
     }
-    b.addView(v.secondary("Вернуться на главную", Icon.HOME) {
+    // The quiet way back, as a card row: continue when you feel ready.
+    b.addView(d.actionRow(Icon.HOME, "Вернуться на главную", "Продолжить, когда почувствуешь готовность.") {
         closeDraft()
         Mama.dismissSeries(this)
         render()
-    }, v.k.gap(22))
+    }, d.gap(Spacing.GUTTER))
+    b.addView(d.quoteCard("Не идеальность меняет жизнь, а возвращение к пути.", italic = true, signature = "MAMA"), d.gap(Spacing.GUTTER))
+    b.addView(d.noteCard(
+        "Один сложный день не стирает твой прогресс. Ты уже сделал важные шаги, и это остаётся с тобой.",
+        "Твоя цель всё ещё с тобой.", icon = Icon.HEART,
+    ), d.gap(Spacing.GUTTER))
     b.addView(v.link("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }, v.k.centered(6))
     // The sun stays high in the window, so the path down to the lake is in view.
     return v1Frame(Scenery.RECOVERY, design.topBar(null), b, null, layout = SceneLayout.HERO, focusY = 0.1f).also { it.first.tag = RECOVERY_SCREEN }
@@ -668,19 +683,29 @@ internal fun MainActivity.motivationScreen(series: Series): Pair<View, Boolean> 
     val d = design
     val n = series.kind.periods
     val done = series.completedPeriods
-    val b = d.body(18)
+    val b = d.body(22)
+    // "День N из M": the real day of the series, then the honest facts of the night that passed.
+    b.addView(d.titleBlock("День $done из $n", "Ты держишь курс.", narrow = true))
+    b.addView(
+        d.photoBand(progressScenery(series), progressMood(series)),
+        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(176)).apply { topMargin = d.dp(22) },
+    )
+    // Two real values only: the protected window the user set, and the streak of nights done.
+    // No "time without the phone" and no "vs. yesterday": MAMA does not measure those, so it never invents them.
+    val mins = maxOf(0L, series.window.length.toMinutes())
+    val periodWord = if (countsNights(series.window)) plural(done, "ночь", "ночи", "ночей") else plural(done, "день", "дня", "дней")
+    val protectedRow = d.valueRow(Icon.CLOCK, "Под защитой каждую ночь", d.hoursMinutes(mins / 60, mins % 60), style = Typo.NUMBER)
+    val streakRow = d.valueRow(Icon.SPROUT, "Серия", "$done $periodWord подряд", note = d.badge("Так держать!", Icon.SPROUT), style = Typo.TITLE)
+    b.addView(d.rowsCard(listOf(protectedRow.view, streakRow.view), paddingDp = 18, dividerInsetDp = 16 + 62 + 16), d.gap(Spacing.GUTTER))
+    b.addView(d.dayCircles(done, n), d.gap(20))
     val phrase = MotivationRotation.of(this).phrase(Placement.SUCCESS, "${series.id}:night-$done", maxLength = 70).text
-    // The landscape of this stage as a card; the thought in a card resting on it.
-    // At least 250 dp; on a taller screen the landscape takes the room left.
-    b.addView(d.photoBand(progressScenery(series), progressMood(series)), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d.dp(250), 1f))
-    val thought = d.card(paddingDp = 24, radiusDp = V2.CARD_LARGE)
-    thought.addView(d.text(phrase, Typo.QUOTE, Palette.Ink).apply { textSize = 27f }, d.fill())
-    thought.addView(d.text("— MAMA", Typo.TAG, Palette.InkSoft), d.wrap().apply { topMargin = d.dp(12) })
-    b.addView(thought, d.fill().apply { topMargin = -d.dp(44); leftMargin = d.dp(14); rightMargin = d.dp(14) })
-    b.addView(d.badge(doneLine(series), Icon.SPROUT), d.wrap().apply { topMargin = d.dp(26) })
-    b.addView(d.dayCircles(done, n), d.gap(14))
-    val next = d.primaryButton("Продолжить", large = true) { closeMotivation(series) }
-    return lightFrame(d.topBar(null), b, d.bottomCta(next))
+    b.addView(d.quoteCard(phrase, italic = true, signature = "MAMA"), d.gap(Spacing.GUTTER))
+    val next = d.primaryButton("Продолжать", large = true) { closeMotivation(series) }
+    val header = d.column().apply {
+        addView(d.topBar({ closeMotivation(series) }, "$done из $n"))
+        addView(d.segments(done, n), d.gap(4).apply { leftMargin = d.dp(Spacing.SCREEN); rightMargin = d.dp(Spacing.SCREEN) })
+    }
+    return lightFrame(header, b, d.bottomCta(next))
 }
 
 /** The motivation screen was seen for this night: back to the home screen. */
