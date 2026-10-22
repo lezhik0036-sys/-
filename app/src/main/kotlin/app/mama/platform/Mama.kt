@@ -27,6 +27,7 @@ import app.mama.core.SeriesStatus
 import app.mama.core.Session
 import app.mama.core.SessionMode
 import app.mama.core.StandardRules
+import app.mama.core.StartSource
 import app.mama.core.Snapshot
 import app.mama.core.TestMode
 import app.mama.core.TrustedContact
@@ -225,17 +226,22 @@ object Mama {
         val r = reconcile(context)
         if (!idle(r)) return SeriesStart.Busy
         val ent = r.snapshot.entitlements
-        val canFree = StandardRules.canStartFree(ent, r.trustedNow)
-        // A free start is blocked by the cooldown unless the копилка has an earned series of this length:
-        // that one starts free at once, spending the credit. Only then fall back to the paid-Restart gate.
-        val useCredit = !canFree && ent.standardCreditsFor(kind) > 0
-        if (!canFree && !useCredit) {
+        // The one shared rule for every start entry point: free > копилка credit > paid Restart.
+        val source = StandardRules.startSource(ent, kind, r.trustedNow)
+        if (source is StartSource.PaidRestart) {
             return SeriesStart.Waiting(StandardRules.daysUntilFreeStart(ent, r.trustedNow))
         }
         val result = flow.schedule(
-            r.snapshot, UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, time, contact, mode, commitmentKop, r.trustedNow, fromCredit = useCredit,
+            r.snapshot, UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, time, contact, mode, commitmentKop, r.trustedNow,
+            fromCredit = source is StartSource.FromCredit,
         )
         return saveStart(context, result)
+    }
+
+    /** The resolved start source for the next standard series of [kind]: the single gate every UI entry point consults. */
+    fun startSource(context: Context, kind: SeriesKind): StartSource {
+        val r = cached ?: reconcile(context)
+        return StandardRules.startSource(r.snapshot.entitlements, kind, r.trustedNow)
     }
 
     /**

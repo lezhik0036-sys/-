@@ -48,7 +48,34 @@ object StandardRules {
         return (ms + DAY_MS - 1) / DAY_MS
     }
 
+    /**
+     * Where the next standard series of [kind] starts from — the ONE rule
+     * every start entry point uses (the new-series wizard, "Начать заново"
+     * after a срыв, the home screen). Priority: a free start when the 30-day
+     * wait is over (or there was no срыв); otherwise an earned same-length
+     * series from the копилка; otherwise a paid Restart of that length. A
+     * credit is preferred over paying, but never spent when the start is free
+     * anyway.
+     */
+    fun startSource(e: Entitlements, kind: SeriesKind, now: Instant): StartSource = when {
+        canStartFree(e, now) -> StartSource.Free
+        e.standardCreditsFor(kind) > 0 -> StartSource.FromCredit
+        else -> StartSource.PaidRestart(kind.restartPriceRub)
+    }
+
     private const val DAY_MS = 24L * 60 * 60 * 1000
+}
+
+/** The resolved start source for a standard series (see [StandardRules.startSource]). */
+sealed interface StartSource {
+    /** A free start is available now: the first series, or the 30-day wait is over. */
+    data object Free : StartSource
+
+    /** An earned same-length series from the копилка is used (free, spends one credit). */
+    data object FromCredit : StartSource
+
+    /** No credit of this length and the 30-day wait is on: a paid Restart at [priceRub]. */
+    data class PaidRestart(val priceRub: Int) : StartSource
 }
 
 /**

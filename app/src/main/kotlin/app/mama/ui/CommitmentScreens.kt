@@ -15,6 +15,7 @@ import app.mama.core.LedgerEntry
 import app.mama.core.LedgerStatus
 import app.mama.core.LedgerType
 import app.mama.core.SeriesKind
+import app.mama.core.StartSource
 import app.mama.core.Wallet
 import app.mama.core.WalletEngine
 import app.mama.motivation.Placement
@@ -192,13 +193,27 @@ private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
         go(Step.REVIEW)
         return
     }
-    payRestart(kind)
+    finishRestart(kind)
 }
 
-/** Restart payment for the chosen time and "Цена слова" (if any); the series is then SCHEDULED. */
-internal fun MainActivity.payRestart(kind: SeriesKind) {
-    val commitment = commitmentKop
+/**
+ * Final step of "Начать заново". The source comes from the one shared
+ * resolver ([Mama.startSource]): a копилка credit of this length starts the
+ * series free (and is spent), otherwise a paid Restart, otherwise a free
+ * start when the 30-day wait is over. It never charges when a credit covers
+ * it. The chosen time and "Цена слова" carry over either way.
+ */
+internal fun MainActivity.finishRestart(kind: SeriesKind) {
     val time = launchTime()
+    val commitment = commitmentKop
+    when (Mama.startSource(this, kind)) {
+        is StartSource.PaidRestart -> payRestartFromBalance(kind, time, commitment)
+        StartSource.FromCredit, StartSource.Free -> startRestartFree(kind, time, commitment)
+    }
+}
+
+/** Paid Restart (store or balance) for the chosen time and "Цена слова"; the series is then SCHEDULED. */
+private fun MainActivity.payRestartFromBalance(kind: SeriesKind, time: app.mama.core.LaunchTime, commitment: Long?) {
     val schedule = when (time) {
         is app.mama.core.LaunchTime.AutoNow -> "старт сразу после подтверждения, ${Texts.flexDuration(time.length)} каждый день"
         is app.mama.core.LaunchTime.Fixed -> "${Texts.hhmm(start)} → ${Texts.hhmm(end)} каждый день"
@@ -208,16 +223,36 @@ internal fun MainActivity.payRestart(kind: SeriesKind) {
         (commitment?.let { " Цена слова: ${Texts.money(it)} (резерв с баланса MAMA)." } ?: " Без Цены слова.")
     Checkout.obtain(this, Product.Restart(kind), "Новый старт · Restart", reserveAheadKop = commitment ?: 0, note = note) { source ->
         when (Mama.restartSeries(this, source, time, commitment)) {
-            app.mama.platform.Mama.SeriesStart.Started -> {
+            Mama.SeriesStart.Started -> {
                 restartFlow = false
                 commitmentKop = null
                 closeDraft()
             }
-            is app.mama.platform.Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; payRestart(kind) }
+            is Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; finishRestart(kind) }
             else -> alert("Не получилось", "Restart сейчас недоступен.")
         }
         render()
     }
+}
+
+/** A free start of the same length — a копилка credit (spent), or a free start when the wait is over — reusing the broken series' contact. */
+private fun MainActivity.startRestartFree(kind: SeriesKind, time: app.mama.core.LaunchTime, commitment: Long?) {
+    val broken = Mama.series(this)
+    val contact = broken?.contact
+    if (contact == null) {
+        alert("Не получилось", "Серию сейчас нельзя начать.")
+        return
+    }
+    when (Mama.startSeries(this, kind, time, contact, broken.mode, commitment)) {
+        Mama.SeriesStart.Started -> {
+            restartFlow = false
+            commitmentKop = null
+            closeDraft()
+        }
+        is Mama.SeriesStart.NotEnoughBalance -> notEnoughBalance { commitmentKop = null; finishRestart(kind) }
+        else -> alert("Не получилось", "Серию сейчас нельзя начать.")
+    }
+    render()
 }
 
 internal const val NOT_ENOUGH = "На балансе MAMA недостаточно средств для выбранной Цены слова."

@@ -461,7 +461,7 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
                     restartStep = Step.COMMITMENT
                     render()
                 } else {
-                    payRestart(choice.series ?: app.mama.core.SeriesKind.SEVEN)
+                    finishRestart(choice.series ?: app.mama.core.SeriesKind.SEVEN)
                 }
             }
             else -> go(nextStep(Step.TIME))

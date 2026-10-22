@@ -1,6 +1,9 @@
 package app.mama.ui
 
 import android.content.Context
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import app.mama.core.DailyWindow
 import app.mama.core.Entitlements
@@ -8,17 +11,20 @@ import app.mama.core.ExitKind
 import app.mama.core.GrantSource
 import app.mama.core.LaunchTime
 import app.mama.core.LockEngine
+import app.mama.core.Series
 import app.mama.core.SeriesFlow
 import app.mama.core.SeriesKind
 import app.mama.core.SeriesStatus
 import app.mama.core.SessionMode
 import app.mama.core.Snapshot
 import app.mama.core.StandardRules
+import app.mama.core.StartSource
 import app.mama.core.StateCodec
 import app.mama.core.TrustedContact
 import app.mama.core.Wallet
 import app.mama.platform.Mama
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -26,6 +32,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.time.Duration
@@ -254,5 +261,88 @@ class RestartGateTest {
         Mama.reconcile(context)
         assertTrue(Mama.startSeries(context, SeriesKind.FIVE, windowIn(4), mom, SessionMode.SLEEP) is Mama.SeriesStart.Waiting)
         assertEquals("the 3-day credit is untouched", 1, Mama.standardCredits(context, SeriesKind.THREE))
+    }
+
+    // ---- "Начать заново" on the failure screen uses the same shared resolver ----
+
+    /** A broken series on the failure screen, with the given copilka credits and balance. */
+    private fun seedBroken(kind: SeriesKind, credits: Map<SeriesKind, Int>, balanceKop: Long = 44_000_00) {
+        val failedAt = Instant.now().minus(Duration.ofDays(3))
+        seed(
+            Snapshot(
+                series = Series(
+                    "old", kind, windowIn(10), mom, SessionMode.SLEEP, startedAt = failedAt.minus(Duration.ofDays(1)),
+                    status = SeriesStatus.BROKEN, endedAt = failedAt,
+                ),
+                entitlements = Entitlements(standardFailedAt = failedAt, standardCredits = credits),
+                wallet = Wallet(availableKop = balanceKop),
+            ),
+        )
+        Mama.reconcile(context)
+    }
+
+    private fun failureTexts(): List<String> {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        return texts(activity.findViewById<ViewGroup>(android.R.id.content)!!)
+    }
+
+    private fun texts(v: View): List<String> = when (v) {
+        is TextView -> listOf(v.text.toString())
+        is ViewGroup -> (0 until v.childCount).flatMap { texts(v.getChildAt(it)) }
+        else -> emptyList()
+    }
+
+    // 1. Broken series + a credit of that length: "Начать заново" offers the free copilka start, not paid Restart.
+    @Test
+    fun `the failure screen offers a free credit start when a credit of that length exists`() {
+        seedBroken(SeriesKind.THREE, credits = mapOf(SeriesKind.THREE to 1))
+        assertEquals(StartSource.FromCredit, Mama.startSource(context, SeriesKind.THREE))
+        val texts = failureTexts().joinToString(" | ")
+        assertTrue("expected a free copilka offer, got: $texts", texts.contains("из копилки"))
+        assertFalse("the paid Restart must not be offered: $texts", texts.contains("Restart · 99"))
+    }
+
+    // 2. A credit of a different length does not cover this one: the failure screen offers the paid Restart.
+    @Test
+    fun `the failure screen offers paid Restart when the credit is a different length`() {
+        seedBroken(SeriesKind.FIVE, credits = mapOf(SeriesKind.THREE to 1))
+        assertTrue(Mama.startSource(context, SeriesKind.FIVE) is StartSource.PaidRestart)
+        val texts = failureTexts().joinToString(" | ")
+        assertTrue("expected the paid Restart offer at 179: $texts", texts.contains("Restart · ") && texts.contains("179"))
+    }
+
+    // 3. Starting from the credit (as "Начать заново" does) spends it once; a double tap cannot spend two.
+    @Test
+    fun `a credit start from the failure screen spends once, a double tap is a no-op`() {
+        seedBroken(SeriesKind.THREE, credits = mapOf(SeriesKind.THREE to 1))
+        // What finishRestart does for a FromCredit source: start the same length, reusing the broken contact/mode.
+        assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP))
+        assertEquals(Mama.SeriesStart.Busy, Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP))
+        assertEquals(0, Mama.standardCredits(context, SeriesKind.THREE))
+        assertEquals("the credit start is free", 44_000_00L, Mama.wallet(context).availableKop)
+    }
+
+    // 4. After a credit series is broken: no credit left and the cooldown re-anchors, so a paid Restart is offered again.
+    @Test
+    fun `after the credit series is broken, Restart is available again from the new срыв`() {
+        // Build a credit series (ACTIVE) in core, break it, seed the result, reconcile.
+        val lock = LockEngine()
+        val flow = SeriesFlow(lock)
+        val startedAt = Instant.now().minus(Duration.ofHours(3))
+        val scheduled = (
+            flow.schedule(
+                Snapshot(entitlements = Entitlements(standardFailedAt = startedAt.minus(Duration.ofDays(2)), standardCredits = mapOf(SeriesKind.THREE to 1)), wallet = Wallet(availableKop = 0)),
+                "c", "s", SeriesKind.THREE, LaunchTime.AutoNow(Duration.ofHours(8), zone), mom, SessionMode.SLEEP, null, startedAt, fromCredit = true,
+            ) as SeriesFlow.Result.Done
+            ).snapshot
+        val active = flow.confirm(scheduled, startedAt.plusSeconds(1))!!
+        val ended = lock.endByTrustedExit(active.session!!, ExitKind.END_SESSION, Instant.now().minusSeconds(5))
+        seed(active.copy(session = ended))
+
+        val r = Mama.reconcile(context)
+        assertEquals(SeriesStatus.BROKEN, r.snapshot.series!!.status)
+        assertEquals("the credit stays spent", 0, Mama.standardCredits(context, SeriesKind.THREE))
+        // No credit now, cooldown re-anchored to this срыв: the paid Restart is the offer.
+        assertTrue(Mama.startSource(context, SeriesKind.THREE) is StartSource.PaidRestart)
     }
 }

@@ -588,8 +588,20 @@ internal fun MainActivity.failureScreen(
     head.addView(v.bubble(Icon.REFRESH, V2.Moss, V2.SandLight, 52))
     val texts = v.k.column()
     texts.addView(v.text("Попробовать снова", Typo.HEADLINE, V2.Ink))
-    texts.addView(v.text("Restart · ${Texts.price(series.kind.restartPriceRub)}", Typo.VALUE, V2.Moss), v.k.gap(4))
-    texts.addView(v.text("Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново.", Typo.LABEL, V2.InkMuted), v.k.gap(6))
+    // The source comes from the one shared resolver: a копилка credit of this length wins over the paid Restart.
+    val source = Mama.startSource(this, series.kind)
+    val priceLine = when (source) {
+        is app.mama.core.StartSource.PaidRestart -> "Restart · ${Texts.price(source.priceRub)}"
+        app.mama.core.StartSource.FromCredit -> "Бесплатно — из копилки"
+        app.mama.core.StartSource.Free -> "Бесплатно"
+    }
+    texts.addView(v.text(priceLine, Typo.VALUE, V2.Moss), v.k.gap(4))
+    val detail = if (source == app.mama.core.StartSource.FromCredit) {
+        "Та же серия — ${Texts.seriesName(series.kind)}, с первого дня, бесплатно из копилки. Время выберешь заново."
+    } else {
+        "Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново."
+    }
+    texts.addView(v.text(detail, Typo.LABEL, V2.InkMuted), v.k.gap(6))
     head.addView(texts, v.k.weight().apply { leftMargin = v.dp(14) })
     offer.addView(head, v.k.fill())
     offer.addView(v.primary("Начать заново") {
