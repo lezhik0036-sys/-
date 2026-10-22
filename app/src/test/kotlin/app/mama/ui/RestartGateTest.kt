@@ -244,7 +244,7 @@ class RestartGateTest {
         seedBroken(SeriesKind.FIVE)
         assertTrue(Mama.startSource(context, SeriesKind.FIVE) is StartSource.PaidRestart)
         val texts = failureTexts().joinToString(" | ")
-        assertTrue("expected the paid Restart offer at 179: $texts", texts.contains("Restart · ") && texts.contains("179"))
+        assertTrue("expected the paid Restart offer at 179: $texts", texts.contains("Restart серии · ") && texts.contains("179"))
     }
 
     // Short balance: the resolver reports the paid Restart as not yet affordable, and the card still shows its price.

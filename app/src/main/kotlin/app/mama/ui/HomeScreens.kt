@@ -596,7 +596,8 @@ internal fun MainActivity.failureScreen(
     val head = v.k.row().apply { gravity = Gravity.TOP }
     head.addView(v.bubble(Icon.REFRESH, V2.Moss, V2.SandLight, 52))
     val texts = v.k.column()
-    texts.addView(v.text("Начать заново", Typo.HEADLINE, V2.Ink))
+    // Card title distinct from the CTA label below, so a by-text lookup resolves to the button.
+    texts.addView(v.text("Новый старт", Typo.HEADLINE, V2.Ink))
     // The source comes from the one shared resolver: free once the 30-day wait is over, else a paid Restart.
     val priceLine = when (val source = Mama.startSource(this, series.kind)) {
         is app.mama.core.StartSource.PaidRestart -> "Restart серии · ${Texts.price(source.priceRub)}"
