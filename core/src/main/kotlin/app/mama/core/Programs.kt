@@ -49,18 +49,20 @@ object StandardRules {
     }
 
     /**
-     * Where the next standard series of [kind] starts from — the ONE rule
-     * every start entry point uses (the new-series wizard, "Начать заново"
-     * after a срыв, the home screen). Priority: a free start when the 30-day
-     * wait is over (or there was no срыв); otherwise an earned same-length
-     * series from the копилка; otherwise a paid Restart of that length. A
-     * credit is preferred over paying, but never spent when the start is free
-     * anyway.
+     * How the next standard series of [kind] starts — the ONE rule every start
+     * entry point uses (the new-series wizard, "Начать заново" after a срыв,
+     * the home screen). Money only: the MAMA balance and the free FLEX
+     * entitlement are separate, and a paid Restart never grants a free credit.
+     * - the 30-day wait is over (or there was no срыв): a free start;
+     * - the wait is on and [availableKop] covers the length's Restart price: a
+     *   paid Restart (the price is then charged and the series starts at once);
+     * - the wait is on and the balance is short: a paid Restart the user
+     *   cannot afford yet.
      */
-    fun startSource(e: Entitlements, kind: SeriesKind, now: Instant): StartSource = when {
+    fun startSource(e: Entitlements, kind: SeriesKind, now: Instant, availableKop: Long): StartSource = when {
         canStartFree(e, now) -> StartSource.Free
-        e.standardCreditsFor(kind) > 0 -> StartSource.FromCredit
-        else -> StartSource.PaidRestart(kind.restartPriceRub)
+        availableKop >= kind.restartPriceRub * 100L -> StartSource.PaidRestart(kind.restartPriceRub)
+        else -> StartSource.PaidRestartInsufficientFunds(kind.restartPriceRub, availableKop)
     }
 
     private const val DAY_MS = 24L * 60 * 60 * 1000
@@ -71,11 +73,11 @@ sealed interface StartSource {
     /** A free start is available now: the first series, or the 30-day wait is over. */
     data object Free : StartSource
 
-    /** An earned same-length series from the копилка is used (free, spends one credit). */
-    data object FromCredit : StartSource
-
-    /** No credit of this length and the 30-day wait is on: a paid Restart at [priceRub]. */
+    /** The 30-day wait is on; the balance covers it: a paid Restart of this length at [priceRub]. */
     data class PaidRestart(val priceRub: Int) : StartSource
+
+    /** The 30-day wait is on but the MAMA balance ([availableKop]) does not cover the [priceRub] Restart. */
+    data class PaidRestartInsufficientFunds(val priceRub: Int, val availableKop: Long) : StartSource
 }
 
 /**
@@ -146,22 +148,7 @@ data class Entitlements(
     val flex: FlexPackage? = null,
     /** Earned free FLEX packages not yet activated. */
     val freeFlexCredits: Int = 0,
-    /**
-     * The копилка: free standard series earned by completing a paid Restart,
-     * by length. One such credit starts a series of that length at once,
-     * regardless of the 30-day free-start wait. Counts are always > 0 here.
-     */
-    val standardCredits: Map<SeriesKind, Int> = emptyMap(),
-) {
-    /** Earned free series of [kind] waiting in the копилка. */
-    fun standardCreditsFor(kind: SeriesKind): Int = standardCredits[kind] ?: 0
-
-    /** [standardCredits] with [kind] changed by [delta], dropping it when it reaches zero. */
-    fun withStandardCredit(kind: SeriesKind, delta: Int): Entitlements {
-        val next = (standardCreditsFor(kind) + delta).coerceAtLeast(0)
-        return copy(standardCredits = if (next == 0) standardCredits - kind else standardCredits + (kind to next))
-    }
-}
+)
 
 /** Pure FLEX rules on top of [LockEngine]. */
 class FlexEngine(private val engine: LockEngine, private val policy: CorePolicy = CorePolicy()) {

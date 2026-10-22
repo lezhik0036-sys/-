@@ -588,20 +588,14 @@ internal fun MainActivity.failureScreen(
     head.addView(v.bubble(Icon.REFRESH, V2.Moss, V2.SandLight, 52))
     val texts = v.k.column()
     texts.addView(v.text("Попробовать снова", Typo.HEADLINE, V2.Ink))
-    // The source comes from the one shared resolver: a копилка credit of this length wins over the paid Restart.
-    val source = Mama.startSource(this, series.kind)
-    val priceLine = when (source) {
+    // The source comes from the one shared resolver: free once the 30-day wait is over, else a paid Restart.
+    val priceLine = when (val source = Mama.startSource(this, series.kind)) {
         is app.mama.core.StartSource.PaidRestart -> "Restart · ${Texts.price(source.priceRub)}"
-        app.mama.core.StartSource.FromCredit -> "Бесплатно — из копилки"
+        is app.mama.core.StartSource.PaidRestartInsufficientFunds -> "Restart · ${Texts.price(source.priceRub)}"
         app.mama.core.StartSource.Free -> "Бесплатно"
     }
     texts.addView(v.text(priceLine, Typo.VALUE, V2.Moss), v.k.gap(4))
-    val detail = if (source == app.mama.core.StartSource.FromCredit) {
-        "Та же серия — ${Texts.seriesName(series.kind)}, с первого дня, бесплатно из копилки. Время выберешь заново."
-    } else {
-        "Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново."
-    }
-    texts.addView(v.text(detail, Typo.LABEL, V2.InkMuted), v.k.gap(6))
+    texts.addView(v.text("Та же серия — ${Texts.seriesName(series.kind)}, с первого дня. Время выберешь заново.", Typo.LABEL, V2.InkMuted), v.k.gap(6))
     head.addView(texts, v.k.weight().apply { leftMargin = v.dp(14) })
     offer.addView(head, v.k.fill())
     offer.addView(v.primary("Начать заново") {
@@ -655,13 +649,6 @@ internal fun MainActivity.successScreen(series: Series, sampleCommitment: app.ma
     commitmentOutcome(series.id, sampleCommitment)?.let { b.addView(it, d.gap(Spacing.GUTTER)) }
     val phrase = MotivationRotation.of(this).phrase(Placement.SUCCESS, "${series.id}:done").text
     b.addView(d.text(phrase, Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(26))
-    // A completed paid Restart earns one free series of the same length (копилка).
-    if (series.origin == app.mama.core.SeriesOrigin.PAID_RESTART) {
-        b.addView(d.noteCard(
-            "Ты оплатил этот рестарт и прошёл его целиком — следующая серия ${Texts.seriesName(series.kind)} уже в копилке, бесплатно.",
-            "Бесплатная серия в копилке", icon = Icon.SPROUT,
-        ), d.gap(Spacing.GUTTER))
-    }
     b.addView(d.text("Платить не нужно: Restart бывает только после срыва.", Typo.CAPTION, Palette.InkMuted, center = true), d.gap(16))
     val next = d.primaryButton("Новая серия", large = true) { closeDraft(); Mama.dismissSeries(this@successScreen); render() }
     val path = d.linkButton("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }

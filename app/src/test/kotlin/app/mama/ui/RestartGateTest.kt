@@ -24,9 +24,7 @@ import app.mama.core.TrustedContact
 import app.mama.core.Wallet
 import app.mama.platform.Mama
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -211,62 +209,10 @@ class RestartGateTest {
         assertTrue(StandardRules.daysUntilFreeStart(r.snapshot.entitlements, Mama.trustedNow(context)) in 29..30)
     }
 
-    // A копилка credit of the chosen length starts the series free during the cooldown, bypassing the wait.
-    @Test
-    fun `a copilka credit starts the series free during cooldown and spends one`() {
-        seed(
-            Snapshot(
-                series = null,
-                entitlements = Entitlements(standardFailedAt = Instant.now().minus(Duration.ofDays(3)), standardCredits = mapOf(SeriesKind.THREE to 1)),
-                wallet = Wallet(availableKop = 0), // no money: the credit alone starts it
-            ),
-        )
-        Mama.reconcile(context)
-        assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP))
-        assertEquals(SeriesStatus.SCHEDULED, Mama.series(context)!!.status)
-        assertEquals(0, Mama.standardCredits(context, SeriesKind.THREE))
-        assertEquals(0L, Mama.wallet(context).availableKop)
-        assertNotNull("the 30-day cooldown is untouched", Mama.entitlements(context).standardFailedAt)
-    }
+    // ---- "Начать заново" on the failure screen uses the same shared money resolver ----
 
-    // The rule: a copilka credit of the needed length is used in priority — the paid Restart is never
-    // offered while such a credit exists; it is spent, the balance is untouched, the cooldown stays.
-    @Test
-    fun `a credit of the needed length is preferred over the paid Restart`() {
-        seed(
-            Snapshot(
-                series = null,
-                entitlements = Entitlements(standardFailedAt = Instant.now().minus(Duration.ofDays(3)), standardCredits = mapOf(SeriesKind.THREE to 1)),
-                wallet = Wallet(availableKop = 44_000_00), // money is available, yet the credit is used, not charged
-            ),
-        )
-        Mama.reconcile(context)
-        val r = Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP)
-        assertEquals(Mama.SeriesStart.Started, r)
-        assertTrue("the paid Restart must not be offered when a credit of this length exists", r !is Mama.SeriesStart.Waiting)
-        assertEquals(0, Mama.standardCredits(context, SeriesKind.THREE))
-        assertEquals("the balance is untouched: the credit was used, not paid", 44_000_00L, Mama.wallet(context).availableKop)
-    }
-
-    // A credit for one length does not cover another: a different length still hits the Restart/wait gate.
-    @Test
-    fun `a credit for one length does not cover another`() {
-        seed(
-            Snapshot(
-                series = null,
-                entitlements = Entitlements(standardFailedAt = Instant.now().minus(Duration.ofDays(3)), standardCredits = mapOf(SeriesKind.THREE to 1)),
-                wallet = Wallet(availableKop = 44_000_00),
-            ),
-        )
-        Mama.reconcile(context)
-        assertTrue(Mama.startSeries(context, SeriesKind.FIVE, windowIn(4), mom, SessionMode.SLEEP) is Mama.SeriesStart.Waiting)
-        assertEquals("the 3-day credit is untouched", 1, Mama.standardCredits(context, SeriesKind.THREE))
-    }
-
-    // ---- "Начать заново" on the failure screen uses the same shared resolver ----
-
-    /** A broken series on the failure screen, with the given copilka credits and balance. */
-    private fun seedBroken(kind: SeriesKind, credits: Map<SeriesKind, Int>, balanceKop: Long = 44_000_00) {
+    /** A broken series on the failure screen, with the given MAMA balance. */
+    private fun seedBroken(kind: SeriesKind, balanceKop: Long = 44_000_00) {
         val failedAt = Instant.now().minus(Duration.ofDays(3))
         seed(
             Snapshot(
@@ -274,7 +220,7 @@ class RestartGateTest {
                     "old", kind, windowIn(10), mom, SessionMode.SLEEP, startedAt = failedAt.minus(Duration.ofDays(1)),
                     status = SeriesStatus.BROKEN, endedAt = failedAt,
                 ),
-                entitlements = Entitlements(standardFailedAt = failedAt, standardCredits = credits),
+                entitlements = Entitlements(standardFailedAt = failedAt),
                 wallet = Wallet(availableKop = balanceKop),
             ),
         )
@@ -292,57 +238,21 @@ class RestartGateTest {
         else -> emptyList()
     }
 
-    // 1. Broken series + a credit of that length: "Начать заново" offers the free copilka start, not paid Restart.
+    // The failure screen uses the shared resolver: during the cooldown it offers the paid Restart at the length's price.
     @Test
-    fun `the failure screen offers a free credit start when a credit of that length exists`() {
-        seedBroken(SeriesKind.THREE, credits = mapOf(SeriesKind.THREE to 1))
-        assertEquals(StartSource.FromCredit, Mama.startSource(context, SeriesKind.THREE))
-        val texts = failureTexts().joinToString(" | ")
-        assertTrue("expected a free copilka offer, got: $texts", texts.contains("из копилки"))
-        assertFalse("the paid Restart must not be offered: $texts", texts.contains("Restart · 99"))
-    }
-
-    // 2. A credit of a different length does not cover this one: the failure screen offers the paid Restart.
-    @Test
-    fun `the failure screen offers paid Restart when the credit is a different length`() {
-        seedBroken(SeriesKind.FIVE, credits = mapOf(SeriesKind.THREE to 1))
+    fun `the failure screen offers the paid Restart during the cooldown`() {
+        seedBroken(SeriesKind.FIVE)
         assertTrue(Mama.startSource(context, SeriesKind.FIVE) is StartSource.PaidRestart)
         val texts = failureTexts().joinToString(" | ")
         assertTrue("expected the paid Restart offer at 179: $texts", texts.contains("Restart · ") && texts.contains("179"))
     }
 
-    // 3. Starting from the credit (as "Начать заново" does) spends it once; a double tap cannot spend two.
+    // Short balance: the resolver reports the paid Restart as not yet affordable, and the card still shows its price.
     @Test
-    fun `a credit start from the failure screen spends once, a double tap is a no-op`() {
-        seedBroken(SeriesKind.THREE, credits = mapOf(SeriesKind.THREE to 1))
-        // What finishRestart does for a FromCredit source: start the same length, reusing the broken contact/mode.
-        assertEquals(Mama.SeriesStart.Started, Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP))
-        assertEquals(Mama.SeriesStart.Busy, Mama.startSeries(context, SeriesKind.THREE, windowIn(4), mom, SessionMode.SLEEP))
-        assertEquals(0, Mama.standardCredits(context, SeriesKind.THREE))
-        assertEquals("the credit start is free", 44_000_00L, Mama.wallet(context).availableKop)
-    }
-
-    // 4. After a credit series is broken: no credit left and the cooldown re-anchors, so a paid Restart is offered again.
-    @Test
-    fun `after the credit series is broken, Restart is available again from the new срыв`() {
-        // Build a credit series (ACTIVE) in core, break it, seed the result, reconcile.
-        val lock = LockEngine()
-        val flow = SeriesFlow(lock)
-        val startedAt = Instant.now().minus(Duration.ofHours(3))
-        val scheduled = (
-            flow.schedule(
-                Snapshot(entitlements = Entitlements(standardFailedAt = startedAt.minus(Duration.ofDays(2)), standardCredits = mapOf(SeriesKind.THREE to 1)), wallet = Wallet(availableKop = 0)),
-                "c", "s", SeriesKind.THREE, LaunchTime.AutoNow(Duration.ofHours(8), zone), mom, SessionMode.SLEEP, null, startedAt, fromCredit = true,
-            ) as SeriesFlow.Result.Done
-            ).snapshot
-        val active = flow.confirm(scheduled, startedAt.plusSeconds(1))!!
-        val ended = lock.endByTrustedExit(active.session!!, ExitKind.END_SESSION, Instant.now().minusSeconds(5))
-        seed(active.copy(session = ended))
-
-        val r = Mama.reconcile(context)
-        assertEquals(SeriesStatus.BROKEN, r.snapshot.series!!.status)
-        assertEquals("the credit stays spent", 0, Mama.standardCredits(context, SeriesKind.THREE))
-        // No credit now, cooldown re-anchored to this срыв: the paid Restart is the offer.
-        assertTrue(Mama.startSource(context, SeriesKind.THREE) is StartSource.PaidRestart)
+    fun `the failure screen reports insufficient funds when the balance is short`() {
+        seedBroken(SeriesKind.SEVEN, balanceKop = 50_00)
+        assertTrue(Mama.startSource(context, SeriesKind.SEVEN) is StartSource.PaidRestartInsufficientFunds)
+        val texts = failureTexts().joinToString(" | ")
+        assertTrue("expected the Restart price 299 shown: $texts", texts.contains("299"))
     }
 }

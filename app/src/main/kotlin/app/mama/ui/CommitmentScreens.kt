@@ -198,17 +198,16 @@ private fun MainActivity.proceedCommitment(restart: Boolean, kind: SeriesKind) {
 
 /**
  * Final step of "Начать заново". The source comes from the one shared
- * resolver ([Mama.startSource]): a копилка credit of this length starts the
- * series free (and is spent), otherwise a paid Restart, otherwise a free
- * start when the 30-day wait is over. It never charges when a credit covers
- * it. The chosen time and "Цена слова" carry over either way.
+ * resolver ([Mama.startSource]): a free start when the 30-day wait is over,
+ * otherwise a paid Restart from the MAMA balance. The chosen time and "Цена
+ * слова" carry over either way.
  */
 internal fun MainActivity.finishRestart(kind: SeriesKind) {
     val time = launchTime()
     val commitment = commitmentKop
     when (Mama.startSource(this, kind)) {
-        is StartSource.PaidRestart -> payRestartFromBalance(kind, time, commitment)
-        StartSource.FromCredit, StartSource.Free -> startRestartFree(kind, time, commitment)
+        StartSource.Free -> startRestartFree(kind, time, commitment)
+        is StartSource.PaidRestart, is StartSource.PaidRestartInsufficientFunds -> payRestartFromBalance(kind, time, commitment)
     }
 }
 

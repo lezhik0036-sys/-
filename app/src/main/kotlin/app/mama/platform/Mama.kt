@@ -173,9 +173,6 @@ object Mama {
 
     fun entitlements(context: Context): Entitlements = (cached ?: reconcile(context)).snapshot.entitlements
 
-    /** Earned free series of [kind] in the копилка (completing a paid Restart of that length earns one). */
-    fun standardCredits(context: Context, kind: SeriesKind): Int = entitlements(context).standardCreditsFor(kind)
-
     /** Nothing running: no scheduled or active series, no FLEX period planned, no session. */
     private fun idle(r: Reconciliation) =
         r.state == LockState.Free && r.snapshot.series?.inProgress != true &&
@@ -226,14 +223,12 @@ object Mama {
         val r = reconcile(context)
         if (!idle(r)) return SeriesStart.Busy
         val ent = r.snapshot.entitlements
-        // The one shared rule for every start entry point: free > копилка credit > paid Restart.
-        val source = StandardRules.startSource(ent, kind, r.trustedNow)
-        if (source is StartSource.PaidRestart) {
+        // The one shared rule for every start entry point: free while the wait is over, else a paid Restart.
+        if (StandardRules.startSource(ent, kind, r.trustedNow, r.snapshot.wallet.availableKop) !is StartSource.Free) {
             return SeriesStart.Waiting(StandardRules.daysUntilFreeStart(ent, r.trustedNow))
         }
         val result = flow.schedule(
             r.snapshot, UUID.randomUUID().toString(), UUID.randomUUID().toString(), kind, time, contact, mode, commitmentKop, r.trustedNow,
-            fromCredit = source is StartSource.FromCredit,
         )
         return saveStart(context, result)
     }
@@ -241,7 +236,7 @@ object Mama {
     /** The resolved start source for the next standard series of [kind]: the single gate every UI entry point consults. */
     fun startSource(context: Context, kind: SeriesKind): StartSource {
         val r = cached ?: reconcile(context)
-        return StandardRules.startSource(r.snapshot.entitlements, kind, r.trustedNow)
+        return StandardRules.startSource(r.snapshot.entitlements, kind, r.trustedNow, r.snapshot.wallet.availableKop)
     }
 
     /**
