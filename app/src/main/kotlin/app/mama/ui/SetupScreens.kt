@@ -10,6 +10,8 @@ import android.text.TextWatcher
 import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -33,7 +35,10 @@ import app.mama.ui.design.ArtLayout
 import app.mama.ui.design.NoteTone
 import app.mama.ui.design.PageDots
 import app.mama.ui.design.Palette
+import app.mama.ui.design.Radii
+import app.mama.ui.design.SceneLayout
 import app.mama.ui.design.SceneMood
+import app.mama.ui.design.ScenicBackground
 import app.mama.ui.design.Scenery
 import app.mama.ui.design.Spacing
 import app.mama.ui.design.SummaryItem
@@ -251,34 +256,94 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
  */
 internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     val d = design
-    val b = d.body(26)
+    val b = d.body(18)
     b.addView(d.titleBlock(
         "Как работает MAMA",
-        "Три шага — и телефон под защитой твоего решения.",
+        "Ты принимаешь решение заранее.\nMAMA помогает сохранить его ночью.",
         narrow = true,
     ))
-    // The mechanics as three calm rows: what you choose, and the way out that always stays.
-    b.addView(d.rowsCard(listOf(
-        d.infoRow(
-            Icon.CALENDAR, "Выбираешь серию и время", strong = true,
-            note = "Сколько дней держать телефон под защитой и в каком спокойном окне.",
-        ),
-        d.infoRow(
-            Icon.PERSON, "Назначаешь доверенный контакт", strong = true,
-            note = "Близкого человека, который поддержит и поможет выйти, если это будет действительно нужно.",
-        ),
-        d.infoRow(
-            Icon.SHIELD, "Выход всегда есть — Trusted Exit", strong = true,
-            note = "Если нужно выйти раньше, это можно сделать через доверенный контакт. Без осуждения.",
-        ),
-    )), d.gap(24))
-    b.addView(d.quoteCard("Ты выбираешь направление. MAMA помогает идти.", signature = "MAMA"), d.gap(Spacing.GUTTER))
-    val cta = d.primaryButton("Начать настройку") {
+    // The hero card: one strong idea over a nature window — the decision is made for the night.
+    b.addView(howItWorksHero(), d.gap(22))
+    // Three compact step cards, side by side (reference «Как работает MAMA»).
+    val steps = d.row().apply { gravity = Gravity.TOP }
+    steps.addView(howItWorksStep("ШАГ 1", Scenery.MORNING, SceneMood.CALM, Icon.CALENDAR, "Выбери серию", "3, 5 или 7 ночей — в том ритме, с которого удобно начать."), d.weight())
+    steps.addView(howItWorksStep("ШАГ 2", Scenery.DAY, SceneMood.CALM, Icon.PEOPLE, "Назначь доверенный контакт", "Если захочешь выйти раньше, код подтверждения получит только он."), d.weight().apply { leftMargin = d.dp(10) })
+    steps.addView(howItWorksStep("ШАГ 3", Scenery.EVENING, SceneMood.QUIET, Icon.LOCK, "Следуй решению", "Ночью MAMA помогает не сбиться и пройти серию до конца."), d.weight().apply { leftMargin = d.dp(10) })
+    b.addView(steps, d.gap(16))
+    val cta = d.primaryButton("Настроить первую серию", large = true) {
         prefs.edit().putBoolean(MainActivity.ONBOARDING_SEEN, true).apply()
         onboardingPage = 0
         render()
     }
-    return v1Frame(Scenery.DAWN, d.topBar({ onboardingBack() }), b, cta, mood = SceneMood.QUIET)
+    // Back · MAMA · a calm progress bar, as on the reference.
+    val header = d.column().apply {
+        addView(d.topBar({ onboardingBack() }, "2 из 4"))
+        addView(d.segments(2, 4), d.gap(4).apply { leftMargin = d.dp(Spacing.SCREEN); rightMargin = d.dp(Spacing.SCREEN) })
+    }
+    return lightFrame(header, b, d.bottomCta(cta))
+}
+
+/**
+ * The hero card of «Как работает MAMA»: a calm dawn window on the right, the
+ * one idea on the left — "Ночью решение уже принято." — with a «РИТМ» tag and
+ * one supporting line. Text stays on the readable left side of the window.
+ */
+private fun MainActivity.howItWorksHero(): View {
+    val d = design
+    val radius = d.dpf(V2.CARD_LARGE.toFloat())
+    val card = FrameLayout(this).apply {
+        background = ScenicBackground(this@howItWorksHero, Scenery.DAWN, SceneLayout.CARD_RIGHT, V2.Card, radius, vignette = 0.46f, mood = SceneMood.CALM)
+        outlineProvider = ViewOutlineProvider.BACKGROUND
+        clipToOutline = true
+        d.elevate(this, 3f)
+        minimumHeight = d.dp(228)
+    }
+    val narrow = (resources.displayMetrics.widthPixels * 0.52f).toInt()
+    val col = d.column().apply { setPadding(d.dp(20), d.dp(20), d.dp(16), d.dp(22)) }
+    col.addView(d.row().apply {
+        background = d.shape(Color.argb(0xF0, 0xFD, 0xF9, 0xF1), Radii.TAG)
+        setPadding(d.dp(12), d.dp(7), d.dp(14), d.dp(7))
+        addView(d.icon(Icon.LEAF, Palette.Moss, 16), d.size(16).apply { rightMargin = d.dp(6) })
+        addView(d.text("РИТМ", Typo.TAG, Palette.OliveInk))
+    }, d.wrap())
+    col.addView(d.text("Ночью решение\nуже принято.", Typo.HEADLINE, V2.Ink).apply { textSize = 27f; maxWidth = narrow }, d.gap(16))
+    col.addView(
+        d.text("Телефон закрывается по выбранному расписанию, чтобы помочь тебе удержать выбранный ритм.", Typo.LABEL, V2.InkMuted).apply { maxWidth = narrow },
+        d.gap(12),
+    )
+    card.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    return card
+}
+
+/**
+ * One compact step card: a nature window with its «ШАГ N» tag, then a round
+ * icon, a short title and one line of meaning — the available scenes carry the
+ * emotional context (the staged object photos of the reference are not app assets).
+ */
+private fun MainActivity.howItWorksStep(tag: String, scenery: Scenery, mood: SceneMood, icon: Icon, title: String, body: String): View {
+    val d = design
+    val card = d.column().apply {
+        background = d.shape(V2.Card, Radii.CARD)
+        outlineProvider = ViewOutlineProvider.BACKGROUND
+        clipToOutline = true
+        d.elevate(this, 2.5f)
+    }
+    val photo = FrameLayout(this).apply {
+        background = ScenicBackground(this@howItWorksStep, scenery, SceneLayout.PICTURE, V2.Card, 0f, mood = mood)
+        addView(d.text(tag, Typo.TAG, Palette.OliveInk).apply {
+            background = d.shape(Color.argb(0xF0, 0xFD, 0xF9, 0xF1), Radii.TAG)
+            setPadding(d.dp(9), d.dp(4), d.dp(9), d.dp(4))
+        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START or Gravity.TOP).apply {
+            leftMargin = d.dp(10); topMargin = d.dp(10)
+        })
+    }
+    card.addView(photo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d.dp(82)))
+    val content = d.column().apply { setPadding(d.dp(12), d.dp(12), d.dp(12), d.dp(14)) }
+    content.addView(d.iconCircle(icon, 40))
+    content.addView(d.text(title, Typo.VALUE, Palette.Ink).apply { textSize = 15.5f }, d.gap(10))
+    content.addView(d.text(body, Typo.CAPTION, Palette.InkMuted), d.gap(6))
+    card.addView(content, d.fill())
+    return card
 }
 
 /** Back from an onboarding page: the page before, or the welcome. */
