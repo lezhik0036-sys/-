@@ -260,15 +260,15 @@ internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     b.addView(d.titleBlock(
         "Как работает MAMA",
         "Ты принимаешь решение заранее.\nMAMA помогает сохранить его ночью.",
-        narrow = true,
     ))
     // The hero card: one strong idea over a nature window — the decision is made for the night.
-    b.addView(howItWorksHero(), d.gap(22))
-    // Three compact step cards, side by side (reference «Как работает MAMA»).
+    b.addView(howItWorksHero(), d.gap(20))
+    // Three compact step cards, side by side (reference «Как работает MAMA»); equal height for even bottoms.
+    fun stepParam(leftDp: Int) = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = d.dp(leftDp) }
     val steps = d.row().apply { gravity = Gravity.TOP }
-    steps.addView(howItWorksStep("ШАГ 1", Scenery.MORNING, SceneMood.CALM, Icon.CALENDAR, "Выбери серию", "3, 5 или 7 ночей — в удобном тебе ритме."), d.weight())
-    steps.addView(howItWorksStep("ШАГ 2", Scenery.DAY, SceneMood.CALM, Icon.PEOPLE, "Назначь доверенный контакт", "Код для досрочного выхода получит только он."), d.weight().apply { leftMargin = d.dp(10) })
-    steps.addView(howItWorksStep("ШАГ 3", Scenery.EVENING, SceneMood.QUIET, Icon.LOCK, "Следуй решению", "MAMA помогает пройти серию до конца."), d.weight().apply { leftMargin = d.dp(10) })
+    steps.addView(howItWorksStep("ШАГ 1", Scenery.MORNING, SceneMood.CALM, Icon.CALENDAR, "Выбери серию", "3, 5 или 7 ночей — в удобном ритме."), stepParam(0))
+    steps.addView(howItWorksStep("ШАГ 2", Scenery.DAY, SceneMood.CALM, Icon.PEOPLE, "Назначь контакт", "Код выхода получит только он."), stepParam(10))
+    steps.addView(howItWorksStep("ШАГ 3", Scenery.EVENING, SceneMood.QUIET, Icon.LOCK, "Следуй решению", "MAMA ведёт серию до конца."), stepParam(10))
     b.addView(steps, d.gap(14))
     val cta = d.primaryButton("Настроить первую серию", large = true) {
         prefs.edit().putBoolean(MainActivity.ONBOARDING_SEEN, true).apply()
@@ -296,7 +296,7 @@ private fun MainActivity.howItWorksHero(): View {
         outlineProvider = ViewOutlineProvider.BACKGROUND
         clipToOutline = true
         d.elevate(this, 3f)
-        minimumHeight = d.dp(208)
+        minimumHeight = d.dp(190)
     }
     val narrow = (resources.displayMetrics.widthPixels * 0.52f).toInt()
     val col = d.column().apply { setPadding(d.dp(20), d.dp(20), d.dp(16), d.dp(22)) }
@@ -337,7 +337,7 @@ private fun MainActivity.howItWorksStep(tag: String, scenery: Scenery, mood: Sce
             leftMargin = d.dp(10); topMargin = d.dp(10)
         })
     }
-    card.addView(photo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d.dp(72)))
+    card.addView(photo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d.dp(66)))
     val content = d.column().apply { setPadding(d.dp(12), d.dp(11), d.dp(12), d.dp(14)) }
     content.addView(d.iconCircle(icon, 38))
     content.addView(d.text(title, Typo.VALUE, Palette.Ink).apply { textSize = 15f }, d.gap(9))
@@ -386,13 +386,15 @@ internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
     // Four paths as a 2×2 grid (reference «Выбери путь»): compact and scannable without a long scroll;
     // 7 дней carries the "РЕКОМЕНДУЕМ" badge. The Restart prices live on «Цена слова» and «Всё готово».
     val free = Mama.entitlements(this).freeFlexCredits > 0
+    // Equal-height cells so each row's cards line up (the badge fits a half-width card: «СОВЕТУЕМ»).
+    fun cell(leftDp: Int) = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = d.dp(leftDp) }
     val row1 = d.row().apply { gravity = Gravity.TOP }
-    row1.addView(card(Choice.THREE, Icon.LEAF, "3 дня", "Мягкое начало. Попробовать ритм."), d.weight())
-    row1.addView(card(Choice.FIVE, Icon.LEAF, "5 дней", "Устойчивый ритм. Рабочая неделя."), d.weight().apply { leftMargin = d.dp(12) })
+    row1.addView(card(Choice.THREE, Icon.LEAF, "3 дня", "Мягкое начало. Попробовать ритм."), cell(0))
+    row1.addView(card(Choice.FIVE, Icon.LEAF, "5 дней", "Устойчивый ритм. Рабочая неделя."), cell(12))
     b.addView(row1, d.gap(24))
     val row2 = d.row().apply { gravity = Gravity.TOP }
-    row2.addView(card(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Полная неделя. Самый сильный вариант.", "РЕКОМЕНДУЕМ"), d.weight())
-    row2.addView(card(Choice.FLEX, Icon.INFINITY, "FLEX", "${FlexPackage.PERIODS} ночей на выбор за ${FlexPackage.VALIDITY.toDays()} дней.", if (free) "БЕСПЛАТНО" else null), d.weight().apply { leftMargin = d.dp(12) })
+    row2.addView(card(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Полная неделя. Самый сильный вариант.", "СОВЕТУЕМ"), cell(0))
+    row2.addView(card(Choice.FLEX, Icon.INFINITY, "FLEX", "${FlexPackage.PERIODS} ночей на выбор за ${FlexPackage.VALIDITY.toDays()} дней.", if (free) "БЕСПЛАТНО" else null), cell(12))
     b.addView(row2, d.gap(12))
     // Test mode: a small service row for the test build only, kept out of the four product paths.
     if (FeatureFlags.TEST_MODE_ENABLED) {
