@@ -266,10 +266,10 @@ internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     b.addView(howItWorksHero(), d.gap(22))
     // Three compact step cards, side by side (reference «Как работает MAMA»).
     val steps = d.row().apply { gravity = Gravity.TOP }
-    steps.addView(howItWorksStep("ШАГ 1", Scenery.MORNING, SceneMood.CALM, Icon.CALENDAR, "Выбери серию", "3, 5 или 7 ночей — в том ритме, с которого удобно начать."), d.weight())
-    steps.addView(howItWorksStep("ШАГ 2", Scenery.DAY, SceneMood.CALM, Icon.PEOPLE, "Назначь доверенный контакт", "Если захочешь выйти раньше, код подтверждения получит только он."), d.weight().apply { leftMargin = d.dp(10) })
-    steps.addView(howItWorksStep("ШАГ 3", Scenery.EVENING, SceneMood.QUIET, Icon.LOCK, "Следуй решению", "Ночью MAMA помогает не сбиться и пройти серию до конца."), d.weight().apply { leftMargin = d.dp(10) })
-    b.addView(steps, d.gap(16))
+    steps.addView(howItWorksStep("ШАГ 1", Scenery.MORNING, SceneMood.CALM, Icon.CALENDAR, "Выбери серию", "3, 5 или 7 ночей — в удобном тебе ритме."), d.weight())
+    steps.addView(howItWorksStep("ШАГ 2", Scenery.DAY, SceneMood.CALM, Icon.PEOPLE, "Назначь доверенный контакт", "Код для досрочного выхода получит только он."), d.weight().apply { leftMargin = d.dp(10) })
+    steps.addView(howItWorksStep("ШАГ 3", Scenery.EVENING, SceneMood.QUIET, Icon.LOCK, "Следуй решению", "MAMA помогает пройти серию до конца."), d.weight().apply { leftMargin = d.dp(10) })
+    b.addView(steps, d.gap(14))
     val cta = d.primaryButton("Настроить первую серию", large = true) {
         prefs.edit().putBoolean(MainActivity.ONBOARDING_SEEN, true).apply()
         onboardingPage = 0
@@ -296,7 +296,7 @@ private fun MainActivity.howItWorksHero(): View {
         outlineProvider = ViewOutlineProvider.BACKGROUND
         clipToOutline = true
         d.elevate(this, 3f)
-        minimumHeight = d.dp(228)
+        minimumHeight = d.dp(208)
     }
     val narrow = (resources.displayMetrics.widthPixels * 0.52f).toInt()
     val col = d.column().apply { setPadding(d.dp(20), d.dp(20), d.dp(16), d.dp(22)) }
@@ -337,10 +337,10 @@ private fun MainActivity.howItWorksStep(tag: String, scenery: Scenery, mood: Sce
             leftMargin = d.dp(10); topMargin = d.dp(10)
         })
     }
-    card.addView(photo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d.dp(82)))
-    val content = d.column().apply { setPadding(d.dp(12), d.dp(12), d.dp(12), d.dp(14)) }
-    content.addView(d.iconCircle(icon, 40))
-    content.addView(d.text(title, Typo.VALUE, Palette.Ink).apply { textSize = 15.5f }, d.gap(10))
+    card.addView(photo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d.dp(72)))
+    val content = d.column().apply { setPadding(d.dp(12), d.dp(11), d.dp(12), d.dp(14)) }
+    content.addView(d.iconCircle(icon, 38))
+    content.addView(d.text(title, Typo.VALUE, Palette.Ink).apply { textSize = 15f }, d.gap(9))
     content.addView(d.text(body, Typo.CAPTION, Palette.InkMuted), d.gap(6))
     card.addView(content, d.fill())
     return card
@@ -381,27 +381,26 @@ internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
     val d = design
     val b = d.body(22)
     b.addView(d.titleBlock("Выбери путь", "Сколько дней ты готов держать слово?", narrow = true))
-    var first = true
-    // Rich choice cards (reference «Выбери путь»): icon, name, a short meaning, the real Restart price,
-    // a selected state and a "РЕКОМЕНДУЕМ" badge; a calm landscape grows inside each card.
-    fun option(c: Choice, icon: Icon, title: String, body: String, tag: String? = null, scenery: Scenery? = Scenery.DAWN) {
-        b.addView(d.selectableCard(icon, title, body, choice == c, tag, scenery) { choice = c; saveForm(); render() }, d.gap(if (first) 24 else Spacing.GUTTER))
-        first = false
-    }
-    if (FeatureFlags.TEST_MODE_ENABLED) {
-        option(Choice.TEST, Icon.FLASK, "Тестовый режим", "Ровно 15 минут блокировки. Только для проверки — бесплатно, не входит в серии.", scenery = null)
-    }
-    option(Choice.THREE, Icon.LEAF, "3 дня", "Короткий старт. Три ночи телефон под защитой. Restart при срыве — ${Texts.price(SeriesPrices.THREE)}.", scenery = Scenery.DAWN)
-    option(Choice.FIVE, Icon.LEAF, "5 дней", "Ровный ритм. Пять ночей подряд. Restart при срыве — ${Texts.price(SeriesPrices.FIVE)}.", scenery = Scenery.MORNING)
-    option(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Полная неделя — самый сильный результат. Restart при срыве — ${Texts.price(SeriesPrices.SEVEN)}.", tag = "РЕКОМЕНДУЕМ", scenery = Scenery.DAY)
+    fun card(c: Choice, icon: Icon, title: String, body: String, tag: String? = null): View =
+        d.selectableCard(icon, title, body, choice == c, tag, scenery = null) { choice = c; saveForm(); render() }
+    // Four paths as a 2×2 grid (reference «Выбери путь»): compact and scannable without a long scroll;
+    // 7 дней carries the "РЕКОМЕНДУЕМ" badge. The Restart prices live on «Цена слова» and «Всё готово».
     val free = Mama.entitlements(this).freeFlexCredits > 0
-    option(
-        Choice.FLEX, Icon.INFINITY, "FLEX",
-        "${FlexPackage.PERIODS} гибких периодов за ${FlexPackage.VALIDITY.toDays()} дней — сам выбираешь даты. " +
-            (if (free) "Сейчас бесплатно." else "${Texts.price(FlexPackage.PRICE_RUB)}.") + " Пройди 7 из 7 — следующий FLEX бесплатно.",
-        tag = if (free) "БЕСПЛАТНО" else null,
-        scenery = Scenery.EVENING,
-    )
+    val row1 = d.row().apply { gravity = Gravity.TOP }
+    row1.addView(card(Choice.THREE, Icon.LEAF, "3 дня", "Мягкое начало. Попробовать ритм."), d.weight())
+    row1.addView(card(Choice.FIVE, Icon.LEAF, "5 дней", "Устойчивый ритм. Рабочая неделя."), d.weight().apply { leftMargin = d.dp(12) })
+    b.addView(row1, d.gap(24))
+    val row2 = d.row().apply { gravity = Gravity.TOP }
+    row2.addView(card(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Полная неделя. Самый сильный вариант.", "РЕКОМЕНДУЕМ"), d.weight())
+    row2.addView(card(Choice.FLEX, Icon.INFINITY, "FLEX", "${FlexPackage.PERIODS} ночей на выбор за ${FlexPackage.VALIDITY.toDays()} дней.", if (free) "БЕСПЛАТНО" else null), d.weight().apply { leftMargin = d.dp(12) })
+    b.addView(row2, d.gap(12))
+    // Test mode: a small service row for the test build only, kept out of the four product paths.
+    if (FeatureFlags.TEST_MODE_ENABLED) {
+        b.addView(
+            d.selectableCard(Icon.FLASK, "Тестовый режим", "15 минут — только для проверки.", choice == Choice.TEST, scenery = null) { choice = Choice.TEST; saveForm(); render() },
+            d.gap(12),
+        )
+    }
     val wait = StandardRules.daysUntilFreeStart(Mama.entitlements(this), Mama.trustedNow(this))
     if (wait > 0 && choice.series != null) {
         b.addView(d.noteCard(
