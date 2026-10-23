@@ -355,24 +355,30 @@ internal fun MainActivity.onboardingBack() {
 // ---------------- 2. Permissions ----------------
 
 internal fun MainActivity.permissionsScreen(): Pair<View, Boolean> {
-    val b = body()
-    b.addView(kit.sectionHeader(
+    val d = design
+    val b = d.body(26)
+    // All required permissions are in place: a calm confirmation, not a technical checklist.
+    if (Requirement.missingRequired(this).isEmpty()) {
+        b.addView(d.titleBlock("MAMA готова ✓", "Все нужные разрешения на месте — можно переходить к серии.", narrow = true))
+        b.addView(d.noteCard(
+            "MAMA получила всё необходимое, чтобы блокировку нельзя было обойти обычными способами.",
+            "Защита включена", icon = Icon.CHECK,
+        ), d.gap(24))
+        val ready = d.primaryButton("Далее") { go(nextStep(Step.PERMISSIONS)) }
+        return lightFrame(stepBar(Step.PERMISSIONS), b, d.bottomCta(ready))
+    }
+    // First view: one simple screen — not a long technical panel. The grants come one at a time.
+    b.addView(d.titleBlock(
         "Подготовим MAMA",
-        "Чтобы блокировку нельзя было обойти, MAMA нужно несколько разрешений. Это займёт около минуты.",
+        "Чтобы защита работала надёжно, Android попросит несколько разрешений.\nМы проведём тебя по ним по очереди — это займёт около минуты.",
+        narrow = true,
     ))
-    Requirement.entries.forEachIndexed { i, req ->
-        val status = when {
-            req.isGranted(this) -> PermissionStatus.GRANTED
-            req.required -> PermissionStatus.REQUIRED
-            else -> PermissionStatus.MISSING
-        }
-        b.addView(kit.permissionCard(req.icon, req.title, req.why, status) { req.request(this) }, kit.gap(if (i == 0) 20 else 10))
-    }
-    b.addView(kit.caption("Нажми «Продолжить»: MAMA по очереди откроет нужные экраны — включи переключатель и вернись назад."), kit.gap(14))
-    val cta = kit.primaryButton("Продолжить") {
-        if (Requirement.missingRequired(this).isEmpty()) go(nextStep(Step.PERMISSIONS)) else startSetupAll()
-    }
-    return lightFrame(stepBar(Step.PERMISSIONS), b, cta)
+    b.addView(d.noteCard(
+        "Android будет открывать системные экраны по одному. Включай переключатель и возвращайся назад — MAMA сразу откроет следующий.",
+        "Как это будет", icon = Icon.SHIELD,
+    ), d.gap(24))
+    val cta = d.primaryButton("Начать настройку") { startSetupAll() }
+    return lightFrame(stepBar(Step.PERMISSIONS), b, d.bottomCta(cta))
 }
 
 // ---------------- 3. Series ----------------
@@ -471,7 +477,7 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
                 DigitalTimePicker.show(this, "Окончание блокировки", end) { pickEnd(it); render() }
             },
         ), d.gap(28))
-        val rows = mutableListOf(d.infoRow(Icon.CLOCK, "Каждый день · ${shortDuration(length)}", strong = true))
+        val rows = mutableListOf(d.infoRow(Icon.CLOCK, "${Texts.hhmm(start)} → ${Texts.hhmm(end)} · каждый день · ${shortDuration(length)}", strong = true))
         if (auto) rows += d.infoRow(Icon.CALENDAR, "Начать после подтверждения", note = "Начало уточнится в момент запуска.")
         val change = d.linkButton("Изменить") { pickZone() }.apply {
             textSize = 14f
@@ -483,7 +489,7 @@ internal fun MainActivity.timeScreen(): Pair<View, Boolean> {
             b.addView(d.noteCard("Выбери другое время окончания.", "Начало и окончание совпадают", NoteTone.CARE, Icon.CLOCK), d.gap(18))
         }
         val night = start.hour >= 17 || start.hour < 5
-        b.addView(d.phraseCard(if (night) stepPhrase(NIGHT_PHRASE, Placement.LOCK_NIGHT) else MotivationCatalog.pick(Placement.LOCK_DAY, "time").text), d.gap(18))
+        b.addView(d.phraseCard(if (night) "Ночь — время восстановить себя." else "Это время — чтобы побыть собой."), d.gap(18))
     }
     val cta = d.primaryButton("Далее") {
         when {
@@ -563,11 +569,9 @@ internal fun MainActivity.contactScreen(): Pair<View, Boolean> {
     })
     b.addView(links, d.gap(6))
     b.addView(d.noteCard(
-        "Если понадобится выйти раньше, этому человеку придёт SMS с кодом из ${Mama.policy.codeLength} цифр. " +
-            "У тебя будет максимум ${Mama.policy.maxAttempts} попытки ввода.",
-        "Досрочный выход — только через этот контакт", icon = Icon.SHIELD,
-    ), d.gap(10))
-    b.addView(d.phraseCard(stepPhrase(SUPPORT_PHRASE, Placement.SCHEDULED)), d.gap(18))
+        "Досрочный выход возможен только через этот контакт — код подтверждения получит только он.",
+        "Доверенный контакт", icon = Icon.SHIELD,
+    ), d.gap(14))
     val cta = d.primaryButton(nextLabel()) {
         if (readyContact() != null) go(nextStep(Step.CONTACT))
     }
@@ -605,7 +609,7 @@ internal fun MainActivity.promiseScreen(): Pair<View, Boolean> {
     promiseField.addTextChangedListener(watcher)
     promiseField.tag = watcher
     b.addView(counter, kit.gap(6))
-    b.addView(kit.infoCard("Эту фразу увидишь только ты: на экране досрочного выхода.", Icon.HEART, Tone.BRAND), kit.gap(14))
+    b.addView(kit.infoCard("Эту фразу увидишь только ты.", Icon.HEART, Tone.BRAND), kit.gap(14))
     val cta = kit.primaryButton(if (editing) "Готово" else "Продолжить") {
         val text = promiseField.text.toString().trim()
         if (text.length < 3) {
@@ -699,11 +703,10 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
     }
     b.addView(d.titleBlock("Всё готово", subtitle, narrow = true))
     b.addView(d.summaryCard("Твой план", items, large = true), d.gap(24))
-    b.addView(d.text(stepPhrase(CHOICE_PHRASE, Placement.REVIEW), Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(22))
     b.addView(d.rowsCard(facts).apply {
         background = d.surface(Palette.CardQuiet)
         d.elevate(this, 1f)
-    }, d.gap(22))
+    }, d.gap(18))
     choice.series?.let { kind ->
         // The full terms: one tap away, never hidden from the decision.
         b.addView(d.linkButton(if (termsOpen) "Скрыть условия" else "Все условия серии") { termsOpen = !termsOpen; render() }, d.gap(4))
@@ -721,10 +724,12 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
             ), d.gap(Spacing.GUTTER))
         }
     }
+    // One final phrase — the strong last beat before the decision.
+    b.addView(d.text("Ты не ограничиваешь себя — ты выбираешь себя.", Typo.QUOTE_ITALIC, Palette.InkMuted, center = true), d.gap(24))
     val cta = d.primaryButton(ctaLabel, large = true) { startChosen() }
     val footer = d.column()
     if (needsAgreement) {
-        footer.addView(d.checkRow("Я понимаю условия и принимаю ответственность за своё решение.", agreed) { agreed = it; render() })
+        footer.addView(d.checkRow("Я понимаю условия и принимаю своё решение.", agreed) { agreed = it; render() })
         cta.isEnabled = agreed
     }
     footer.addView(cta, d.gap(if (needsAgreement) 8 else 0))

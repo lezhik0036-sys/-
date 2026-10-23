@@ -113,18 +113,13 @@ internal fun MainActivity.commitmentScreen(restart: Boolean, kind: SeriesKind, w
         b.addView(note, d.gap(Spacing.GUTTER))
     }
 
-    b.addView(d.quoteCard(stepPhrase(WEIGHT_PHRASE, Placement.COMMITMENT)), d.gap(18))
-    // The rules, quietly and one per line (never a word about a return: it is not announced).
+    b.addView(d.quoteCard("Когда решение имеет вес, его легче удержать.", italic = true), d.gap(18))
+    // The rules, compact — one short line each (never a word about a return: it is not announced).
     b.addView(d.text("Как это работает", Typo.VALUE), d.gap(26))
     val rules = listOf(
-        d.infoRow(Icon.CHECK, "Серия пройдена — вся сумма снова доступна на твоём балансе MAMA."),
-        d.infoRow(Icon.SHIELD, "Серия завершена досрочно — она считается сорванной, и Цена слова применяется."),
-        d.infoRow(
-            Icon.REFRESH,
-            "Restart при срыве — отдельно: ${Texts.price(kind.restartPriceRub)}. Цена слова к нему не прибавляется." +
-                if (restart) "" else " Сама серия остаётся бесплатной.",
-        ),
-        d.infoRow(Icon.LOCK, "Баланс MAMA — только внутри приложения: его нельзя вывести или перевести."),
+        d.infoRow(Icon.CHECK, "Прошёл серию — сумма остаётся на балансе MAMA."),
+        d.infoRow(Icon.SHIELD, "Сорвался — применяется Цена слова."),
+        d.infoRow(Icon.REFRESH, "Новый Restart оплачивается отдельно: ${Texts.price(kind.restartPriceRub)}."),
     )
     b.addView(d.rowsCard(rules).apply {
         background = d.surface(Palette.CardQuiet)
