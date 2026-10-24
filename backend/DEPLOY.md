@@ -1,116 +1,137 @@
-# MAMA Trusted Exit backend — деплой и SMS.RU
+# MAMA Trusted Exit backend — деплой на VPS (Docker)
 
-Отдельный Kotlin/Ktor-сервис. Запускается **вне** Android APK. Владеет всем
-жизненным циклом кода Trusted Exit; телефон хранит только handle.
+Отдельный Kotlin/Ktor-сервис, запускается **вне** Android APK. Владеет всем
+жизненным циклом кода Trusted Exit; телефон хранит только handle. Разворачивается
+в Docker, за HTTPS-прокси. Первый тест — одна реальная SMS через backend, **без
+Android и без блокировки**. Android подключается позже через `TRUSTED_EXIT_BASE_URL`.
 
 ## 1. Переменные окружения
 
 | Переменная | Обязательна | Назначение |
 |---|---|---|
-| `MAMA_SMSRU_API_ID` | да | `api_id` из SMS.RU. **Только** в server-side окружении/секретах. Никогда в Git, APK, Gradle, BuildConfig, Android resources, логах. |
-| `MAMA_SMS_SENDER` | нет | Согласованное в SMS.RU имя отправителя (`from`). Без него — отправитель по умолчанию у SMS.RU. |
-| `PORT` | нет (по умолчанию `8080`) | Порт HTTP. |
+| `MAMA_SMSRU_API_ID` | да | `api_id` из SMS.RU. **Только** в server-side env/secret (файл `.env` на сервере). Никогда в Git, APK, Docker image, Gradle, BuildConfig, Android resources или логах. |
+| `MAMA_SMS_SENDER` | нет | Согласованное имя отправителя SMS.RU (`from`). Пусто → отправитель по умолчанию. |
+| `MAMA_DOMAIN` | для HTTPS | Домен для авто-TLS Caddy (профиль `tls`). |
+| `PORT` | нет (8080) | Порт HTTP внутри контейнера. |
 
-Fail-closed: если `MAMA_SMSRU_API_ID` не задан, процесс пишет понятную ошибку
-конфигурации и завершается с кодом `78` (EX_CONFIG) — Trusted Exit не
-запускается, **автоматического отката на mock нет**. Mock используется только в
-тестах (прямым внедрением), никогда не выбирается для работающего сервера.
+Fail-closed: без `MAMA_SMSRU_API_ID` процесс пишет ошибку конфигурации и выходит
+(код 78) — Trusted Exit не стартует, **автоматического отката на mock нет**. Mock
+только в тестах.
 
-## 2. Где взять ключ SMS.RU
+`.env.example` содержит **только пустые имена** переменных. Реальные значения
+живут в `.env`, который создаётся на сервере и в Git не попадает (он в
+`.gitignore` и в `.dockerignore`, поэтому в образ тоже не попадает).
 
-1. Зарегистрируйся на https://sms.ru/.
-2. Пополни баланс (SMS платные).
-3. Личный кабинет → раздел **API** (Настройки → «Программный API») → скопируй
-   **API ID** (`api_id`). Это и есть `MAMA_SMSRU_API_ID`.
-4. (Опционально) Зарегистрируй и дождись одобрения **имени отправителя** —
-   это значение пойдёт в `MAMA_SMS_SENDER`. Без одобренного имени SMS.RU
-   отправит с отправителя по умолчанию.
+## 2. Где взять `api_id` SMS.RU
 
-Ключ виден только тебе в кабинете SMS.RU и на сервере. В репозиторий и в APK он
-не попадает никогда.
+1. Зарегистрируйся на https://sms.ru/, пополни баланс (SMS платные).
+2. Личный кабинет → раздел **API** («Программный API») → скопируй **API ID**.
+   Это и есть значение `MAMA_SMSRU_API_ID`.
+3. (Опц.) Зарегистрируй имя отправителя → `MAMA_SMS_SENDER`.
 
-## 3. Куда добавить ключ при деплое
+`api_id` я у тебя не прошу и нигде не логирую. Ты вставляешь его сам на сервере
+(шаг 3.4).
 
-Только в окружение/секреты хоста, где крутится backend. Примеры:
+## 3. Пошагово на чистом Ubuntu VPS
 
-**systemd (EnvironmentFile):** `/etc/mama-backend.env` с правами `600`:
+### 3.1 Установить Docker
 ```
-MAMA_SMSRU_API_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-MAMA_SMS_SENDER=MAMA
-PORT=8080
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc >/dev/null
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
-в unit-файле: `EnvironmentFile=/etc/mama-backend.env`. Файл не коммитить.
 
-**Docker:**
+### 3.2 Получить код
 ```
-docker run -e MAMA_SMSRU_API_ID=... -e MAMA_SMS_SENDER=MAMA -p 8080:8080 mama-backend
+git clone https://github.com/lezhik0036-sys/-.git mama
+cd mama/backend
 ```
-Лучше через docker secret / `--env-file` (файл вне образа и вне Git).
 
-**PaaS (Render/Railway/Fly/облако):** добавить `MAMA_SMSRU_API_ID` в раздел
-Environment Variables / Secrets проекта.
+### 3.3 (Для HTTPS) направить домен на VPS
+Создай A-запись (и AAAA при IPv6) домена на IP этого VPS. Открой порты 80 и 443.
+Без домена можно сделать первый SMS-тест (шаг 4) — он не требует HTTPS.
 
-Проверка:
-- живость: `curl https://<host>/health` → `{"status":"ok"}`;
-- готовность провайдера SMS: `curl https://<host>/ready` → `{"status":"ready","smsProvider":"sms.ru"}`
-  (200). Если провайдер не настроен — `503` и `"status":"not_ready"`. `api_id`
-  в ответе никогда не выводится.
-
-## 4. Smoke-проверка: одна тестовая SMS
-
-Отдельная безопасная проверка — отправляет **ровно один** тестовый SMS через
-backend тем же провайдером, что и Trusted Exit. Это **не** HTTP-endpoint (нечего
-защищать и нечего оставлять открытым): команда запускается на сервере, один раз,
-и завершается. В production без ключа она ничего не отправляет и выходит с кодом
-78; mock в production не используется никогда.
-
-Ключ берётся из окружения сервера — **не** передавай его в командной строке и не
-присылай никуда. Сначала подгрузи секрет в окружение текущей сессии shell
-(пример для env-файла из §3):
+### 3.4 Создать `.env` и вставить `api_id` — ТОЛЬКО здесь, на сервере
 ```
-set -a; . /etc/mama-backend.env; set +a     # в окружении появляется MAMA_SMSRU_API_ID
+cp .env.example .env
+chmod 600 .env
+nano .env
 ```
-Затем (номер получателя — в `-Pphone`, это не секрет):
+В `.env` впиши:
 ```
-./gradlew :backend:smokeSms -Pphone="+7XXXXXXXXXX"
+MAMA_SMSRU_API_ID=<твой api_id из SMS.RU>
+MAMA_SMS_SENDER=<опц. имя отправителя>
+MAMA_DOMAIN=<твой домен для HTTPS, если используешь Caddy>
 ```
-Без gradle (после `./gradlew :backend:installDist`):
+**Это единственное место, куда вставляется ключ.** Файл `.env` не коммить и
+никому не пересылай.
+
+### 3.5 Запустить
+С HTTPS (Caddy сам получит сертификат Let's Encrypt для `MAMA_DOMAIN`):
 ```
-java -cp "backend/build/install/backend/lib/*" app.mama.backend.SmokeKt "+7XXXXXXXXXX"
+docker compose --profile tls up -d --build
 ```
-Вывод намеренно минимальный — маскированный номер и `OK`/`FAILED`. `api_id`,
-полный номер и 5-значный код не печатаются (код уходит только в сам SMS).
-Коды возврата: `0` — принято, `1` — провайдер отклонил, `64` — не указан номер,
-`78` — нет ключа (fail-closed, ничего не отправлено).
+Без домена, только backend (внутренний; для первого SMS-теста этого достаточно):
+```
+docker compose up -d --build
+```
 
-После `OK` проверь, что тестовый SMS дошёл на указанный телефон. Только после
-этого имеет смысл первый end-to-end ниже.
+### 3.6 Проверить
+Через Caddy (HTTPS):
+```
+curl https://<MAMA_DOMAIN>/health   # {"status":"ok"}
+curl https://<MAMA_DOMAIN>/ready    # {"status":"ready","smsProvider":"sms.ru"}
+```
+Без домена (с хоста VPS, если раскомментировал `ports` backend на 127.0.0.1):
+```
+curl http://127.0.0.1:8080/ready
+```
+`/ready` подтверждает, что SMS-провайдер настроен, и **никогда** не показывает
+`api_id`. 503 и `"status":"not_ready"` — провайдер не настроен.
 
-## 5. Первый реальный end-to-end на двух телефонах
+## 4. Первый тест — одна SMS через backend (без Android, без блокировки)
 
-- **Телефон A** — твой, с production-сборкой MAMA (Фаза 3), указывающей на
-  задеплоенный backend (`TRUSTED_EXIT_BASE_URL`).
-- **Телефон B** — доверенный контакт, его номер получает SMS.
-
-Предусловия: backend задеплоен, `MAMA_SMSRU_API_ID` в его окружении, баланс
-SMS.RU пополнен, `/health` → `ok`, `/ready` → `ready`.
-
-Текст SMS, который получит контакт:
+Выполняется тем же образом и тем же `.env`, что и сервер, поэтому проверяет
+реальную конфигурацию SMS.RU. Ключ берётся из `.env`, **не** из командной строки:
+```
+docker compose run --rm --entrypoint java backend -cp "/app/lib/*" app.mama.backend.SmokeKt "+7XXXXXXXXXX"
+```
+Ожидаем `MAMA smoke: OK …` и приход SMS на указанный телефон. Текст:
 `MAMA: код доверенного выхода 12345. Никому не пересылайте его, кроме человека, которому вы помогаете выйти из режима.`
 
-Сценарий:
-1. На A завести короткую серию и дождаться блокировки.
-2. На A: «Мне действительно нужно выйти» → запрос кода. A показывает только
-   «код отправлен», сам код не виден.
-3. На B приходит SMS с 5-значным кодом. Ввести его на A → телефон разблокируется,
-   серия завершается через Trusted Exit (бесплатно).
-4. **3 неверных кода:** на A ввести неверный код трижды → блокировка попыток и
-   cooldown; старый challenge недействителен (даже правильный код не проходит).
-5. **Нет сети:** на A включить авиарежим и нажать отправку/ввод → честное
-   сообщение об отсутствии интернета; `attemptsLeft` **не** уменьшается.
-6. **Повторная отправка:** дважды нажать «отправить код» в пределах действия
-   одного кода → на B приходит один код (не пачка), challenge тот же.
-7. Разблокировка телефона и экстренный вызов **не** зависят от оплаты.
+Вывод намеренно минимальный — маскированный номер и `OK`/`FAILED`. `api_id`,
+полный номер и 5-значный код не печатаются (код уходит только в сам SMS).
+Коды возврата: `0` принято · `1` отклонено провайдером · `64` нет номера ·
+`78` нет ключа (fail-closed, ничего не отправлено).
 
-Что проверяем по логам backend (должны быть видны статусы, но **не** полный код и
-**не** полный номер): запрос создан, SMS принят/отклонён, verify-исходы.
+Логи сервиса (`docker compose logs backend`) показывают статусы и
+**маскированный** номер, но не код и не `api_id`.
+
+## 5. Только после успешной реальной SMS — Android
+
+Когда шаг 4 даёт `OK` и SMS доходит, подключаем Android (отдельная фаза):
+production-сборка MAMA получит `TRUSTED_EXIT_BASE_URL = https://<MAMA_DOMAIN>`,
+будет создавать challenge и проверять код через этот backend. Код по-прежнему
+генерится/хранится/проверяется только на сервере; телефон правильный код не
+видит. Затем — первый A/B end-to-end на двух телефонах.
+
+## 6. Безопасность ключа (сводка)
+
+- `api_id` только в `.env` на сервере (`chmod 600`).
+- `.env` — в `.gitignore` и `.dockerignore`: не в Git и не в Docker image.
+- Не в APK, Android resources, Gradle, BuildConfig.
+- Не печатается в логах backend, Caddy или smoke; `/ready` его не раскрывает.
+- Образ собирается без значения ключа; ключ подаётся только в рантайме.
+
+## 7. Обновление и обслуживание
+```
+git pull
+docker compose --profile tls up -d --build   # пересобрать и перезапустить
+docker compose logs -f backend                # логи
+docker compose down                           # остановить
+```

@@ -1,0 +1,49 @@
+# MAMA Trusted Exit backend — production-like deployment.
+#
+#   backend  — the Ktor service. Not published to the host; reachable only
+#              inside the compose network (and by Caddy). Reads the SMS.RU
+#              api_id from .env (never from the image or the command line).
+#   caddy    — optional reverse proxy with automatic HTTPS (Let's Encrypt).
+#              Only starts with the "tls" profile and a real domain in .env.
+#
+# Create .env from .env.example on the server first (see DEPLOY.md).
+#
+#   docker compose up -d --build                 # backend only (internal)
+#   docker compose --profile tls up -d --build   # backend + HTTPS via Caddy
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    image: mama-backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env            # MAMA_SMSRU_API_ID (+ optional MAMA_SMS_SENDER). Never committed.
+    environment:
+      - PORT=8080
+    expose:
+      - "8080"          # internal only; TLS is terminated by caddy
+    # For a quick local check WITHOUT a domain/TLS, bind to localhost only:
+    # ports:
+    #   - "127.0.0.1:8080:8080"
+
+  caddy:
+    image: caddy:2.8
+    profiles: ["tls"]
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      - MAMA_DOMAIN=${MAMA_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,30 @@
+# Keep secrets, build output and local cruft out of the Docker build context,
+# so none of it can end up in the image. Sources needed by the Gradle build
+# (settings.gradle.kts, build.gradle.kts, gradlew, gradle/, core/, backend/)
+# are NOT excluded.
+.git
+.gitignore
+**/build
+.gradle
+**/.gradle
+.kotlin
+**/.kotlin
+local.properties
+.idea
+*.iml
+.DS_Store
+
+# Never ship any environment file or secret into the image.
+.env
+**/.env
+*.env
+!**/.env.example
+
+# App artifacts / keys / captures (not needed by the backend build).
+*.apk
+*.aab
+*.jks
+*.keystore
+captures/
+shots/
+shots_jpg/

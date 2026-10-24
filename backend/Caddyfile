@@ -1,0 +1,8 @@
+# Automatic HTTPS for the MAMA Trusted Exit backend. Caddy obtains and renews a
+# Let's Encrypt certificate for $MAMA_DOMAIN (the domain's A/AAAA record must
+# point at this VPS and ports 80/443 must be open). It proxies to the internal
+# backend service; the api_id never passes through here.
+{$MAMA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy backend:8080
+}
