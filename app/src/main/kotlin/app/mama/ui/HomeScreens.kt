@@ -628,11 +628,13 @@ internal fun MainActivity.failureScreen(
         Mama.dismissSeries(this)
         render()
     }, d.gap(Spacing.GUTTER))
-    b.addView(d.quoteCard("Не идеальность меняет жизнь, а возвращение к пути.", italic = true, signature = "MAMA"), d.gap(Spacing.GUTTER))
-    b.addView(d.noteCard(
-        "Один сложный день не стирает твой прогресс. Ты уже сделал важные шаги, и это остаётся с тобой.",
-        "Твоя цель всё ещё с тобой.", icon = Icon.HEART,
-    ), d.gap(Spacing.GUTTER))
+    // One emotional block — the user's own reason, not a stack of general quotes.
+    val reason = app.mama.platform.Promise.get(this).trim()
+    if (reason.isNotEmpty()) {
+        b.addView(d.quoteCard(reason, italic = true, signature = "твоя причина"), d.gap(Spacing.GUTTER))
+    } else {
+        b.addView(d.quoteCard("Один трудный день не стирает то, что ты уже прошёл.", italic = true, signature = "MAMA"), d.gap(Spacing.GUTTER))
+    }
     b.addView(v.link("Посмотреть мой путь") { openPath() }.apply { tag = OPEN_PATH }, v.k.centered(6))
     // The sun stays high in the window, so the path down to the lake is in view.
     return v1Frame(Scenery.RECOVERY, design.topBar(null), b, null, layout = SceneLayout.HERO, focusY = 0.1f).also { it.first.tag = RECOVERY_SCREEN }

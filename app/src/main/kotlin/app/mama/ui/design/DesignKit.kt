@@ -212,14 +212,17 @@ class DesignKit(val context: Context) {
     // ---------------- buttons ----------------
 
     /**
-     * The one main action of a screen: a moss pill, lighter at the top, a
-     * white serif label in the centre, "→" at the right edge, a soft moss
-     * shadow; [large] for the decisive action of a screen.
+     * The one main action of a screen: a moss pill, lighter at the top, a bold
+     * sans-serif white label in the centre (the canonical CTA is never serif),
+     * "→" at the right edge, a soft moss shadow; [large] for the decisive action.
      */
     fun primaryButton(label: String, arrow: Boolean = true, large: Boolean = false, onClick: () -> Unit): BrandButtonView = BrandButtonView(context).apply {
         text = label
         Typo.BUTTON.applyTo(this)
-        if (large) textSize = 21f
+        // Canonical CTA: bold sans-serif (Manrope), not the serif of the headings.
+        typeface = MamaFonts.ui(context, 700)
+        textSize = if (large) 20f else 18.5f
+        letterSpacing = 0.01f
         setTextColor(Palette.OnAccent)
         gravity = Gravity.CENTER
         val height = if (large) 58 else Spacing.BUTTON + 4

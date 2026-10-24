@@ -203,20 +203,19 @@ class LockScreenView(private val context: Context, private val actions: LockActi
 
         col.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
 
-        // One short line of support in a card over the landscape.
-        phrase = v.text("", Typo.QUOTE, V2.Ink).apply { textSize = 21f }
-        phraseCard = d.card(paddingDp = 16).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = d.shape(Color.argb(0xEB, 0xFD, 0xF9, 0xF1), V2.CARD, Color.argb(0x66, 0xE6, 0xD6, 0xBD))
-            addView(d.iconCircle(Icon.SPROUT, 42))
-            addView(phrase, d.weight().apply { leftMargin = dp(14) })
+        // A quiet supporting thought — a flat quote (mark + soft italic line), clearly NOT a button.
+        phrase = v.text("", Typo.QUOTE_ITALIC, V2.InkMuted, center = true).apply { textSize = 20f }
+        phraseCard = d.column().apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(8), 0, dp(8), 0)
+            addView(d.icon(Icon.QUOTE, Palette.Sage, 26, solid = false), LinearLayout.LayoutParams(dp(26), dp(26)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(8) })
+            addView(phrase, d.fill())
         }
-        col.addView(phraseCard, d.gap(24))
+        col.addView(phraseCard, d.gap(22))
 
-        // Only two actions, both quiet: always at hand, never the main thing on the screen; one line each.
-        col.addView(v.quietAction(Icon.PHONE, "Экстренный звонок") { actions.openEmergency() }.apply { minHeight = dp(54) }, d.gap(14))
-        col.addView(v.quietAction(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() }.apply { minHeight = dp(54) }, d.gap(10))
+        // Two clear action buttons, bold sans-serif — visually distinct from the quiet thought above.
+        col.addView(lockAction(Icon.PHONE, "Экстренный вызов") { actions.openEmergency() }, d.gap(22))
+        col.addView(lockAction(Icon.PEOPLE, "Мне действительно нужно выйти") { actions.openExit() }, d.gap(12))
         diagnostics = d.text("", Typo.CAPTION, Color.argb(0x99, 0x5E, 0x62, 0x66), center = true).also {
             it.textSize = 9.5f
             col.addView(it, d.gap(10))
@@ -227,6 +226,16 @@ class LockScreenView(private val context: Context, private val actions: LockActi
             addView(col)
         }
     }
+
+    /** A clear lock-screen action: a bold sans-serif pill with an icon, distinct from the quiet thought above. */
+    private fun lockAction(icon: Icon, label: String, onClick: () -> Unit): BrandButtonView =
+        d.secondaryButton(label, icon, onClick).apply {
+            typeface = MamaFonts.ui(context, 700)
+            textSize = 16.5f
+            minHeight = dp(56)
+            minimumHeight = dp(56)
+            d.elevate(this, 1.5f)
+        }
 
     // ---------------- Emergency services page ----------------
 
