@@ -4,7 +4,6 @@ import app.mama.backend.api.ErrorResponse
 import app.mama.backend.api.trustedExitRoutes
 import app.mama.backend.trustedexit.ChallengeEngine
 import app.mama.backend.trustedexit.InMemoryChallengeStore
-import app.mama.backend.trustedexit.MockSmsProvider
 import app.mama.backend.trustedexit.SmsProvider
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.gson.gson
@@ -20,20 +19,30 @@ import org.slf4j.LoggerFactory
 
 /**
  * The MAMA Trusted Exit backend process. Run separately from the APK:
- *   PORT=8080 ./gradlew :backend:run
+ *   MAMA_ENV=test PORT=8080 ./gradlew :backend:run        (local, mock SMS)
+ *   MAMA_SMSRU_API_KEY=... ./gradlew :backend:run         (production, real SMS)
  *
- * Phase 1 uses the mock SMS provider (no key, no real delivery) so the full
- * flow and tests run end to end. Phase 2 selects the real SMS.RU provider when
- * its API key is present in the environment — the key never reaches Git or the
- * client.
+ * The SMS provider is chosen by a hard TEST/PRODUCTION split ([resolveSmsProvider]).
+ * In production a missing `MAMA_SMSRU_API_KEY` is fatal: the process logs a clear
+ * configuration error and exits without starting, so Trusted Exit never runs
+ * on a mock in production. The key is read only from the environment.
  */
 fun main() {
+    val log = LoggerFactory.getLogger("app.mama.backend")
+    val sms = try {
+        resolveSmsProvider(BackendConfig.mode(), System.getenv(BackendConfig.ENV_API_KEY))
+    } catch (e: SmsConfigException) {
+        log.error(e.message)
+        // EX_CONFIG: fail fast on a misconfigured production server.
+        kotlin.system.exitProcess(78)
+    }
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
-    embeddedServer(Netty, port = port) { module() }.start(wait = true)
+    log.info("MAMA Trusted Exit backend starting on port $port (mode ${BackendConfig.mode()}, provider ${sms::class.simpleName})")
+    embeddedServer(Netty, port = port) { module(sms) }.start(wait = true)
 }
 
-/** The Ktor application, shared by [main] and the route tests. */
-fun Application.module(sms: SmsProvider = selectSmsProvider()) {
+/** The Ktor application, shared by [main] and the route tests (which pass the mock). */
+fun Application.module(sms: SmsProvider) {
     val engine = ChallengeEngine(store = InMemoryChallengeStore(), sms = sms)
 
     install(ContentNegotiation) { gson { } }
@@ -48,10 +57,3 @@ fun Application.module(sms: SmsProvider = selectSmsProvider()) {
         trustedExitRoutes(engine)
     }
 }
-
-/**
- * Chooses the SMS provider from the environment. Phase 1: always the mock.
- * Phase 2 adds the SMS.RU provider here, selected when `MAMA_SMSRU_API_KEY` is
- * set — read from the environment only, never from Git or the client.
- */
-private fun selectSmsProvider(): SmsProvider = MockSmsProvider()

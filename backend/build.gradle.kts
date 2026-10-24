@@ -28,6 +28,7 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktor")
     implementation("io.ktor:ktor-serialization-gson-jvm:$ktor")
     implementation("io.ktor:ktor-server-status-pages-jvm:$ktor")
+    implementation("com.google.code.gson:gson:2.11.0")
     runtimeOnly("org.slf4j:slf4j-simple:2.0.13")
 
     testImplementation(kotlin("test"))
