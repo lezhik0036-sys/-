@@ -18,6 +18,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Core tests
         run: ./gradlew :core:test --console=plain
+      - name: Trusted Exit backend tests
+        run: ./gradlew :backend:test --console=plain
       - name: App startup tests (Robolectric)
         run: ./gradlew :app:testDebugUnitTest --console=plain
       - name: Build debug APK

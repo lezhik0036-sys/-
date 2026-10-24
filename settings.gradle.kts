@@ -11,6 +11,10 @@ rootProject.name = "mama"
 // Pure Kotlin domain logic: builds and tests anywhere with a JDK.
 include(":core")
 
+// The Trusted Exit backend: a standalone Kotlin/Ktor service, built and tested
+// on a bare JDK like :core, never bundled into the APK.
+include(":backend")
+
 // The Android app needs an Android SDK. Without one the project still
 // configures, so `./gradlew :core:test` keeps working on a bare JDK box.
 val localProps = file("local.properties")
