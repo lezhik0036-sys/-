@@ -1,58 +1,36 @@
 package app.mama.backend
 
-import app.mama.backend.trustedexit.MockSmsProvider
+import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
 import app.mama.backend.trustedexit.SmsProvider
 import app.mama.backend.trustedexit.SmsRuProvider
 
 /**
- * TEST and PRODUCTION are split hard, with no way for a production server to
- * quietly run on the mock provider.
+ * Provider selection is fail-closed and has no silent fallback to the mock:
  *
- * - PRODUCTION (the default when [ENV_MODE] is unset or unknown, so a
- *   misconfiguration never silently downgrades): the real SMS.RU provider is
- *   required. A missing [ENV_API_KEY] is a fatal configuration error — the
- *   server fails fast and Trusted Exit does not start. There is never a mock
- *   fallback.
- * - TEST: the mock provider is allowed when no key is set, so the flow runs
- *   locally and in CI without a real key or real delivery. A key, if present,
- *   still selects the real provider.
+ * - `MAMA_SMSRU_API_ID` present → the real SMS.RU provider.
+ * - absent → [SmsConfigException]. The caller fails fast and Trusted Exit does
+ *   not start. There is never an automatic mock fallback.
+ *
+ * The mock provider is used only by tests, by direct injection — never chosen
+ * here for a running server.
  */
-enum class BackendMode { PRODUCTION, TEST }
-
-/** Thrown when production is missing the SMS provider key; the server must not start. */
 class SmsConfigException(message: String) : IllegalStateException(message)
 
-object BackendConfig {
-    const val ENV_MODE = "MAMA_ENV"
-    const val ENV_API_KEY = "MAMA_SMSRU_API_KEY"
-
-    fun mode(env: (String) -> String? = System::getenv): BackendMode =
-        when (env(ENV_MODE)?.trim()?.lowercase()) {
-            "test", "dev", "development", "debug", "ci" -> BackendMode.TEST
-            else -> BackendMode.PRODUCTION
-        }
-}
-
 /**
- * Picks the SMS provider for [mode]. Production demands a real key and never
- * returns the mock; a blank key throws [SmsConfigException] so the caller can
- * fail fast. [real] and [mock] are injectable for tests.
+ * Picks the SMS provider from [apiId] (read from [ENV_SMSRU_API_ID] by the
+ * caller). A blank key throws [SmsConfigException] — fail closed. [real] is
+ * injectable for tests.
  */
 fun resolveSmsProvider(
-    mode: BackendMode,
-    apiKey: String?,
+    apiId: String?,
     real: () -> SmsProvider = { SmsRuProvider() },
-    mock: () -> SmsProvider = { MockSmsProvider() },
-): SmsProvider = when (mode) {
-    BackendMode.PRODUCTION -> {
-        if (apiKey.isNullOrBlank()) {
-            throw SmsConfigException(
-                "${BackendConfig.ENV_API_KEY} is not set: refusing to start Trusted Exit in production without a real SMS " +
-                    "provider. Set it in the server environment/secrets (never in Git, the APK or Android " +
-                    "resources). For local testing set ${BackendConfig.ENV_MODE}=test to use the mock provider.",
-            )
-        }
-        real()
+): SmsProvider {
+    if (apiId.isNullOrBlank()) {
+        throw SmsConfigException(
+            "$ENV_SMSRU_API_ID is not set: refusing to start Trusted Exit without a real SMS provider (fail " +
+                "closed). Set $ENV_SMSRU_API_ID in the server environment/secrets — never in Git, the APK, Gradle, " +
+                "BuildConfig or Android resources. The mock provider is only for tests.",
+        )
     }
-    BackendMode.TEST -> if (apiKey.isNullOrBlank()) mock() else real()
+    return real()
 }

@@ -7,22 +7,21 @@
 
 | Переменная | Обязательна | Назначение |
 |---|---|---|
-| `MAMA_SMSRU_API_KEY` | да в production | `api_id` из SMS.RU. **Только** в server-side окружении/секретах. Никогда в Git, APK, Android resources, логах. |
-| `MAMA_ENV` | нет (по умолчанию `production`) | `production` — реальный SMS.RU, mock запрещён, без ключа сервер не стартует. `test` (также `dev`/`development`/`debug`/`ci`) — без ключа разрешён MockSmsProvider. |
+| `MAMA_SMSRU_API_ID` | да | `api_id` из SMS.RU. **Только** в server-side окружении/секретах. Никогда в Git, APK, Gradle, BuildConfig, Android resources, логах. |
 | `MAMA_SMS_SENDER` | нет | Согласованное в SMS.RU имя отправителя (`from`). Без него — отправитель по умолчанию у SMS.RU. |
 | `PORT` | нет (по умолчанию `8080`) | Порт HTTP. |
 
-Жёсткий split: при `MAMA_ENV=production` (или если переменная не задана) и
-отсутствии `MAMA_SMSRU_API_KEY` процесс пишет понятную ошибку конфигурации и
-завершается с кодом `78` (EX_CONFIG) — Trusted Exit не запускается, автоматического
-отката на mock нет.
+Fail-closed: если `MAMA_SMSRU_API_ID` не задан, процесс пишет понятную ошибку
+конфигурации и завершается с кодом `78` (EX_CONFIG) — Trusted Exit не
+запускается, **автоматического отката на mock нет**. Mock используется только в
+тестах (прямым внедрением), никогда не выбирается для работающего сервера.
 
 ## 2. Где взять ключ SMS.RU
 
 1. Зарегистрируйся на https://sms.ru/.
 2. Пополни баланс (SMS платные).
 3. Личный кабинет → раздел **API** (Настройки → «Программный API») → скопируй
-   **API ID** (`api_id`). Это и есть `MAMA_SMSRU_API_KEY`.
+   **API ID** (`api_id`). Это и есть `MAMA_SMSRU_API_ID`.
 4. (Опционально) Зарегистрируй и дождись одобрения **имени отправителя** —
    это значение пойдёт в `MAMA_SMS_SENDER`. Без одобренного имени SMS.RU
    отправит с отправителя по умолчанию.
@@ -36,7 +35,7 @@
 
 **systemd (EnvironmentFile):** `/etc/mama-backend.env` с правами `600`:
 ```
-MAMA_SMSRU_API_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+MAMA_SMSRU_API_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 MAMA_SMS_SENDER=MAMA
 PORT=8080
 ```
@@ -44,19 +43,18 @@ PORT=8080
 
 **Docker:**
 ```
-docker run -e MAMA_SMSRU_API_KEY=... -e MAMA_SMS_SENDER=MAMA -p 8080:8080 mama-backend
+docker run -e MAMA_SMSRU_API_ID=... -e MAMA_SMS_SENDER=MAMA -p 8080:8080 mama-backend
 ```
 Лучше через docker secret / `--env-file` (файл вне образа и вне Git).
 
-**PaaS (Render/Railway/Fly/облако):** добавить `MAMA_SMSRU_API_KEY` в раздел
+**PaaS (Render/Railway/Fly/облако):** добавить `MAMA_SMSRU_API_ID` в раздел
 Environment Variables / Secrets проекта.
 
-Локальный прогон без реального ключа:
-```
-MAMA_ENV=test PORT=8080 ./gradlew :backend:run
-```
-
-Проверка живости: `curl https://<host>/health` → `{"status":"ok"}`.
+Проверка:
+- живость: `curl https://<host>/health` → `{"status":"ok"}`;
+- готовность провайдера SMS: `curl https://<host>/ready` → `{"status":"ready","smsProvider":"sms.ru"}`
+  (200). Если провайдер не настроен — `503` и `"status":"not_ready"`. `api_id`
+  в ответе никогда не выводится.
 
 ## 4. Smoke-проверка: одна тестовая SMS
 
@@ -70,7 +68,7 @@ backend тем же провайдером, что и Trusted Exit. Это **н�
 присылай никуда. Сначала подгрузи секрет в окружение текущей сессии shell
 (пример для env-файла из §3):
 ```
-set -a; . /etc/mama-backend.env; set +a     # в окружении появляется MAMA_SMSRU_API_KEY
+set -a; . /etc/mama-backend.env; set +a     # в окружении появляется MAMA_SMSRU_API_ID
 ```
 Затем (номер получателя — в `-Pphone`, это не секрет):
 ```
@@ -83,7 +81,7 @@ java -cp "backend/build/install/backend/lib/*" app.mama.backend.SmokeKt "+7XXXXX
 Вывод намеренно минимальный — маскированный номер и `OK`/`FAILED`. `api_id`,
 полный номер и 5-значный код не печатаются (код уходит только в сам SMS).
 Коды возврата: `0` — принято, `1` — провайдер отклонил, `64` — не указан номер,
-`78` — нет ключа в production (ничего не отправлено).
+`78` — нет ключа (fail-closed, ничего не отправлено).
 
 После `OK` проверь, что тестовый SMS дошёл на указанный телефон. Только после
 этого имеет смысл первый end-to-end ниже.
@@ -94,8 +92,11 @@ java -cp "backend/build/install/backend/lib/*" app.mama.backend.SmokeKt "+7XXXXX
   задеплоенный backend (`TRUSTED_EXIT_BASE_URL`).
 - **Телефон B** — доверенный контакт, его номер получает SMS.
 
-Предусловия: backend задеплоен, `MAMA_SMSRU_API_KEY` в его окружении, баланс
-SMS.RU пополнен, `/health` отвечает `ok`.
+Предусловия: backend задеплоен, `MAMA_SMSRU_API_ID` в его окружении, баланс
+SMS.RU пополнен, `/health` → `ok`, `/ready` → `ready`.
+
+Текст SMS, который получит контакт:
+`MAMA: код доверенного выхода 12345. Никому не пересылайте его, кроме человека, которому вы помогаете выйти из режима.`
 
 Сценарий:
 1. На A завести короткую серию и дождаться блокировки.

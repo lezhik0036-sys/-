@@ -3,6 +3,7 @@ package app.mama.backend.api
 import app.mama.backend.trustedexit.ChallengeEngine
 import app.mama.backend.trustedexit.CreateRequest
 import app.mama.backend.trustedexit.CreateResult
+import app.mama.backend.trustedexit.SmsProvider
 import app.mama.backend.trustedexit.VerifyOutcome
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -45,6 +46,21 @@ fun Routing.trustedExitRoutes(engine: ChallengeEngine) {
             return@post
         }
         call.respond(engine.verify(challengeId, code).toResponse())
+    }
+}
+
+/**
+ * Readiness: reports whether an SMS provider is configured, so a deploy can be
+ * verified before the first real test. It returns only a safe provider label,
+ * never the api_id. 200 when ready, 503 when not.
+ */
+fun Routing.readinessRoutes(sms: SmsProvider) {
+    get("/ready") {
+        if (sms.configured()) {
+            call.respond(ReadinessResponse("ready", sms.label))
+        } else {
+            call.respond(HttpStatusCode.ServiceUnavailable, ReadinessResponse("not_ready", sms.label))
+        }
     }
 }
 

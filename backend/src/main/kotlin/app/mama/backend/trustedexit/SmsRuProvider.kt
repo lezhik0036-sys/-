@@ -20,19 +20,23 @@ import java.time.Duration
  * and the response mapping are unit-tested without the network or a real key.
  */
 class SmsRuProvider(
-    private val apiId: String? = System.getenv(ENV_API_KEY),
-    private val from: String? = System.getenv(ENV_SENDER),
+    private val apiId: String? = System.getenv(ENV_SMSRU_API_ID),
+    private val from: String? = System.getenv(ENV_SMS_SENDER),
     private val endpoint: String = "https://sms.ru/sms/send",
     private val transport: HttpTransport = JdkHttpTransport(),
     private val message: (String) -> String = { code ->
-        "MAMA: код для завершения серии $code. Никому его не сообщай."
+        "MAMA: код доверенного выхода $code. Никому не пересылайте его, кроме человека, которому вы помогаете выйти из режима."
     },
 ) : SmsProvider {
+
+    override val label: String get() = "sms.ru"
+
+    override fun configured(): Boolean = !apiId.isNullOrBlank()
 
     override fun send(phone: String, code: String): SmsResult {
         if (apiId.isNullOrBlank()) {
             // Fail-closed: without a configured key nothing is sent and no code is created.
-            log.error("SMS.RU api key is not configured ($ENV_API_KEY); refusing to send")
+            log.error("SMS.RU api_id is not configured ($ENV_SMSRU_API_ID); refusing to send")
             return SmsResult.Failed("sms provider is not configured")
         }
         val to = normalize(phone)
@@ -60,12 +64,13 @@ class SmsRuProvider(
         val json = runCatching { JsonParser.parseString(reply.body).asJsonObject }
             .getOrElse { return SmsResult.Failed("sms provider returned non-JSON") }
         val topOk = json.get("status")?.asString == "OK"
-        // Per-recipient status lives under sms["<number>"].status.
+        // Per-recipient status lives under sms["<number>"].status, with its sms_id.
         val perSms = json.getAsJsonObject("sms")?.entrySet()?.firstOrNull()?.value?.asJsonObject
         val smsOk = perSms?.get("status")?.asString == "OK"
         if (topOk && (perSms == null || smsOk)) {
-            log.info("SMS.RU accepted a Trusted Exit code for ${mask(to)}")
-            return SmsResult.Accepted(DeliveryStatus.SMS_ACCEPTED)
+            val smsId = perSms?.get("sms_id")?.asString
+            log.info("SMS.RU accepted a Trusted Exit code for ${mask(to)} (sms_id ${smsId ?: "n/a"})")
+            return SmsResult.Accepted(DeliveryStatus.SMS_ACCEPTED, smsId)
         }
         val detail = perSms?.get("status_text")?.asString
             ?: json.get("status_text")?.asString
@@ -78,8 +83,6 @@ class SmsRuProvider(
     }
 
     private companion object {
-        const val ENV_API_KEY = "MAMA_SMSRU_API_KEY"
-        const val ENV_SENDER = "MAMA_SMS_SENDER"
         val log = LoggerFactory.getLogger(SmsRuProvider::class.java)
 
         /** Digits only; a leading 8 on an 11-digit RU number becomes 7, as SMS.RU expects. */

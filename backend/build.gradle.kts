@@ -42,12 +42,12 @@ application {
     mainClass.set("app.mama.backend.ServerKt")
 }
 
-// One-shot SMS smoke check. Run on the server where MAMA_SMSRU_API_KEY is in the
+// One-shot SMS smoke check. Run on the server where MAMA_SMSRU_API_ID is in the
 // environment (never on the command line). Target number via -Pphone=...:
 //   ./gradlew :backend:smokeSms -Pphone="+7XXXXXXXXXX"
 tasks.register<JavaExec>("smokeSms") {
     group = "verification"
-    description = "Send ONE test SMS via the configured provider to -Pphone=... (api_id from MAMA_SMSRU_API_KEY env)."
+    description = "Send ONE test SMS via the configured provider to -Pphone=... (api_id from MAMA_SMSRU_API_ID env)."
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("app.mama.backend.SmokeKt")
     (project.findProperty("phone") as String?)?.let { args(it) }

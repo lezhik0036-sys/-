@@ -2,6 +2,8 @@ package app.mama.backend.api
 
 import app.mama.backend.module
 import app.mama.backend.trustedexit.MockSmsProvider
+import app.mama.backend.trustedexit.SmsProvider
+import app.mama.backend.trustedexit.SmsResult
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
@@ -104,6 +106,31 @@ class RoutesTest {
         }.status
         assertEquals(HttpStatusCode.BadRequest, status)
         assertEquals(0, sms.calls)
+    }
+
+    @Test
+    fun `ready reports the configured provider`() = test {
+        val resp = client.get("/ready")
+        assertEquals(HttpStatusCode.OK, resp.status)
+        val body = resp.body<ReadinessResponse>()
+        assertEquals("ready", body.status)
+        assertEquals("mock", body.smsProvider)
+    }
+
+    @Test
+    fun `ready is 503 when no provider is configured, without leaking anything`() = testApplication {
+        val notConfigured = object : SmsProvider {
+            override val label = "sms.ru"
+            override fun configured() = false
+            override fun send(phone: String, code: String) = SmsResult.Failed("not configured")
+        }
+        application { module(sms = notConfigured) }
+        val client = createClient { install(ContentNegotiation) { gson { } } }
+        val resp = client.get("/ready")
+        assertEquals(HttpStatusCode.ServiceUnavailable, resp.status)
+        val body = resp.body<ReadinessResponse>()
+        assertEquals("not_ready", body.status)
+        assertEquals("sms.ru", body.smsProvider) // a safe label, never the api_id
     }
 
     @Test

@@ -39,8 +39,9 @@ class ChallengeEngine(
             }
             if (now < active.expiresAtMs && active.attemptsLeft > 0) {
                 // Idempotent: a repeated request reuses the live challenge, so the
-                // contact is never sent a second code for the same tap.
-                return CreateResult.Created(active, DeliveryStatus.SMS_ACCEPTED)
+                // contact is never sent a second code for the same tap. An explicit
+                // resend is a fresh request (its challenge is gone or expired first).
+                return CreateResult.Created(active, active.deliveryStatus ?: DeliveryStatus.SMS_ACCEPTED)
             }
             store.remove(active.challengeId)
         }
@@ -61,8 +62,11 @@ class ChallengeEngine(
         // The server builds and sends the SMS itself; the code never leaves here.
         return when (val delivery = sms.send(request.contactPhone, code)) {
             is SmsResult.Accepted -> {
-                store.put(challenge)
-                CreateResult.Created(challenge, delivery.status)
+                // Store the provider's message id and delivery status alongside the
+                // challenge; the code itself is never stored in the clear or returned.
+                val stored = challenge.copy(smsId = delivery.smsId, deliveryStatus = delivery.status)
+                store.put(stored)
+                CreateResult.Created(stored, delivery.status)
             }
             is SmsResult.Failed ->
                 // Nothing is stored, so the device must not tell the user a code was sent.
@@ -121,6 +125,10 @@ data class ServerChallenge(
     val expiresAtMs: Long,
     val attemptsLeft: Int,
     val lockedUntilMs: Long?,
+    /** The SMS provider's message id (SMS.RU `sms_id`), kept for delivery follow-up. */
+    val smsId: String? = null,
+    /** The delivery/result status the provider reported when the code was sent. */
+    val deliveryStatus: DeliveryStatus? = null,
 )
 
 sealed interface CreateResult {

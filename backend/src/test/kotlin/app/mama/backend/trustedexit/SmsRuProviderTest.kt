@@ -31,16 +31,28 @@ class SmsRuProviderTest {
     private val accepted = HttpReply(200, """{"status":"OK","status_code":100,"sms":{"79990000000":{"status":"OK","status_code":100,"sms_id":"1"}},"balance":100}""")
 
     @Test
-    fun `an accepted reply is Accepted and the form carries the right fields`() {
+    fun `an accepted reply is Accepted with sms_id and the form carries the right fields`() {
         val (t, p) = provider(accepted)
         val r = p.send("+7 (999) 000-00-00", "54321")
         assertTrue(r is SmsResult.Accepted)
+        assertEquals("1", (r as SmsResult.Accepted).smsId) // sms_id is captured for the challenge state
         assertEquals("https://sms.ru/sms/send", t.lastUrl)
         val form = t.lastForm!!
         assertEquals("test-key", form["api_id"])
         assertEquals("79990000000", form["to"])     // normalized to digits
         assertEquals("1", form["json"])
-        assertTrue(form["msg"]!!.contains("54321")) // the code is in the message body...
+        assertTrue(form["msg"]!!.contains("54321"))                     // the code is in the message body...
+        assertTrue(form["msg"]!!.contains("код доверенного выхода"))    // ...with the agreed text
+    }
+
+    @Test
+    fun `a network error or timeout is Failed, not a crash`() {
+        val throwing = object : HttpTransport {
+            override fun postForm(url: String, form: Map<String, String>): HttpReply =
+                throw java.io.IOException("connection reset / timeout")
+        }
+        val p = SmsRuProvider(apiId = "test-key", transport = throwing)
+        assertTrue(p.send("79990000000", "88888") is SmsResult.Failed)
     }
 
     @Test

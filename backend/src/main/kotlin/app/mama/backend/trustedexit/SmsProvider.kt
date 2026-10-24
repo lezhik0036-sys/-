@@ -2,20 +2,34 @@ package app.mama.backend.trustedexit
 
 import java.util.concurrent.atomic.AtomicInteger
 
+/** The environment variable holding the SMS.RU `api_id`. Server-side only. */
+const val ENV_SMSRU_API_ID = "MAMA_SMSRU_API_ID"
+
+/** Optional approved sender name (SMS.RU `from`). */
+const val ENV_SMS_SENDER = "MAMA_SMS_SENDER"
+
 /**
  * The SMS provider seam. It runs **only on the backend**, never on the device.
- * A real provider (SMS.RU, phase 2) builds the message text and sends the code
- * to the contact's number, reading its API key from the environment. A real
- * provider must never log the code.
+ * The real provider (SMS.RU) reads its `api_id` from [ENV_SMSRU_API_ID] in the
+ * environment and never logs the code. The mock exists only for tests.
  */
 interface SmsProvider {
-    /** Sends the Trusted Exit [code] to [phone]. Returns only whether it was accepted. */
+    /** Sends the Trusted Exit [code] to [phone]. Returns only the outcome, never the code back. */
     fun send(phone: String, code: String): SmsResult
+
+    /** A safe label for readiness and logs. Never a secret. */
+    val label: String
+
+    /** Whether the provider is configured to deliver (readiness). Never reveals the key. */
+    fun configured(): Boolean
 }
 
 sealed interface SmsResult {
-    /** The provider accepted the message for delivery. */
-    data class Accepted(val status: DeliveryStatus = DeliveryStatus.SMS_ACCEPTED) : SmsResult
+    /** The provider accepted the message. [smsId] is the provider's message id, when given. */
+    data class Accepted(
+        val status: DeliveryStatus = DeliveryStatus.SMS_ACCEPTED,
+        val smsId: String? = null,
+    ) : SmsResult
 
     /** The provider refused the message; no challenge is created. */
     data class Failed(val reason: String) : SmsResult
@@ -32,10 +46,10 @@ enum class DeliveryStatus {
 
 /**
  * Development/test provider: it does not send anything. It records the last
- * (phone, code) in-process so route tests can read the code the way only a test
+ * (phone, code) in-process so tests can read the code the way only a test
  * harness can — the API itself never exposes it. A failure can be forced for
- * the provider-failure path. This is the mock-SMS provider for phase 1; the
- * real SMS.RU provider replaces it in phase 2 without touching the engine.
+ * the provider-failure path. Used only by tests (direct injection), never
+ * selected for a running server.
  */
 class MockSmsProvider(
     private val result: SmsResult = SmsResult.Accepted(),
@@ -51,11 +65,16 @@ class MockSmsProvider(
 
     val calls: Int get() = count.get()
 
+    override val label: String get() = "mock"
+
+    override fun configured(): Boolean = true
+
     override fun send(phone: String, code: String): SmsResult {
-        count.incrementAndGet()
+        val n = count.incrementAndGet()
         if (result is SmsResult.Accepted) {
             lastPhone = phone
             lastCode = code
+            return result.copy(smsId = result.smsId ?: "mock-sms-$n")
         }
         return result
     }

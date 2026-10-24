@@ -1,8 +1,10 @@
 package app.mama.backend
 
 import app.mama.backend.api.ErrorResponse
+import app.mama.backend.api.readinessRoutes
 import app.mama.backend.api.trustedExitRoutes
 import app.mama.backend.trustedexit.ChallengeEngine
+import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
 import app.mama.backend.trustedexit.InMemoryChallengeStore
 import app.mama.backend.trustedexit.SmsProvider
 import io.ktor.http.HttpStatusCode
@@ -19,25 +21,24 @@ import org.slf4j.LoggerFactory
 
 /**
  * The MAMA Trusted Exit backend process. Run separately from the APK:
- *   MAMA_ENV=test PORT=8080 ./gradlew :backend:run        (local, mock SMS)
- *   MAMA_SMSRU_API_KEY=... ./gradlew :backend:run         (production, real SMS)
+ *   MAMA_SMSRU_API_ID=... ./gradlew :backend:run          (real SMS.RU)
  *
- * The SMS provider is chosen by a hard TEST/PRODUCTION split ([resolveSmsProvider]).
- * In production a missing `MAMA_SMSRU_API_KEY` is fatal: the process logs a clear
- * configuration error and exits without starting, so Trusted Exit never runs
- * on a mock in production. The key is read only from the environment.
+ * The provider is chosen fail-closed ([resolveSmsProvider]): a missing
+ * `MAMA_SMSRU_API_ID` is fatal — the process logs a clear configuration error
+ * and exits without starting, so Trusted Exit never runs on a mock. The key is
+ * read only from the environment and never logged.
  */
 fun main() {
     val log = LoggerFactory.getLogger("app.mama.backend")
     val sms = try {
-        resolveSmsProvider(BackendConfig.mode(), System.getenv(BackendConfig.ENV_API_KEY))
+        resolveSmsProvider(System.getenv(ENV_SMSRU_API_ID))
     } catch (e: SmsConfigException) {
         log.error(e.message)
-        // EX_CONFIG: fail fast on a misconfigured production server.
+        // EX_CONFIG: fail fast on a misconfigured server.
         kotlin.system.exitProcess(78)
     }
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
-    log.info("MAMA Trusted Exit backend starting on port $port (mode ${BackendConfig.mode()}, provider ${sms::class.simpleName})")
+    log.info("MAMA Trusted Exit backend starting on port $port (SMS provider ${sms.label}, configured=${sms.configured()})")
     embeddedServer(Netty, port = port) { module(sms) }.start(wait = true)
 }
 
@@ -55,5 +56,6 @@ fun Application.module(sms: SmsProvider) {
     }
     routing {
         trustedExitRoutes(engine)
+        readinessRoutes(sms)
     }
 }

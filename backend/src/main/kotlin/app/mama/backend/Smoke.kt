@@ -1,5 +1,6 @@
 package app.mama.backend
 
+import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
 import app.mama.backend.trustedexit.SmsResult
 import kotlin.system.exitProcess
 
@@ -8,7 +9,7 @@ import kotlin.system.exitProcess
  * provider to a given number, to confirm the SMS.RU integration and the server
  * secret before the first real two-phone Trusted Exit test.
  *
- * Run it ON THE SERVER, where `MAMA_SMSRU_API_KEY` already lives in the
+ * Run it ON THE SERVER, where `MAMA_SMSRU_API_ID` already lives in the
  * environment/secrets. The key is never passed on the command line and never
  * printed. It is NOT an HTTP endpoint on purpose — there is nothing to protect
  * or leave exposed; it runs once and exits.
@@ -25,20 +26,20 @@ fun main(args: Array<String>) {
     if (to.isEmpty()) {
         System.err.println(
             "usage: smokeSms <phone>  (or set MAMA_SMOKE_TO). " +
-                "The SMS.RU api_id must be in ${BackendConfig.ENV_API_KEY} in the server environment — never on the command line.",
+                "The SMS.RU api_id must be in $ENV_SMSRU_API_ID in the server environment — never on the command line.",
         )
         exitProcess(64) // EX_USAGE
     }
-    // Same provider selection as the server: production without a key fails fast
-    // here too, and never uses the mock.
+    // Same provider selection as the server: no key fails closed here too, and
+    // never uses the mock.
     val provider = try {
-        resolveSmsProvider(BackendConfig.mode(), System.getenv(BackendConfig.ENV_API_KEY))
+        resolveSmsProvider(System.getenv(ENV_SMSRU_API_ID))
     } catch (e: SmsConfigException) {
         System.err.println(e.message)
         exitProcess(78) // EX_CONFIG
     }
     val masked = maskPhone(to)
-    println("MAMA smoke: sending one test SMS to $masked via ${provider::class.simpleName} (mode ${BackendConfig.mode()})")
+    println("MAMA smoke: sending one test SMS to $masked via ${provider.label}")
     // A fixed, obvious test code. It is delivered in the SMS but never printed here.
     return when (val r = provider.send(to, SMOKE_CODE)) {
         is SmsResult.Accepted -> {

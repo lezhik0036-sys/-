@@ -3,6 +3,7 @@ package app.mama.backend.trustedexit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -97,6 +98,24 @@ class ChallengeEngineTest {
         val second = (create(e) as CreateResult.Created).challenge.challengeId
         assertEquals(first, second)
         assertEquals(1, sms.calls)
+    }
+
+    @Test
+    fun `an explicit resend after the window sends a new code and a new SMS`() {
+        val sms = MockSmsProvider()
+        val e = engine(sms = sms)
+        val first = (create(e) as CreateResult.Created).challenge.challengeId
+        now += 15 * 60_000 + 1 // the first challenge expires
+        val second = (create(e) as CreateResult.Created).challenge.challengeId
+        assertNotEquals(first, second)
+        assertEquals(2, sms.calls) // a second SMS was sent
+    }
+
+    @Test
+    fun `a created challenge stores the sms_id and delivery status`() {
+        val created = create(engine()) as CreateResult.Created
+        assertEquals(DeliveryStatus.SMS_ACCEPTED, created.challenge.deliveryStatus)
+        assertTrue(created.challenge.smsId?.startsWith("mock-sms-") == true)
     }
 
     @Test

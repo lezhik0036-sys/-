@@ -45,8 +45,14 @@ data class VerifyResponse(
     val retryAtMs: Long? = null,
 )
 
-/** `GET /health` response, used by the production readiness gate. */
+/** `GET /health` response: liveness only. */
 data class HealthResponse(val status: String = "ok")
+
+/**
+ * `GET /ready` response: whether an SMS provider is configured. Carries only a
+ * safe provider label (e.g. "sms.ru"), never the api_id or any secret.
+ */
+data class ReadinessResponse(val status: String, val smsProvider: String)
 
 /** Returned for a malformed request body. */
 data class ErrorResponse(val error: String)
