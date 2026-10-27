@@ -1,0 +1,39 @@
+# Codemagic: signed iOS build of ios/ uploaded to TestFlight.
+# No `triggering` section, so it only runs when started by hand in Codemagic.
+workflows:
+  ios-testflight:
+    name: MAMA iOS → TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      # Team settings → Integrations → Developer Portal: the API key must be
+      # saved under exactly this name.
+      app_store_connect: MAMA App Store Connect
+    environment:
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        # Profiles are fetched for this ID and the IDs that start with it:
+        # app.mama.sleep.shield and app.mama.sleep.monitor.
+        bundle_identifier: app.mama.sleep
+    scripts:
+      - name: Generate Xcode project
+        script: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: Apply the App Store profiles to all three targets
+        script: xcode-project use-profiles --project ios/MAMA.xcodeproj
+      - name: Build IPA
+        # A UTC timestamp is unique and always increasing, so no build number
+        # is ever rejected by App Store Connect as a duplicate.
+        script: |
+          xcode-project build-ipa --project ios/MAMA.xcodeproj --scheme MAMA \
+            --archive-xcargs "CURRENT_PROJECT_VERSION=$(date -u +%y%m%d%H%M)"
+      - name: Verify bundle IDs and entitlements
+        script: ios/scripts/verify-ipa.sh build/ios/ipa/*.ipa
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration

@@ -14,9 +14,12 @@ Shared/    общее состояние через App Group
 project.yml  описание проекта для XcodeGen (.xcodeproj не хранится в git)
 ```
 
-Mac не нужен: всё собирает GitHub Actions (`.github/workflows/ios.yml`).
-Каждый push в `ios/` проверяет сборку под симулятор. TestFlight запускается
-вручную: Actions → ios → Run workflow.
+Mac не нужен. Подписанную сборку для TestFlight собирает Codemagic
+(`codemagic.yaml` в корне, только ручной запуск). GitHub Actions
+(`.github/workflows/ios.yml`) на каждый push в `ios/` проверяет сборку под
+симулятор без подписи; его ручной запуск — запасной путь в TestFlight.
+`scripts/verify-ipa.sh` проверяет в готовом IPA Bundle ID и подписанные
+entitlements всех трёх частей.
 
 ## Идентификаторы
 
@@ -27,26 +30,32 @@ Mac не нужен: всё собирает GitHub Actions (`.github/workflows/
 | Monitor (расписание) | `app.mama.sleep.monitor` | Family Controls, App Groups |
 | App Group | `group.app.mama.sleep` | — |
 
-Все три берутся из `MAMA_BUNDLE_ID` в `project.yml`; основной менять нельзя:
-на нём одобрен Family Controls (Distribution).
+Они записаны в `project.yml` и `Shared/MamaStore.swift` буквально и не
+меняются: на каждом одобрен Family Controls (Distribution).
 
-## Настройка (один раз)
+## Настройка Codemagic (один раз)
 
-1. developer.apple.com → Certificates, Identifiers & Profiles:
-   App Group `group.app.mama.sleep`, App ID для `.shield` и `.monitor`,
-   App Groups у всех трёх App ID, Family Controls (Distribution) для
-   каждого из трёх ID.
-2. App Store Connect → Users and Access → Integrations → App Store Connect
-   API → «+», роль **Admin**. Скачайте `.p8` (дают один раз) и запишите
-   Key ID и Issuer ID.
-3. GitHub → Settings → Secrets and variables → Actions:
-   - `ASC_KEY_ID` — Key ID;
-   - `ASC_ISSUER_ID` — Issuer ID;
-   - `ASC_KEY_P8` — всё содержимое файла `.p8`;
-   - `APPLE_TEAM_ID` — Team ID (developer.apple.com → Membership).
-4. Actions → ios → Run workflow. Через 10–20 минут после загрузки сборка
-   появится в App Store Connect → TestFlight; установите её на iPhone через
-   приложение TestFlight.
+1. App Store Connect → Пользователи и доступ → Интеграции → App Store Connect
+   API → Ключи команды → «+». Доступ **Admin**. Скачайте `.p8` (дают один
+   раз), запишите Issuer ID и Key ID.
+2. codemagic.io → вход через GitHub → Add application → репозиторий
+   `lezhik0036-sys/-` → тип **iOS App**, конфигурация **codemagic.yaml**.
+3. Team settings → Integrations → **Developer Portal** → Connect: имя
+   ровно `MAMA App Store Connect`, Issuer ID, Key ID, файл `.p8`.
+4. Team settings → codemagic.yaml settings → **Code signing identities** →
+   iOS certificates → Generate certificate, тип **Apple Distribution**, ключ
+   `MAMA App Store Connect`. Сохраните пароль сертификата.
+5. developer.apple.com → Profiles → «+» → **App Store Connect** — три
+   профиля, по одному на `app.mama.sleep`, `app.mama.sleep.shield`,
+   `app.mama.sleep.monitor`, с сертификатом из шага 4. Family Controls и
+   App Group профили берут из App ID сами.
+6. Codemagic → Code signing identities → iOS provisioning profiles →
+   **Fetch profiles** → отметьте все три.
+7. Start new build → ветка → workflow `MAMA iOS → TestFlight`.
+
+Для запасного пути через GitHub Actions нужны секреты `ASC_KEY_ID`,
+`ASC_ISSUER_ID`, `ASC_KEY_P8` и `APPLE_TEAM_ID` (Settings → Secrets and
+variables → Actions).
 
 ## Пилот
 

@@ -11,9 +11,16 @@ enum Pilot {
 
 /// Session state shared by the app and its extensions through the App Group.
 enum MamaStore {
+    /// Must match com.apple.security.application-groups in all three targets.
+    static let appGroup = "group.app.mama.sleep"
+
+    // No fallback to .standard: the app and its extensions would then each
+    // keep their own copy and the schedule would raise an empty shield.
     private static let defaults: UserDefaults = {
-        let group = Bundle.main.object(forInfoDictionaryKey: "MAMAAppGroup") as? String
-        return group.flatMap { UserDefaults(suiteName: $0) } ?? .standard
+        guard let defaults = UserDefaults(suiteName: appGroup) else {
+            fatalError("App Group \(appGroup) is unavailable")
+        }
+        return defaults
     }()
 
     private static let selectionKey = "selection"
