@@ -18,26 +18,33 @@ Mac не нужен: всё собирает GitHub Actions (`.github/workflows/
 Каждый push в `ios/` проверяет сборку под симулятор. TestFlight запускается
 вручную: Actions → ios → Run workflow.
 
+## Идентификаторы
+
+| Цель | Bundle ID | Capabilities |
+|---|---|---|
+| Приложение | `app.mama.sleep` | Family Controls, App Groups |
+| Shield (экран блокировки) | `app.mama.sleep.shield` | Family Controls, App Groups |
+| Monitor (расписание) | `app.mama.sleep.monitor` | Family Controls, App Groups |
+| App Group | `group.app.mama.sleep` | — |
+
+Все три берутся из `MAMA_BUNDLE_ID` в `project.yml`; основной менять нельзя:
+на нём одобрен Family Controls (Distribution).
+
 ## Настройка (один раз)
 
-1. **Family Controls.** developer.apple.com → Account → запросите
-   *Family Controls (Distribution)* для приложения. Без одобрения Apple
-   выгрузка в TestFlight остановится на подписи; сборка под симулятор
-   работает и без него.
-2. **Карточка приложения.** appstoreconnect.apple.com → Apps → «+» → New App,
-   Bundle ID `app.mama` (если он занят, задайте свой в переменной
-   `IOS_BUNDLE_ID`, см. ниже).
-3. **API-ключ.** App Store Connect → Users and Access → Integrations →
-   App Store Connect API → «+», роль **Admin**. Скачайте `.p8` (дают один
-   раз) и запишите Key ID и Issuer ID.
-4. **Секреты GitHub.** Settings → Secrets and variables → Actions:
+1. developer.apple.com → Certificates, Identifiers & Profiles:
+   App Group `group.app.mama.sleep`, App ID для `.shield` и `.monitor`,
+   App Groups у всех трёх App ID, Family Controls (Distribution) для
+   каждого из трёх ID.
+2. App Store Connect → Users and Access → Integrations → App Store Connect
+   API → «+», роль **Admin**. Скачайте `.p8` (дают один раз) и запишите
+   Key ID и Issuer ID.
+3. GitHub → Settings → Secrets and variables → Actions:
    - `ASC_KEY_ID` — Key ID;
    - `ASC_ISSUER_ID` — Issuer ID;
    - `ASC_KEY_P8` — всё содержимое файла `.p8`;
    - `APPLE_TEAM_ID` — Team ID (developer.apple.com → Membership).
-
-   Необязательная переменная (вкладка Variables): `IOS_BUNDLE_ID`.
-5. Actions → ios → Run workflow. Через 10–20 минут после загрузки сборка
+4. Actions → ios → Run workflow. Через 10–20 минут после загрузки сборка
    появится в App Store Connect → TestFlight; установите её на iPhone через
    приложение TestFlight.
 

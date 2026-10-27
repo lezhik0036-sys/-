@@ -8,10 +8,11 @@ options:
 
 settings:
   base:
-    # One switch for every identifier: the app, both extensions and the App
-    # Group follow it. CI overrides it from the IOS_BUNDLE_ID repo variable.
-    MAMA_BUNDLE_ID: app.mama
-    MARKETING_VERSION: "0.1.0"
+    # The App ID registered with Family Controls. Both extensions
+    # (.shield, .monitor) and the App Group (group.app.mama.sleep) follow it.
+    MAMA_BUNDLE_ID: app.mama.sleep
+    # Matches the "iOS 1.0" version already set up in App Store Connect.
+    MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
