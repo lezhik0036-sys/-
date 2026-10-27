@@ -28,6 +28,7 @@ core/   чистый Kotlin: расписание, часовые пояса, к
 app/    Android: оверлей, foreground-служба, Accessibility-страж, Device Admin,
         будильники, приёмники загрузки, SMS, экран настройки
 docs/   спецификация MAMA Core v0.1, монетизация, дизайн-система (DESIGN.md)
+ios/    облегчённая версия для iPhone на Screen Time API (см. ios/README.md)
 ```
 
 ## Сборка

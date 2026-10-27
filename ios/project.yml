@@ -1,0 +1,89 @@
+# XcodeGen spec: CI runs `xcodegen generate` to produce MAMA.xcodeproj, so the
+# project file itself is never committed and can't drift or conflict.
+name: MAMA
+options:
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # One switch for every identifier: the app, both extensions and the App
+    # Group follow it. CI overrides it from the IOS_BUNDLE_ID repo variable.
+    MAMA_BUNDLE_ID: app.mama
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  MAMA:
+    type: application
+    platform: iOS
+    sources: [MAMA, Shared]
+    scheme: {}
+    info:
+      path: MAMA/Info.plist
+      properties:
+        CFBundleDisplayName: MAMA
+        MAMAAppGroup: group.$(MAMA_BUNDLE_ID)
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    entitlements:
+      path: MAMA/MAMA.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.$(MAMA_BUNDLE_ID)]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(MAMA_BUNDLE_ID)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - target: MAMAShield
+      - target: MAMAMonitor
+
+  # Draws the screen shown over a blocked app.
+  MAMAShield:
+    type: app-extension
+    platform: iOS
+    sources: [Shield, Shared]
+    info:
+      path: Shield/Info.plist
+      properties:
+        CFBundleDisplayName: MAMA Shield
+        MAMAAppGroup: group.$(MAMA_BUNDLE_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldConfigurationExtension
+    entitlements:
+      path: Shield/Shield.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.$(MAMA_BUNDLE_ID)]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(MAMA_BUNDLE_ID).shield
+
+  # Raises and lowers the shield on schedule, even while the app isn't running.
+  MAMAMonitor:
+    type: app-extension
+    platform: iOS
+    sources: [Monitor, Shared]
+    info:
+      path: Monitor/Info.plist
+      properties:
+        CFBundleDisplayName: MAMA Monitor
+        MAMAAppGroup: group.$(MAMA_BUNDLE_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).DeviceActivityMonitorExtension
+    entitlements:
+      path: Monitor/Monitor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.$(MAMA_BUNDLE_ID)]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(MAMA_BUNDLE_ID).monitor

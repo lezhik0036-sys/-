@@ -10,3 +10,9 @@ captures/
 *.jks
 *.keystore
 .kotlin/
+# iOS: XcodeGen generates these from ios/project.yml
+ios/*.xcodeproj/
+ios/*/Info.plist
+ios/*/*.entitlements
+*.xcarchive
+*.p8
