@@ -68,7 +68,7 @@ class HttpTrustedExitBackendTest {
 
     @Test
     fun `the request body carries sessionId, kind, idempotencyKey and contactPhone`() {
-        val t = FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-1","attemptsLeft":3}""") }
+        val t = FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-1","issuedAtMs":1000,"expiresAtMs":901000,"attemptsLeft":3}""") }
         backend(t).createChallenge(req)
         assertEquals("/trusted-exit/request", t.postBodies.last().first)
         val body = JSONObject(t.postBodies.last().second)
@@ -116,6 +116,22 @@ class HttpTrustedExitBackendTest {
     }
 
     @Test
+    fun `a CREATED reply with incomplete or invalid fields is Failed, not a live challenge`() {
+        // Missing challengeId.
+        assertTrue(backend(FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","issuedAtMs":1000,"expiresAtMs":901000,"attemptsLeft":3}""") }).createChallenge(req) is CreateChallengeResult.Failed)
+        // Blank challengeId.
+        assertTrue(backend(FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"","issuedAtMs":1000,"expiresAtMs":901000,"attemptsLeft":3}""") }).createChallenge(req) is CreateChallengeResult.Failed)
+        // Missing / non-positive expiresAtMs.
+        assertTrue(backend(FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-1","attemptsLeft":3}""") }).createChallenge(req) is CreateChallengeResult.Failed)
+        assertTrue(backend(FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-1","issuedAtMs":1000,"expiresAtMs":0,"attemptsLeft":3}""") }).createChallenge(req) is CreateChallengeResult.Failed)
+        // expiresAtMs not after issuedAtMs.
+        assertTrue(backend(FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-1","issuedAtMs":901000,"expiresAtMs":901000,"attemptsLeft":3}""") }).createChallenge(req) is CreateChallengeResult.Failed)
+        // Missing / non-positive attemptsLeft.
+        assertTrue(backend(FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-1","issuedAtMs":1000,"expiresAtMs":901000}""") }).createChallenge(req) is CreateChallengeResult.Failed)
+        assertTrue(backend(FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-1","issuedAtMs":1000,"expiresAtMs":901000,"attemptsLeft":0}""") }).createChallenge(req) is CreateChallengeResult.Failed)
+    }
+
+    @Test
     fun `an unconfigured backend never calls the network and fails closed`() {
         val t = FakeTransport()
         assertTrue(backend(t, enabled = false).createChallenge(req) is CreateChallengeResult.Failed)
@@ -127,7 +143,7 @@ class HttpTrustedExitBackendTest {
 
     @Test
     fun `a repeated request forwards the same idempotency key and reused challenge`() {
-        val t = FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-SAME","attemptsLeft":3}""") }
+        val t = FakeTransport().apply { postResponse = HttpResponse(200, """{"status":"CREATED","challengeId":"tec-SAME","issuedAtMs":1000,"expiresAtMs":901000,"attemptsLeft":3}""") }
         val b = backend(t)
         val first = b.createChallenge(req) as CreateChallengeResult.Created
         val second = b.createChallenge(req) as CreateChallengeResult.Created

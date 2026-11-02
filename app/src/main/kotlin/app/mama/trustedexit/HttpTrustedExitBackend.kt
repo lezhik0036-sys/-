@@ -59,16 +59,29 @@ class HttpTrustedExitBackend(
             return CreateChallengeResult.Failed("bad server response")
         }
         return when (json.optString("status")) {
-            "CREATED" -> CreateChallengeResult.Created(
-                handle = ChallengeHandle(
-                    challengeId = json.optString("challengeId"),
-                    kind = json.optString("kind", request.kind),
-                    issuedAtMs = json.optLong("issuedAtMs"),
-                    expiresAtMs = json.optLong("expiresAtMs"),
-                    attemptsLeft = json.optInt("attemptsLeft"),
-                ),
-                delivery = parseDelivery(json.optString("delivery")),
-            )
+            "CREATED" -> {
+                // A CREATED reply must carry a usable challenge. Missing or nonsensical
+                // fields must NOT become a live challenge (which would tell the user a code
+                // was sent while no real challenge exists): treat them as a failure instead.
+                val challengeId = json.optString("challengeId")
+                val issuedAtMs = json.optLong("issuedAtMs", 0L)
+                val expiresAtMs = json.optLong("expiresAtMs", -1L)
+                val attemptsLeft = json.optInt("attemptsLeft", -1)
+                if (challengeId.isBlank() || expiresAtMs <= 0L || expiresAtMs <= issuedAtMs || attemptsLeft <= 0) {
+                    CreateChallengeResult.Failed("incomplete challenge")
+                } else {
+                    CreateChallengeResult.Created(
+                        handle = ChallengeHandle(
+                            challengeId = challengeId,
+                            kind = json.optString("kind", request.kind),
+                            issuedAtMs = issuedAtMs,
+                            expiresAtMs = expiresAtMs,
+                            attemptsLeft = attemptsLeft,
+                        ),
+                        delivery = parseDelivery(json.optString("delivery")),
+                    )
+                }
+            }
             "REJECTED" -> when (json.optString("reason")) {
                 "COOLDOWN" -> CreateChallengeResult.Rejected(
                     CreateChallengeResult.Reason.COOLDOWN,

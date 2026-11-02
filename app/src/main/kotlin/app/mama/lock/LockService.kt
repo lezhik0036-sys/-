@@ -134,6 +134,8 @@ class LockService : Service() {
         handler.removeCallbacks(tick)
         runCatching { proximityLock?.takeIf { it.isHeld }?.release() }
         overlay.hide()
+        // Release the overlay's background executor so no thread/task lingers across restarts.
+        overlay.destroy()
         overlayShowing = false
         if (instance === this) instance = null
         super.onDestroy()

@@ -55,9 +55,18 @@ class LockOverlay(private val service: LockService) : LockActions {
     private val main = Handler(Looper.getMainLooper())
     private var busy = false
 
+    // Invalidates in-flight network results when the surface is hidden/destroyed or
+    // the session changes, so a stale response can never touch a new session's state.
+    private val guard = StaleResultGuard()
+
     private var session: Session? = null
 
     fun show(session: Session, now: Instant) {
+        // A different session invalidates anything a previous session dispatched.
+        if (this.session?.id != session.id) {
+            guard.bump()
+            busy = false
+        }
         this.session = session
         if (root == null) {
             val view = LockScreenView(service, this)
@@ -79,6 +88,10 @@ class LockOverlay(private val service: LockService) : LockActions {
     val isShowing: Boolean get() = root != null
 
     fun hide() {
+        // The surface is torn down: invalidate in-flight results and drop queued callbacks
+        // so a late network response cannot apply to a later surface/session.
+        guard.bump()
+        main.removeCallbacksAndMessages(null)
         root?.let { runCatching { wm.removeView(it) } }
         root = null
         screen = null
@@ -88,6 +101,17 @@ class LockOverlay(private val service: LockService) : LockActions {
         exitOpen = false
         emergencyOpen = false
         emergencyMessage = null
+    }
+
+    /**
+     * Permanently release resources: called from [LockService.onDestroy]. Stops the
+     * background executor (no lingering thread or queued task across service restarts)
+     * and clears pending main-thread callbacks.
+     */
+    fun destroy() {
+        guard.bump()
+        main.removeCallbacksAndMessages(null)
+        io.shutdownNow()
     }
 
     private fun params() = WindowManager.LayoutParams(
@@ -275,10 +299,12 @@ class LockOverlay(private val service: LockService) : LockActions {
         message = "Отправляем код доверенному контакту…"
         input.clear()
         rebind()
+        val snapshot = guard.snapshot(s.id)
         io.execute {
             val r = Mama.requestCode(service, ExitKind.END_SESSION)
             main.post {
-                if (screen == null) return@post
+                // Drop a stale result: surface gone, overlay re-opened, or session changed.
+                if (!guard.isCurrent(snapshot, session?.id, screen != null)) return@post
                 busy = false
                 message = when (r) {
                     is Mama.CodeRequest.Sent -> null
@@ -319,10 +345,12 @@ class LockOverlay(private val service: LockService) : LockActions {
         busy = true
         message = "Проверяем код…"
         rebind()
+        val snapshot = guard.snapshot(s.id)
         io.execute {
             val result = Mama.submitCode(service, code)
             main.post {
-                if (screen == null) return@post
+                // Drop a stale result: surface gone, overlay re-opened, or session changed.
+                if (!guard.isCurrent(snapshot, session?.id, screen != null)) return@post
                 busy = false
                 input.clear()
                 message = when (result) {
