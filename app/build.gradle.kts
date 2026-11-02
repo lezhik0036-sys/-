@@ -29,11 +29,19 @@ android {
             // TEST/DEBUG safety: cap every lock to 15 min, show the Trusted Exit TEST CODE,
             // run the readiness check. Never true in a release/production build.
             buildConfigField("boolean", "TEST_MODE", "true")
+            // Debug uses the on-device fake backend, so this URL is unused; defined for both
+            // variants only because BuildConfig must carry the field. Config, not a secret.
+            buildConfigField("String", "TRUSTED_EXIT_BASE_URL", "\"\"")
         }
         release {
             isMinifyEnabled = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
             buildConfigField("boolean", "TEST_MODE", "false")
+            // Production MAMA backend base URL (https only). Empty until the server's request
+            // authorization passes review; while empty, Trusted Exit fails closed (no fake
+            // fallback). This is configuration, not a secret — the SMS.RU key lives only on
+            // the server. TODO(phase3): set to the deployed https backend URL.
+            buildConfigField("String", "TRUSTED_EXIT_BASE_URL", "\"\"")
         }
     }
 

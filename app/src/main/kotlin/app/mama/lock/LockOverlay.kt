@@ -2,6 +2,8 @@ package app.mama.lock
 
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -23,6 +25,7 @@ import app.mama.platform.Promise
 import app.mama.ui.Texts
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.Executors
 
 /**
  * The lock surface: a full-screen window drawn above every app (including the
@@ -45,9 +48,25 @@ class LockOverlay(private val service: LockService) : LockActions {
     private var emergency: EmergencyCalls.Availability? = null
     private var emergencyMessage: String? = null
 
+    // Trusted Exit talks to the backend over the network, which must never run on the UI
+    // thread. Requests/verifies are dispatched here and the result posted back to the main
+    // thread; [busy] blocks a second tap (no duplicate SMS, no double submit) while in flight.
+    private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "mama-trusted-exit").apply { isDaemon = true } }
+    private val main = Handler(Looper.getMainLooper())
+    private var busy = false
+
+    // Invalidates in-flight network results when the surface is hidden/destroyed or
+    // the session changes, so a stale response can never touch a new session's state.
+    private val guard = StaleResultGuard()
+
     private var session: Session? = null
 
     fun show(session: Session, now: Instant) {
+        // A different session invalidates anything a previous session dispatched.
+        if (this.session?.id != session.id) {
+            guard.bump()
+            busy = false
+        }
         this.session = session
         if (root == null) {
             val view = LockScreenView(service, this)
@@ -69,14 +88,30 @@ class LockOverlay(private val service: LockService) : LockActions {
     val isShowing: Boolean get() = root != null
 
     fun hide() {
+        // The surface is torn down: invalidate in-flight results and drop queued callbacks
+        // so a late network response cannot apply to a later surface/session.
+        guard.bump()
+        main.removeCallbacksAndMessages(null)
         root?.let { runCatching { wm.removeView(it) } }
         root = null
         screen = null
         input.clear()
         message = null
+        busy = false
         exitOpen = false
         emergencyOpen = false
         emergencyMessage = null
+    }
+
+    /**
+     * Permanently release resources: called from [LockService.onDestroy]. Stops the
+     * background executor (no lingering thread or queued task across service restarts)
+     * and clears pending main-thread callbacks.
+     */
+    fun destroy() {
+        guard.bump()
+        main.removeCallbacksAndMessages(null)
+        io.shutdownNow()
     }
 
     private fun params() = WindowManager.LayoutParams(
@@ -259,16 +294,29 @@ class LockOverlay(private val service: LockService) : LockActions {
 
     override fun requestCode() {
         val s = session ?: return
-        message = when (val r = Mama.requestCode(service, ExitKind.END_SESSION)) {
-            is Mama.CodeRequest.Sent -> null
-            is Mama.CodeRequest.Rejected -> Texts.codeRequestError(r.reason, r.retryAt, s.plan.zone)
-            Mama.CodeRequest.SmsFailed -> "Не удалось отправить код. Попробуй ещё раз."
-            Mama.CodeRequest.Offline ->
-                "Нет подключения к интернету. Для отправки кода доверенному контакту MAMA нужен интернет."
-        }
+        if (busy) return
+        busy = true
+        message = "Отправляем код доверенному контакту…"
         input.clear()
         rebind()
-        service.onStateChanged()
+        val snapshot = guard.snapshot(s.id)
+        io.execute {
+            val r = Mama.requestCode(service, ExitKind.END_SESSION)
+            main.post {
+                // Drop a stale result: surface gone, overlay re-opened, or session changed.
+                if (!guard.isCurrent(snapshot, session?.id, screen != null)) return@post
+                busy = false
+                message = when (r) {
+                    is Mama.CodeRequest.Sent -> null
+                    is Mama.CodeRequest.Rejected -> Texts.codeRequestError(r.reason, r.retryAt, s.plan.zone)
+                    Mama.CodeRequest.SmsFailed -> "Не удалось отправить код. Попробуй ещё раз."
+                    Mama.CodeRequest.Offline ->
+                        "Нет подключения к интернету. Для отправки кода доверенному контакту MAMA нужен интернет."
+                }
+                rebind()
+                service.onStateChanged()
+            }
+        }
     }
 
     override fun callContact() {
@@ -280,6 +328,7 @@ class LockOverlay(private val service: LockService) : LockActions {
     }
 
     override fun key(k: String) {
+        if (busy) return
         when (k) {
             LockScreenView.DEL -> if (input.isNotEmpty()) input.deleteCharAt(input.length - 1)
             else -> if (input.length < Mama.policy.codeLength) input.append(k)
@@ -290,20 +339,33 @@ class LockOverlay(private val service: LockService) : LockActions {
 
     override fun submit() {
         val s = session ?: return
+        if (busy) return
         if (input.length != Mama.policy.codeLength) return
-        val result = Mama.submitCode(service, input.toString())
-        input.clear()
-        message = when (result) {
-            Mama.SubmitResult.Accepted -> null
-            is Mama.SubmitResult.Wrong -> "Неверный код."
-            is Mama.SubmitResult.Locked ->
-                "Попытки закончились. Новый код можно запросить в ${Texts.time(result.retryAt, s.plan.zone)}."
-            Mama.SubmitResult.NoActiveCode -> "Код больше не действует. Запроси новый."
-            Mama.SubmitResult.Offline ->
-                "Нет подключения к интернету. Проверь связь и попробуй ещё раз."
+        val code = input.toString()
+        busy = true
+        message = "Проверяем код…"
+        rebind()
+        val snapshot = guard.snapshot(s.id)
+        io.execute {
+            val result = Mama.submitCode(service, code)
+            main.post {
+                // Drop a stale result: surface gone, overlay re-opened, or session changed.
+                if (!guard.isCurrent(snapshot, session?.id, screen != null)) return@post
+                busy = false
+                input.clear()
+                message = when (result) {
+                    Mama.SubmitResult.Accepted -> null
+                    is Mama.SubmitResult.Wrong -> "Неверный код."
+                    is Mama.SubmitResult.Locked ->
+                        "Попытки закончились. Новый код можно запросить в ${Texts.time(result.retryAt, s.plan.zone)}."
+                    Mama.SubmitResult.NoActiveCode -> "Код больше не действует. Запроси новый."
+                    Mama.SubmitResult.Offline ->
+                        "Нет подключения к интернету. Проверь связь и попробуй ещё раз."
+                }
+                service.onStateChanged()
+                if (root != null) rebind()
+            }
         }
-        service.onStateChanged()
-        if (root != null) rebind()
     }
 
     override fun answer() = Calls.answer(service)

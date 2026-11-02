@@ -606,7 +606,14 @@ object Mama {
         val r = reconcile(context)
         val session = r.snapshot.session ?: return CodeRequest.Rejected(LockEngine.CodeRequestError.NOT_LOCKED, null)
         if (r.state !is LockState.Locked) return CodeRequest.Rejected(LockEngine.CodeRequestError.NOT_LOCKED, null)
-        val request = CreateChallengeRequest(sessionId = session.id, kind = kind.name, idempotencyKey = session.id)
+        val request = CreateChallengeRequest(
+            sessionId = session.id,
+            kind = kind.name,
+            idempotencyKey = session.id,
+            // The backend needs the trusted contact's number to deliver the code. It travels
+            // only over HTTPS to the MAMA backend; it is never logged on the device.
+            contactPhone = session.contact.phone,
+        )
         return when (val res = TrustedExit.createChallenge(context, request)) {
             is CreateChallengeResult.Created -> {
                 TrustedExitStore(context).put(

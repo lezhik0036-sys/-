@@ -152,6 +152,21 @@ class MamaTrustedExitTest {
     }
 
     @Test
+    fun `a network loss during verify never consumes an attempt and never unlocks`() {
+        request()
+        val sid = Mama.session(context)!!.id
+        val before = TrustedExitStore(context).active(sid)!!.attemptsLeft
+        TrustedExit.online = { false } // network drops between request and submit
+        assertEquals(Mama.SubmitResult.Offline, Mama.submitCode(context, "00000"))
+        // The attempt counter (server-authoritative) is untouched, and the lock holds.
+        assertEquals(before, TrustedExitStore(context).active(sid)!!.attemptsLeft)
+        assertTrue(Mama.state(context) is LockState.Locked)
+        // Once back online the real code still works — the earlier offline try cost nothing.
+        TrustedExit.online = { true }
+        assertEquals(Mama.SubmitResult.Accepted, Mama.submitCode(context, code))
+    }
+
+    @Test
     fun `the code never appears in device storage`() {
         request()
         // The app's own handle store holds no code and nothing to check one with.
