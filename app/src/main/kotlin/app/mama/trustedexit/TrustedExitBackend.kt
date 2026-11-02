@@ -42,6 +42,12 @@ data class CreateChallengeRequest(
     val kind: String,
     /** Deduplicates rapid taps for the same session so the contact is not spammed. */
     val idempotencyKey: String,
+    /**
+     * The trusted contact's number the backend sends the SMS to. Empty for the
+     * on-device fake (which does not really send); the real [HttpTrustedExitBackend]
+     * passes the session's contact so the server can deliver the code.
+     */
+    val contactPhone: String = "",
 )
 
 /** All the device is told about an active challenge. Never the code or any way to check it. */
