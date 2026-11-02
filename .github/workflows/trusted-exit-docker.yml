@@ -1,0 +1,46 @@
+name: Trusted Exit Docker safety
+
+on:
+  pull_request:
+    branches:
+      - claude/mama-ui-v1
+    paths:
+      - 'backend/**'
+      - '.dockerignore'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradle.properties'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - '.github/workflows/trusted-exit-docker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fail-closed:
+    name: Build Ktor container and reject missing SMS key
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Trusted Exit image (no secrets)
+        run: docker build -f backend/Dockerfile -t mama-trusted-exit:ci .
+      - name: Must fail closed without SMS.RU key
+        shell: bash
+        run: |
+          set +e
+          docker run --rm --network none -e MAMA_SMSRU_API_ID= mama-trusted-exit:ci > failclosed.log 2>&1
+          status=$?
+          set -e
+          cat failclosed.log
+          if [ "$status" -ne 78 ]; then
+            echo "::error::Expected exit code 78, got $status"
+            exit 1
+          fi
+          grep -q 'MAMA_SMSRU_API_ID is not set' failclosed.log || {
+            echo "::error::Expected fail-closed configuration error not found"
+            exit 1
+          }
+          echo "PASS: Ktor refuses startup without SMS.RU credentials (exit 78)."
