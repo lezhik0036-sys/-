@@ -1,29 +1,16 @@
 package app.mama.backend.api
 
 /**
- * The wire contract between the Android app and the Trusted Exit backend.
- *
- * Flat data classes (not sealed types) so the JSON is a single stable shape the
- * client parses by its `status` field. No response ever carries the code or any
- * material to check it — that stays on the server, by construction.
- *
- * The Android client mirrors these shapes; there is no shared code, only the
- * HTTP/JSON contract documented here.
+ * The HTTP/JSON wire contract. Identity and bindings are taken ONLY from the
+ * signed grant in the `Authorization: Bearer` header — never from the body — so
+ * there is no client-supplied `sessionId` or `contactPhone`. No response carries
+ * the OTP or any material to check it.
  */
-
-/** `POST /trusted-exit/request` body. */
-data class CreateChallengeBody(
-    val sessionId: String? = null,
-    val kind: String? = null,
-    val idempotencyKey: String? = null,
-    val contactPhone: String? = null,
-)
 
 /** `POST /trusted-exit/request` response. `status` is CREATED | REJECTED | FAILED. */
 data class ChallengeResponse(
     val status: String,
     val challengeId: String? = null,
-    val kind: String? = null,
     val issuedAtMs: Long? = null,
     val expiresAtMs: Long? = null,
     val attemptsLeft: Int? = null,
@@ -32,7 +19,7 @@ data class ChallengeResponse(
     val retryAtMs: Long? = null,
 )
 
-/** `POST /trusted-exit/verify` body. */
+/** `POST /trusted-exit/verify` body: only the challenge id and the entered code. */
 data class VerifyBody(
     val challengeId: String? = null,
     val code: String? = null,
@@ -45,14 +32,26 @@ data class VerifyResponse(
     val retryAtMs: Long? = null,
 )
 
-/** `GET /health` response: liveness only. */
+/** `GET /health` response: liveness only (no dependency checks). */
 data class HealthResponse(val status: String = "ok")
 
 /**
- * `GET /ready` response: whether an SMS provider is configured. Carries only a
- * safe provider label (e.g. "sms.ru"), never the api_id or any secret.
+ * `GET /ready` response: strict readiness. `ready` is true only when the grant
+ * key, database and SMS provider are all configured. Carries only boolean flags
+ * and a safe provider label — never keys, URLs or other secrets.
  */
-data class ReadinessResponse(val status: String, val smsProvider: String)
+data class ReadinessResponse(
+    val status: String,
+    val ready: Boolean,
+    val grant: Boolean,
+    val db: Boolean,
+    val sms: Boolean,
+)
 
-/** Returned for a malformed request body. */
+/** Generic error body (no internals, nothing code-shaped). */
 data class ErrorResponse(val error: String)
+
+/** Strict-readiness snapshot: all three must hold for the service to be ready. */
+data class Readiness(val grant: Boolean, val db: Boolean, val sms: Boolean) {
+    val ready: Boolean get() = grant && db && sms
+}
