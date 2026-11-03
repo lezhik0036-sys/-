@@ -73,8 +73,13 @@ class JdbcDb(
               expires_at     BIGINT NOT NULL,
               cooldown_until BIGINT,
               sms_ref        TEXT,
-              send_attempts  INT NOT NULL DEFAULT 0
+              send_attempts  INT NOT NULL DEFAULT 0,
+              receipt        TEXT
             );
+
+            -- The verified-OTP receipt is minted once, inside the consume transaction,
+            -- and stored so an idempotent retry returns the SAME proof (never a second).
+            ALTER TABLE trusted_exit.challenge ADD COLUMN IF NOT EXISTS receipt TEXT;
 
             CREATE TABLE IF NOT EXISTS trusted_exit.jti_ledger (
               jti         TEXT PRIMARY KEY,

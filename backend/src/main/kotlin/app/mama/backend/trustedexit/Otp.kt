@@ -77,13 +77,15 @@ sealed interface RequestOutcome {
 /** Result of a `verify`. Only an explicit server VALID is a positive result; never a transient. */
 sealed interface VerifyOutcome {
     /**
-     * The entered OTP matched a delivered challenge. This is NOT an unlock
-     * authorization: it carries no receipt/token, and the Android client must
-     * not end the lock on it alone. The server-authoritative series/period
-     * transition is owned by FastAPI and must be obtained via a one-time
-     * redemption (Deliverable B); see docs/TRUSTED_EXIT_KTOR_SECURITY.md §4.
+     * The entered OTP matched a delivered challenge. [receipt] is the signed
+     * verified-OTP proof (null when receipt signing is not configured). This is
+     * still NOT an unlock authorization: the receipt only attests the match, and
+     * the Android client must not end the lock on it alone. The server-authoritative
+     * series/period transition is owned by FastAPI, which authenticates the caller,
+     * persists the receipt once (unique jti/challenge) and performs the transition;
+     * see docs/TRUSTED_EXIT_KTOR_SECURITY.md §3a/§7.
      */
-    data object Valid : VerifyOutcome
+    data class Valid(val receipt: String? = null) : VerifyOutcome
     data class Invalid(val attemptsLeft: Int) : VerifyOutcome
     data object Expired : VerifyOutcome
     data class Locked(val retryAtMs: Long) : VerifyOutcome

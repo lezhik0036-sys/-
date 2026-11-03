@@ -2,6 +2,8 @@ package app.mama.backend.trustedexit
 
 import app.mama.backend.auth.Grant
 import app.mama.backend.auth.GrantVerifier
+import app.mama.backend.auth.ReceiptClaims
+import app.mama.backend.auth.ReceiptSigner
 import java.util.UUID
 
 /**
@@ -24,6 +26,8 @@ class SecureTrustedExitService(
     private val ttlMs: Long = 15 * 60_000L,
     private val cooldownMs: Long = 30 * 60_000L,
     private val nowMs: () -> Long = { System.currentTimeMillis() },
+    /** Optional, off by default: mints the verified-OTP receipt on a successful verify. */
+    private val receiptSigner: ReceiptSigner? = null,
 ) {
 
     fun request(bearer: String?, clientIp: String): RequestOutcome {
@@ -88,7 +92,16 @@ class SecureTrustedExitService(
             ?: return VerifyOutcome.Unauthorized
         val ch = repo.byId(challengeId) ?: return VerifyOutcome.Unknown
         if (!ownedBy(ch, grant)) return VerifyOutcome.Forbidden
-        return repo.verifyAndConsume(challengeId, enteredCode, nowMs(), cooldownMs)
+        return repo.verifyAndConsume(challengeId, enteredCode, nowMs(), cooldownMs) { consumed, atMs ->
+            // Bindings come from the stored (server-owned) challenge, never the client.
+            receiptSigner?.sign(
+                ReceiptClaims(
+                    sub = consumed.userId, seriesId = consumed.seriesId, periodId = consumed.periodId,
+                    deviceId = consumed.deviceId, contactId = consumed.contactId,
+                    challengeId = consumed.id, verifiedAtSec = atMs / 1000,
+                ),
+            )
+        }
     }
 
     private fun reuseOrReject(existing: StoredChallenge): RequestOutcome {

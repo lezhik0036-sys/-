@@ -5,6 +5,7 @@ import app.mama.backend.api.Readiness
 import app.mama.backend.api.readinessRoutes
 import app.mama.backend.api.trustedExitRoutes
 import app.mama.backend.auth.GrantVerifier
+import app.mama.backend.auth.ReceiptSigner
 import app.mama.backend.db.JdbcDb
 import app.mama.backend.trustedexit.ContactDestinationResolver
 import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
@@ -67,6 +68,13 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
     val sms = runCatching { resolveSmsProvider(System.getenv(ENV_SMSRU_API_ID)) }
         .onFailure { log.warn(it.message) }.getOrNull()
 
+    // Verified-OTP receipt signing is OPTIONAL and OFF by default. The private key
+    // (PKCS#8 DER, base64) comes only from the environment/secret store, never Git.
+    // Without it, /verify returns a bare VALID with no proof and nothing can unlock.
+    val receiptSigner = System.getenv("MAMA_RECEIPT_SIGNING_KEY")?.takeIf { it.isNotBlank() }
+        ?.let { ReceiptSigner(it) }?.takeIf { it.configured }
+    log.info("verified-OTP receipt signing: ${if (receiptSigner != null) "enabled" else "disabled"}")
+
     val configured = verifier.configured && hasher.configured && db != null && sms != null
     val service = if (configured) {
         SecureTrustedExitService(
@@ -76,6 +84,7 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
             sms = sms!!,
             // Fail-closed until the FastAPI pinned internal resolution is wired (Deliverable B).
             destinations = ContactDestinationResolver { null },
+            receiptSigner = receiptSigner,
         )
     } else {
         null

@@ -64,12 +64,12 @@ fun Routing.trustedExitRoutes(service: SecureTrustedExitService?, trustedProxies
         when (val r = service.verify(bearer, challengeId, code)) {
             VerifyOutcome.Unauthorized -> call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
             VerifyOutcome.Forbidden -> call.respond(HttpStatusCode.Forbidden, ErrorResponse("forbidden"))
-            // VALID means only that the OTP matched. It is NOT an unlock
-            // authorization: the Android client must not act on it alone. The
-            // server-authoritative series/period transition is owned by FastAPI
-            // and must be obtained via a one-time redemption (Deliverable B); see
-            // docs/TRUSTED_EXIT_KTOR_SECURITY.md §4.
-            VerifyOutcome.Valid -> call.respond(VerifyResponse("VALID"))
+            // VALID means only that the OTP matched; `receipt` (when present) is the
+            // signed proof to forward to FastAPI. It is NOT an unlock authorization:
+            // the Android client must not act on it alone. The server-authoritative
+            // series/period transition is owned by FastAPI, which authenticates the
+            // caller and redeems the receipt once; see docs/TRUSTED_EXIT_KTOR_SECURITY.md §3a.
+            is VerifyOutcome.Valid -> call.respond(VerifyResponse("VALID", receipt = r.receipt))
             is VerifyOutcome.Invalid -> call.respond(VerifyResponse("INVALID", attemptsLeft = r.attemptsLeft))
             VerifyOutcome.Expired -> call.respond(VerifyResponse("EXPIRED"))
             is VerifyOutcome.Locked -> call.respond(VerifyResponse("LOCKED", retryAtMs = r.retryAtMs))
