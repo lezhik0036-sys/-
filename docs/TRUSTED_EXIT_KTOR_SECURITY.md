@@ -89,11 +89,46 @@ informational only — nothing can unlock (fail-closed).
 
 This also resolves a lifetime mismatch: the request grant lives ≤ 60s while the OTP
 lives 15 min, so the request grant is normally expired by the time the user types
-the code. Verify therefore authenticates on the **signed bindings** of a *freshly
-issued* grant (new `jti`, same `sub/series_id/period_id/device_id/contact_id`),
-never the one-time request `jti`; the challenge is still single-use. The clean
-long-term answer is a dedicated `purpose=trusted-exit:verify` grant or a redemption
-token minted at verify time — an open item for FastAPI (§7.3).
+the code. `/verify` therefore requires a **dedicated challenge-bound verify-scope
+grant** (§3c), not the request grant; the challenge is still single-use.
+
+## 3c. Dedicated verify-scope grant (issue #10 / FastAPI PR #14)
+
+`/verify` accepts **only** a fresh `trusted-exit:verify` grant, never the
+`trusted-exit:sms-request` scope. The two are signed by the same pinned FastAPI key
+but are not interchangeable, enforced by `GrantVerifier.forVerify` against the
+FastAPI `trusted_exit_verify_grant_format.py` contract:
+
+- header exactly `{alg:EdDSA, typ:JWT, kid:mama-ktor-verify-v1}` (distinct `kid`);
+  `iss=mama-fastapi`, `aud=mama-ktor-trusted-exit`, `purpose=trusted-exit:verify`;
+- exact claims `{iss,aud,purpose,sub,series_id,period_id,device_id,contact_id,
+  challenge_id,jti,iat,nbf,exp}` — a `challenge_id = tec-<uuid>` the grant authorizes;
+  canonical lower-case UUIDs; strict base64url; no duplicate keys; **integer** (bare,
+  no decimal/exponent) NumericDate; `nbf≥iat`, `exp>nbf`, `exp-iat≤60`, skew ≤5s, and
+  a stale-`iat` reject (`iat ≥ now-60`, mirroring FastAPI). All timestamp claims are
+  attacker-controlled, so the lifetime is computed with a **checked subtraction**
+  (`Math.subtractExact`): an extreme pair such as `iat=Long.MIN_VALUE`, `exp=now`
+  cannot wrap past the ≤60s gate — it is rejected, not accepted. This applies to both
+  the sms-request and verify scopes (shared verifier).
+
+**Scope separation (enforced, tested):** `/request` requires sms-request scope and
+**rejects** a verify grant with **zero** provider sends; `/verify` requires verify
+scope and **rejects** an sms-request grant outright (`Unauthorized`), even a valid
+one with matching bindings — and a rejected scope consumes no OTP attempt. The
+grant's `challenge_id` must equal the challenge being verified (`Forbidden`
+otherwise), and the challenge must still be owned by the grant's
+`sub/series/period/device/contact` (`Forbidden` otherwise). A correctly signed but
+differently bound token cannot redeem another challenge.
+
+**Verify `jti` / attempt budget.** The 3-attempt limit and the one-time `CONSUMED`
+transition live on the **challenge row**, enforced atomically under `FOR UPDATE` —
+not on the grant. So Ktor needs no separate replay ledger for the verify `jti`: a
+wrong OTP consumes one of the challenge's 3 attempts (not "the grant"), and a
+*fresh* verify grant with the same bindings **cannot reset** the budget or bypass
+the lock (proven by `a fresh verify grant cannot bypass the 3-attempt lock`). One
+verify grant may be used for the ≤3 attempts of its challenge; after success the
+challenge is `CONSUMED` → `Unknown` (§3b, no receipt re-exposure). Parallel verifies
+serialize on the row lock, so exactly one is authorized.
 
 ## 3b. Verified-OTP receipt (test-only, issue #8 / FastAPI PR #13)
 
@@ -175,8 +210,10 @@ by design.
 
 ## 6. Routes / fail-closed
 
-`/trusted-exit/request` and `/verify` require a valid grant (401 missing/invalid,
-403 binding mismatch, 429 rate-limited, 503 not-configured/destination). `/health`
+`/trusted-exit/request` requires an **sms-request** grant and `/verify` a dedicated
+**verify-scope** grant (§3c); each rejects the other scope (401). Both map
+401 missing/invalid, 403 binding/challenge mismatch, 429 rate-limited, 503
+not-configured/destination. `/health`
 is liveness; `/ready` is strict (200 only when grant key + DB + SMS are all present,
 503 otherwise) and leaks no secrets. Server errors never consume a verify attempt
 (the attempt counter moves only on an explicit server INVALID), and a transient is
@@ -202,10 +239,12 @@ after the FastAPI single-use redemption and series transition (§7.3).
    (ingestion is DISABLED in PR #12); (b) durable one-time redemption keyed by the
    receipt `jti`/`challenge_id` with a live re-check of series/device/period/contact;
    (c) the authenticated internal transport (mTLS / internal token) between Ktor and
-   FastAPI; (d) the inbound verify credential — a dedicated `purpose=trusted-exit:verify`
-   grant (or redemption token) carrying `challenge_id`, since verify today
-   authenticates on the binding-checked request grant (a freshly issued one; the
-   ≤60s request grant has expired by verify time, §3a); (e) a **network-loss recovery
+   FastAPI; (d) the inbound verify credential — **resolved on the Ktor side** (issue
+   #10): `/verify` now requires a dedicated challenge-bound `trusted-exit:verify`
+   grant (§3c, FastAPI PR #14 format) and rejects the sms-request scope. What remains
+   on FastAPI is the *issuance* of that grant behind its gates (account auth, current
+   device proof, server-owned active period, authenticated Ktor challenge lookup) —
+   issuance stays disabled until those exist; (e) a **network-loss recovery
    credential** — an independently authenticated, one-time secret proving the original
    successful verification, so a client that lost the first response can re-obtain the
    proof without the current fail-closed `CONSUMED → Unknown` becoming a receipt oracle

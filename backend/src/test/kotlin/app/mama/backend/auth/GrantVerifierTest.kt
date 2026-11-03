@@ -171,6 +171,16 @@ class GrantVerifierTest {
         assertTrue(verifier().verify("Bearer $padded") is GrantVerifier.Result.Invalid)
     }
 
+    @Test fun `extreme or overflowing NumericDate values cannot bypass the lifetime gate`() {
+        // exp - iat must be computed overflow-safely; an attacker-signed iat=Long.MIN_VALUE
+        // with a near-future exp must not wrap past the =<60s lifetime check.
+        assertTrue(verifier().verify("Bearer ${token(payload = claims().apply { addProperty("iat", Long.MIN_VALUE); addProperty("nbf", Long.MIN_VALUE); addProperty("exp", now + 30) })}") is GrantVerifier.Result.Invalid)
+        assertTrue(verifier().verify("Bearer ${token(payload = claims().apply { addProperty("exp", Long.MAX_VALUE) })}") is GrantVerifier.Result.Invalid)
+        assertTrue(verifier().verify("Bearer ${token(payload = claims().apply { addProperty("iat", Long.MIN_VALUE); addProperty("nbf", Long.MIN_VALUE); addProperty("exp", Long.MAX_VALUE) })}") is GrantVerifier.Result.Invalid)
+        // A stale (non-overflowing) iat is rejected (mirrors FastAPI's iat < now - 60).
+        assertTrue(verifier().verify("Bearer ${token(payload = claims().apply { addProperty("iat", now - 100_000); addProperty("nbf", now - 100_000); addProperty("exp", now + 30) })}") is GrantVerifier.Result.Invalid)
+    }
+
     @Test fun `a string NumericDate is rejected`() {
         // iat as a quoted string (not a JSON number) must not be accepted.
         val raw = "{\"iss\":\"mama-fastapi\",\"aud\":\"mama-ktor-trusted-exit\",\"purpose\":\"trusted-exit:sms-request\"," +

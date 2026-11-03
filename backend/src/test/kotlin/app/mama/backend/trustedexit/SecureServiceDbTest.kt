@@ -64,6 +64,7 @@ class SecureServiceDbTest {
 
     private fun newService(limits: RateLimits = RateLimits()) = SecureTrustedExitService(
         verifier = GrantVerifier(pub),
+        verifyVerifier = GrantVerifier.forVerify(pub),
         repo = OtpRepository(db, hasher),
         hasher = hasher,
         sms = sms,
@@ -75,6 +76,7 @@ class SecureServiceDbTest {
     private val receiptKp: KeyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
     private fun newServiceWithSigner() = SecureTrustedExitService(
         verifier = GrantVerifier(pub),
+        verifyVerifier = GrantVerifier.forVerify(pub),
         repo = OtpRepository(db, hasher),
         hasher = hasher,
         sms = sms,
@@ -101,6 +103,33 @@ class SecureServiceDbTest {
             addProperty("sub", sub); addProperty("series_id", series); addProperty("period_id", period)
             addProperty("device_id", device); addProperty("contact_id", contact); addProperty("jti", jti)
             addProperty("iat", nowSec); addProperty("nbf", nowSec); addProperty("exp", nowSec + 30)
+        }
+        val h = b64.encodeToString(header.toString().toByteArray())
+        val p = b64.encodeToString(payload.toString().toByteArray())
+        val sig = Signature.getInstance("Ed25519").apply { initSign(key); update("$h.$p".toByteArray(Charsets.US_ASCII)) }.sign()
+        return "Bearer $h.$p.${b64.encodeToString(sig)}"
+    }
+
+    /** A fresh challenge-bound `trusted-exit:verify` grant (FastAPI PR #14 format) for /verify. */
+    private fun verifyBearer(
+        challengeId: String,
+        jti: String = newJti(),
+        sub: String = this.sub,
+        series: String = this.series,
+        period: String = this.period,
+        device: String = this.device,
+        contact: String = this.contact,
+        key: java.security.PrivateKey = kp.private,
+    ): String {
+        val nowSec = System.currentTimeMillis() / 1000
+        val header = JsonObject().apply { addProperty("alg", "EdDSA"); addProperty("typ", "JWT"); addProperty("kid", "mama-ktor-verify-v1") }
+        val payload = JsonObject().apply {
+            addProperty("iss", "mama-fastapi"); addProperty("aud", "mama-ktor-trusted-exit")
+            addProperty("purpose", "trusted-exit:verify")
+            addProperty("sub", sub); addProperty("series_id", series); addProperty("period_id", period)
+            addProperty("device_id", device); addProperty("contact_id", contact)
+            addProperty("challenge_id", challengeId); addProperty("jti", jti)
+            addProperty("iat", nowSec); addProperty("nbf", nowSec); addProperty("exp", nowSec + 45)
         }
         val h = b64.encodeToString(header.toString().toByteArray())
         val p = b64.encodeToString(payload.toString().toByteArray())
@@ -161,26 +190,30 @@ class SecureServiceDbTest {
         val b = bearer()
         val created = service.request(b, "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!! // the fake captured the OTP; the API never returns it
-        assertTrue(service.verify(b, created.challengeId, code) is VerifyOutcome.Valid)
+        val vb = verifyBearer(created.challengeId)
+        assertTrue(service.verify(vb, created.challengeId, code) is VerifyOutcome.Valid)
         // No receipt signer here, so a consumed challenge is a denied replay.
-        assertEquals(VerifyOutcome.Unknown, service.verify(b, created.challengeId, code)) // consumed
+        assertEquals(VerifyOutcome.Unknown, service.verify(vb, created.challengeId, code)) // consumed
     }
 
     @Test fun `three wrong codes lock the challenge and the lock persists across a restart`() {
         val b = bearer()
         val created = service.request(b, "1.2.3.4") as RequestOutcome.Created
-        assertEquals(VerifyOutcome.Invalid(2), service.verify(b, created.challengeId, "00000"))
-        assertEquals(VerifyOutcome.Invalid(1), service.verify(b, created.challengeId, "00000"))
-        assertTrue(service.verify(b, created.challengeId, "00000") is VerifyOutcome.Locked)
+        val vb = verifyBearer(created.challengeId) // one verify grant covers the 3-attempt budget
+        assertEquals(VerifyOutcome.Invalid(2), service.verify(vb, created.challengeId, "00000"))
+        assertEquals(VerifyOutcome.Invalid(1), service.verify(vb, created.challengeId, "00000"))
+        assertTrue(service.verify(vb, created.challengeId, "00000") is VerifyOutcome.Locked)
         // "Restart": a brand-new service/repo over the SAME database still sees it locked.
         val restarted = newService()
-        assertTrue(restarted.verify(b, created.challengeId, sms.lastCode ?: "00000") is VerifyOutcome.Locked)
+        assertTrue(restarted.verify(vb, created.challengeId, sms.lastCode ?: "00000") is VerifyOutcome.Locked)
     }
 
     @Test fun `a challenge is owned only by its grant bindings`() {
         val b = bearer()
         val created = service.request(b, "1.2.3.4") as RequestOutcome.Created
-        val otherSeries = bearer(series = "99999999-9999-4999-8999-999999999999")
+        // A verify grant correctly bound to this challenge_id but with a different series
+        // must not redeem it.
+        val otherSeries = verifyBearer(created.challengeId, series = "99999999-9999-4999-8999-999999999999")
         assertEquals(VerifyOutcome.Forbidden, service.verify(otherSeries, created.challengeId, sms.lastCode!!))
     }
 
@@ -191,7 +224,7 @@ class SecureServiceDbTest {
             override fun configured() = true
             override fun send(phone: String, code: String): SmsResult { n.incrementAndGet(); throw java.io.IOException("timeout") }
         }
-        val svc = SecureTrustedExitService(GrantVerifier(pub), OtpRepository(db, hasher), hasher, throwing, ContactDestinationResolver { "+70000000000" })
+        val svc = SecureTrustedExitService(GrantVerifier(pub), GrantVerifier.forVerify(pub), OtpRepository(db, hasher), hasher, throwing, ContactDestinationResolver { "+70000000000" })
         val b = bearer()
         val r = svc.request(b, "1.2.3.4") as RequestOutcome.Created
         assertEquals("UNKNOWN", r.delivery)
@@ -199,7 +232,7 @@ class SecureServiceDbTest {
         assertEquals(1, throwing.n.get())
         // Fail-closed: a timed-out (SENDING/UNKNOWN) challenge is never verifiable,
         // and the failed attempt does not burn the user's attempts.
-        assertEquals(VerifyOutcome.Unknown, svc.verify(b, r.challengeId, "00000"))
+        assertEquals(VerifyOutcome.Unknown, svc.verify(verifyBearer(r.challengeId), r.challengeId, "00000"))
         assertEquals(3, repo.byId(r.challengeId)!!.attemptsLeft)
     }
 
@@ -235,7 +268,7 @@ class SecureServiceDbTest {
     }
 
     @Test fun `destination that cannot be resolved fails closed with no SMS`() {
-        val svc = SecureTrustedExitService(GrantVerifier(pub), OtpRepository(db, hasher), hasher, sms, ContactDestinationResolver { null })
+        val svc = SecureTrustedExitService(GrantVerifier(pub), GrantVerifier.forVerify(pub), OtpRepository(db, hasher), hasher, sms, ContactDestinationResolver { null })
         assertEquals(RequestOutcome.DestinationUnavailable, svc.request(bearer(), "1.2.3.4"))
         assertEquals(0, sms.calls)
     }
@@ -260,6 +293,7 @@ class SecureServiceDbTest {
         val b = bearer()
         val created = service.request(b, "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!!
+        val vb = verifyBearer(created.challengeId)
         val pool = Executors.newFixedThreadPool(8)
         val start = CountDownLatch(1)
         val valid = AtomicInteger(0)
@@ -267,7 +301,7 @@ class SecureServiceDbTest {
         val tasks = (1..8).map {
             pool.submit {
                 start.await()
-                when (service.verify(b, created.challengeId, code)) {
+                when (service.verify(vb, created.challengeId, code)) {
                     is VerifyOutcome.Valid -> valid.incrementAndGet()
                     VerifyOutcome.Unknown -> unknown.incrementAndGet()
                     else -> {}
@@ -305,37 +339,70 @@ class SecureServiceDbTest {
         assertEquals(2, sms.calls, "at most the budget is ever sent")
     }
 
-    // ---- ChatGPT review item 4: VALID is match-only, verify uses a fresh grant ----
+    // ---- Issue #10: dedicated challenge-bound verify-scope grant ----------------
 
-    @Test fun `verify accepts a freshly issued grant with the same bindings (not the one-time request jti)`() {
-        // The 60s request grant is too short to still be valid when the user types
-        // the code, so verify authenticates on the signed bindings of a NEW grant
-        // (different jti), never the original request jti. VALID is match-only; the
-        // series transition stays with FastAPI (Deliverable B).
-        val requestGrant = bearer()
-        val created = service.request(requestGrant, "1.2.3.4") as RequestOutcome.Created
+    @Test fun `verify requires a fresh challenge-bound verify-scope grant`() {
+        // The ≤60s SMS-request grant is long expired when the user types the code, so
+        // verify authenticates on a fresh trusted-exit:verify grant bound to this
+        // challenge_id — never the request grant.
+        val created = service.request(bearer(), "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!!
-        val freshVerifyGrant = bearer(jti = newJti()) // same sub/series/period/device/contact, new jti
-        assertTrue(service.verify(freshVerifyGrant, created.challengeId, code) is VerifyOutcome.Valid)
-        // Still single-use: with no receipt signer, a replay of either grant is denied.
-        assertEquals(VerifyOutcome.Unknown, service.verify(requestGrant, created.challengeId, code))
+        assertTrue(service.verify(verifyBearer(created.challengeId), created.challengeId, code) is VerifyOutcome.Valid)
+    }
+
+    @Test fun `verify rejects an SMS-request-scope grant even with matching bindings, consuming nothing`() {
+        val created = service.request(bearer(), "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        // A perfectly valid SMS-request grant (right key, right bindings) is the WRONG
+        // scope for /verify and must be rejected outright.
+        assertEquals(VerifyOutcome.Unauthorized, service.verify(bearer(), created.challengeId, code))
+        assertEquals(3, repo.byId(created.challengeId)!!.attemptsLeft, "a rejected scope consumes no attempt")
+        // The challenge is still verifiable with the correct verify-scope grant.
+        assertTrue(service.verify(verifyBearer(created.challengeId), created.challengeId, code) is VerifyOutcome.Valid)
+    }
+
+    @Test fun `request rejects a verify-scope grant with zero SMS`() {
+        val created0 = service.request(bearer(), "1.2.3.4") as RequestOutcome.Created
+        val before = sms.calls
+        // A trusted-exit:verify grant is the wrong scope for /request — rejected, no send.
+        assertEquals(RequestOutcome.Unauthorized, service.request(verifyBearer(created0.challengeId), "1.2.3.4"))
+        assertEquals(before, sms.calls, "no SMS for a verify-scope grant on /request")
+    }
+
+    @Test fun `a verify grant bound to a different challenge cannot redeem this one`() {
+        val created = service.request(bearer(), "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        // Correctly signed verify grant, but its challenge_id names a DIFFERENT challenge.
+        val wrongBinding = verifyBearer("tec-" + UUID.randomUUID())
+        assertEquals(VerifyOutcome.Forbidden, service.verify(wrongBinding, created.challengeId, code))
+        assertEquals(3, repo.byId(created.challengeId)!!.attemptsLeft, "no attempt consumed")
+    }
+
+    @Test fun `a fresh verify grant cannot bypass the 3-attempt lock`() {
+        val created = service.request(bearer(), "1.2.3.4") as RequestOutcome.Created
+        // Burn the 3 attempts with one verify grant...
+        service.verify(verifyBearer(created.challengeId), created.challengeId, "00000")
+        service.verify(verifyBearer(created.challengeId), created.challengeId, "00000")
+        assertTrue(service.verify(verifyBearer(created.challengeId), created.challengeId, "00000") is VerifyOutcome.Locked)
+        // ...a brand-new verify grant does NOT reset the challenge-bound attempt budget.
+        assertTrue(service.verify(verifyBearer(created.challengeId), created.challengeId, sms.lastCode ?: "00000") is VerifyOutcome.Locked)
     }
 
     // ---- Issue #8 + PR #9 review: verified-OTP receipt, no re-exposure ----------
 
     @Test fun `the correct code returns the receipt exactly once and never re-exposes it`() {
         val svc = newServiceWithSigner()
-        val b = bearer()
-        val created = svc.request(b, "1.2.3.4") as RequestOutcome.Created
+        val created = svc.request(bearer(), "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!!
-        val first = svc.verify(b, created.challengeId, code)
+        val vb = verifyBearer(created.challengeId)
+        val first = svc.verify(vb, created.challengeId, code)
         assertTrue(first is VerifyOutcome.Valid)
         val receipt = (first as VerifyOutcome.Valid).receipt
         assertTrue(receipt != null && receipt.split(".").size == 3, "a signed JWT receipt is returned once")
         // The receipt was minted exactly once (persisted), but a second call — even with
         // the correct code and the same grant — must NOT re-expose it. Fail closed.
         assertEquals(receipt, repo.byId(created.challengeId)!!.receipt, "minted once and persisted")
-        assertEquals(VerifyOutcome.Unknown, svc.verify(b, created.challengeId, code))
+        assertEquals(VerifyOutcome.Unknown, svc.verify(vb, created.challengeId, code))
     }
 
     @Test fun `a wrong or random code against a consumed challenge never retrieves the receipt`() {
@@ -343,11 +410,10 @@ class SecureServiceDbTest {
         // challenge id, submit an arbitrary code after consumption, try to harvest the
         // stored signed receipt. Must fail closed with no receipt.
         val svc = newServiceWithSigner()
-        val b = bearer()
-        val created = svc.request(b, "1.2.3.4") as RequestOutcome.Created
+        val created = svc.request(bearer(), "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!!
-        assertTrue(svc.verify(b, created.challengeId, code) is VerifyOutcome.Valid) // consume
-        val freshGrant = bearer(jti = newJti()) // same bindings, brand-new grant
+        assertTrue(svc.verify(verifyBearer(created.challengeId), created.challengeId, code) is VerifyOutcome.Valid) // consume
+        val freshGrant = verifyBearer(created.challengeId, jti = newJti()) // fresh verify grant, same bindings+challenge
         assertEquals(VerifyOutcome.Unknown, svc.verify(freshGrant, created.challengeId, "00000"))
         assertEquals(VerifyOutcome.Unknown, svc.verify(freshGrant, created.challengeId, code))
         assertEquals(VerifyOutcome.Unknown, svc.verify(freshGrant, created.challengeId, "99999"))
@@ -355,11 +421,10 @@ class SecureServiceDbTest {
 
     @Test fun `a cross-account grant never retrieves a consumed receipt`() {
         val svc = newServiceWithSigner()
-        val b = bearer()
-        val created = svc.request(b, "1.2.3.4") as RequestOutcome.Created
+        val created = svc.request(bearer(), "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!!
-        assertTrue(svc.verify(b, created.challengeId, code) is VerifyOutcome.Valid) // consume
-        val otherAccount = bearer(series = "99999999-9999-4999-8999-999999999999")
+        assertTrue(svc.verify(verifyBearer(created.challengeId), created.challengeId, code) is VerifyOutcome.Valid) // consume
+        val otherAccount = verifyBearer(created.challengeId, series = "99999999-9999-4999-8999-999999999999")
         assertEquals(VerifyOutcome.Forbidden, svc.verify(otherAccount, created.challengeId, code))
     }
 
@@ -380,9 +445,9 @@ class SecureServiceDbTest {
 
     @Test fun `parallel verification yields exactly one authorization and one minted receipt`() {
         val svc = newServiceWithSigner()
-        val b = bearer()
-        val created = svc.request(b, "1.2.3.4") as RequestOutcome.Created
+        val created = svc.request(bearer(), "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!!
+        val vb = verifyBearer(created.challengeId)
         val pool = Executors.newFixedThreadPool(8)
         val start = CountDownLatch(1)
         val receipts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -391,7 +456,7 @@ class SecureServiceDbTest {
         val tasks = (1..8).map {
             pool.submit {
                 start.await()
-                when (val r = svc.verify(b, created.challengeId, code)) {
+                when (val r = svc.verify(vb, created.challengeId, code)) {
                     is VerifyOutcome.Valid -> { valid.incrementAndGet(); r.receipt?.let(receipts::add) }
                     VerifyOutcome.Unknown -> unknown.incrementAndGet()
                     else -> {}

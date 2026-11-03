@@ -57,7 +57,10 @@ fun main() {
 
 /** Builds the service from the environment, migrating the DB when configured. */
 fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
-    val verifier = GrantVerifier(System.getenv("MAMA_GRANT_PUBLIC_KEY").orEmpty())
+    val grantKey = System.getenv("MAMA_GRANT_PUBLIC_KEY").orEmpty()
+    val verifier = GrantVerifier(grantKey)
+    // Same pinned FastAPI key; a distinct kid/purpose + challenge_id scope for /verify.
+    val verifyVerifier = GrantVerifier.forVerify(grantKey)
     val hasher = OtpHasher(System.getenv("MAMA_OTP_PEPPER").orEmpty())
     val dbUrl = System.getenv("MAMA_DB_URL")
     val db = dbUrl?.takeIf { it.isNotBlank() }?.let {
@@ -79,6 +82,7 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
     val service = if (configured) {
         SecureTrustedExitService(
             verifier = verifier,
+            verifyVerifier = verifyVerifier,
             repo = OtpRepository(db!!, hasher),
             hasher = hasher,
             sms = sms!!,
