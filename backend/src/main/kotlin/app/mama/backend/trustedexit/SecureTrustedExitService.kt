@@ -18,6 +18,8 @@ import java.util.UUID
  */
 class SecureTrustedExitService(
     private val verifier: GrantVerifier,
+    /** Verifier for the challenge-bound `trusted-exit:verify` grant used by [verify]. */
+    private val verifyVerifier: GrantVerifier,
     private val repo: OtpRepository,
     private val hasher: OtpHasher,
     private val sms: app.mama.backend.trustedexit.SmsProvider,
@@ -88,8 +90,14 @@ class SecureTrustedExitService(
     }
 
     fun verify(bearer: String?, challengeId: String, enteredCode: String): VerifyOutcome {
-        val grant = (verifier.verify(bearer) as? GrantVerifier.Result.Valid)?.grant
+        // Only a fresh, challenge-bound verify-scope grant is accepted here. An SMS-request
+        // grant (even a valid one with matching bindings) fails the kid/purpose/claim checks
+        // of the verify verifier and is rejected — the two scopes are not interchangeable.
+        val grant = (verifyVerifier.verify(bearer) as? GrantVerifier.Result.Valid)?.grant
             ?: return VerifyOutcome.Unauthorized
+        // The grant authorizes exactly one challenge; a correctly signed but differently
+        // bound token cannot redeem another challenge.
+        if (grant.challengeId == null || grant.challengeId != challengeId) return VerifyOutcome.Forbidden
         val ch = repo.byId(challengeId) ?: return VerifyOutcome.Unknown
         if (!ownedBy(ch, grant)) return VerifyOutcome.Forbidden
         return repo.verifyAndConsume(challengeId, enteredCode, nowMs(), cooldownMs) { consumed, atMs ->
