@@ -25,7 +25,7 @@ fun Routing.trustedExitRoutes(service: SecureTrustedExitService?) {
             return@post
         }
         val bearer = call.request.headers["Authorization"]
-        val ip = clientIp()
+        val ip = call.clientIp()
         when (val r = service.request(bearer, ip)) {
             RequestOutcome.Unauthorized -> call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
             RequestOutcome.RateLimited -> call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited"))
