@@ -1,12 +1,11 @@
 package app.mama.backend.api
 
-import app.mama.backend.trustedexit.ChallengeEngine
-import app.mama.backend.trustedexit.CreateRequest
-import app.mama.backend.trustedexit.CreateResult
-import app.mama.backend.trustedexit.SmsProvider
+import app.mama.backend.trustedexit.RequestOutcome
+import app.mama.backend.trustedexit.SecureTrustedExitService
 import app.mama.backend.trustedexit.VerifyOutcome
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveNullable
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
@@ -14,30 +13,46 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 
 /**
- * The Trusted Exit HTTP API. Every engine outcome is returned as 200 with a
- * `status` field so the client parses one uniform shape; only a malformed body
- * is a 400. No response carries the code.
+ * The grant-gated Trusted Exit API. Both endpoints require a valid FastAPI grant
+ * in `Authorization: Bearer`; identity/bindings come only from that grant. When
+ * the service is not configured (missing grant key / DB / SMS), the endpoints
+ * fail closed with 503. `/health` is liveness; `/ready` is strict.
  */
-fun Routing.trustedExitRoutes(engine: ChallengeEngine) {
-    get("/health") {
-        call.respond(HealthResponse("ok"))
-    }
-
+fun Routing.trustedExitRoutes(service: SecureTrustedExitService?, trustedProxies: Set<String> = emptySet()) {
     post("/trusted-exit/request") {
-        val body = call.receiveNullable<CreateChallengeBody>()
-        val sessionId = body?.sessionId
-        val kind = body?.kind
-        val idempotencyKey = body?.idempotencyKey
-        val contactPhone = body?.contactPhone
-        if (sessionId.isNullOrBlank() || kind.isNullOrBlank() || idempotencyKey.isNullOrBlank() || contactPhone.isNullOrBlank()) {
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse("sessionId, kind, idempotencyKey and contactPhone are required"))
+        if (service == null) {
+            call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("not configured"))
             return@post
         }
-        val result = engine.create(CreateRequest(sessionId, kind, idempotencyKey, contactPhone))
-        call.respond(result.toResponse())
+        val bearer = call.request.headers["Authorization"]
+        val ip = call.clientIp(trustedProxies)
+        when (val r = service.request(bearer, ip)) {
+            RequestOutcome.Unauthorized -> call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
+            RequestOutcome.RateLimited -> call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited"))
+            RequestOutcome.DestinationUnavailable ->
+                call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("destination unavailable"))
+            is RequestOutcome.Rejected ->
+                call.respond(ChallengeResponse("REJECTED", reason = r.reason, retryAtMs = r.retryAtMs))
+            is RequestOutcome.Failed ->
+                call.respond(ChallengeResponse("FAILED", reason = r.reason))
+            is RequestOutcome.Created -> call.respond(
+                ChallengeResponse(
+                    status = "CREATED",
+                    challengeId = r.challengeId,
+                    issuedAtMs = r.issuedAtMs,
+                    expiresAtMs = r.expiresAtMs,
+                    attemptsLeft = r.attemptsLeft,
+                    delivery = r.delivery,
+                ),
+            )
+        }
     }
 
     post("/trusted-exit/verify") {
+        if (service == null) {
+            call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("not configured"))
+            return@post
+        }
         val body = call.receiveNullable<VerifyBody>()
         val challengeId = body?.challengeId
         val code = body?.code
@@ -45,43 +60,43 @@ fun Routing.trustedExitRoutes(engine: ChallengeEngine) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("challengeId and code are required"))
             return@post
         }
-        call.respond(engine.verify(challengeId, code).toResponse())
-    }
-}
-
-/**
- * Readiness: reports whether an SMS provider is configured, so a deploy can be
- * verified before the first real test. It returns only a safe provider label,
- * never the api_id. 200 when ready, 503 when not.
- */
-fun Routing.readinessRoutes(sms: SmsProvider) {
-    get("/ready") {
-        if (sms.configured()) {
-            call.respond(ReadinessResponse("ready", sms.label))
-        } else {
-            call.respond(HttpStatusCode.ServiceUnavailable, ReadinessResponse("not_ready", sms.label))
+        val bearer = call.request.headers["Authorization"]
+        when (val r = service.verify(bearer, challengeId, code)) {
+            VerifyOutcome.Unauthorized -> call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
+            VerifyOutcome.Forbidden -> call.respond(HttpStatusCode.Forbidden, ErrorResponse("forbidden"))
+            // VALID means only that the OTP matched. It is NOT an unlock
+            // authorization: the Android client must not act on it alone. The
+            // server-authoritative series/period transition is owned by FastAPI
+            // and must be obtained via a one-time redemption (Deliverable B); see
+            // docs/TRUSTED_EXIT_KTOR_SECURITY.md §4.
+            VerifyOutcome.Valid -> call.respond(VerifyResponse("VALID"))
+            is VerifyOutcome.Invalid -> call.respond(VerifyResponse("INVALID", attemptsLeft = r.attemptsLeft))
+            VerifyOutcome.Expired -> call.respond(VerifyResponse("EXPIRED"))
+            is VerifyOutcome.Locked -> call.respond(VerifyResponse("LOCKED", retryAtMs = r.retryAtMs))
+            VerifyOutcome.Unknown -> call.respond(VerifyResponse("UNKNOWN"))
         }
     }
 }
 
-private fun CreateResult.toResponse(): ChallengeResponse = when (this) {
-    is CreateResult.Created -> ChallengeResponse(
-        status = "CREATED",
-        challengeId = challenge.challengeId,
-        kind = challenge.kind,
-        issuedAtMs = challenge.issuedAtMs,
-        expiresAtMs = challenge.expiresAtMs,
-        attemptsLeft = challenge.attemptsLeft,
-        delivery = delivery.name,
-    )
-    is CreateResult.Rejected -> ChallengeResponse(status = "REJECTED", reason = reason.name, retryAtMs = retryAtMs)
-    is CreateResult.Failed -> ChallengeResponse(status = "FAILED", reason = reason)
+/**
+ * Liveness (`/health`, always ok) and strict readiness (`/ready`, 200 only when
+ * grant key + DB + SMS are all configured; 503 otherwise). Never leaks secrets.
+ */
+fun Routing.readinessRoutes(readiness: Readiness) {
+    get("/health") { call.respond(HealthResponse("ok")) }
+    get("/ready") {
+        val body = ReadinessResponse(
+            status = if (readiness.ready) "ready" else "not_ready",
+            ready = readiness.ready, grant = readiness.grant, db = readiness.db, sms = readiness.sms,
+        )
+        if (readiness.ready) call.respond(body) else call.respond(HttpStatusCode.ServiceUnavailable, body)
+    }
 }
 
-private fun VerifyOutcome.toResponse(): VerifyResponse = when (this) {
-    VerifyOutcome.Valid -> VerifyResponse(status = "VALID")
-    is VerifyOutcome.Invalid -> VerifyResponse(status = "INVALID", attemptsLeft = attemptsLeft)
-    VerifyOutcome.Expired -> VerifyResponse(status = "EXPIRED")
-    is VerifyOutcome.Locked -> VerifyResponse(status = "LOCKED", retryAtMs = retryAtMs)
-    VerifyOutcome.Unknown -> VerifyResponse(status = "UNKNOWN")
-}
+/**
+ * Client IP for rate limiting. X-Forwarded-For is honoured only when the socket
+ * peer is a configured trusted proxy; otherwise the socket address is used (see
+ * [resolveClientIp]). With no trusted proxies configured, XFF is ignored.
+ */
+private fun io.ktor.server.application.ApplicationCall.clientIp(trustedProxies: Set<String>): String =
+    resolveClientIp(request.origin.remoteHost, request.headers["X-Forwarded-For"], trustedProxies)
