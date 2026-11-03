@@ -25,11 +25,16 @@ data class VerifyBody(
     val code: String? = null,
 )
 
-/** `POST /trusted-exit/verify` response. `status` is VALID | INVALID | EXPIRED | LOCKED | UNKNOWN. */
+/**
+ * `POST /trusted-exit/verify` response. `status` is VALID | INVALID | EXPIRED | LOCKED | UNKNOWN.
+ * On VALID, [receipt] is the signed verified-OTP proof to forward to FastAPI (null when receipt
+ * signing is not configured). The receipt is NOT an unlock by itself — see the design doc §3a.
+ */
 data class VerifyResponse(
     val status: String,
     val attemptsLeft: Int? = null,
     val retryAtMs: Long? = null,
+    val receipt: String? = null,
 )
 
 /** `GET /health` response: liveness only (no dependency checks). */

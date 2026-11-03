@@ -20,6 +20,8 @@ data class StoredChallenge(
     val expiresAt: Long,
     val cooldownUntil: Long?,
     val smsRef: String?,
+    /** The verified-OTP receipt, minted once when the challenge is consumed; null until then. */
+    val receipt: String? = null,
 )
 
 /** A single rate-limit reservation: a durable counter window and its cap. */
@@ -98,9 +100,22 @@ class OtpRepository(private val db: Db, private val hasher: OtpHasher) {
      * unsent/failed challenge can never be turned into a VALID, and such an
      * attempt does NOT burn the user's attempts (fail-closed, attempts preserved).
      */
-    fun verifyAndConsume(id: String, enteredCode: String, nowMs: Long, cooldownMs: Long): VerifyOutcome = db.tx { c ->
+    fun verifyAndConsume(
+        id: String,
+        enteredCode: String,
+        nowMs: Long,
+        cooldownMs: Long,
+        mintReceipt: (StoredChallenge, Long) -> String? = { _, _ -> null },
+    ): VerifyOutcome = db.tx { c ->
         val ch = selectForUpdate(c, id) ?: return@tx VerifyOutcome.Unknown
         when {
+            // Fail closed: a consumed challenge NEVER re-exposes its receipt. Re-handing
+            // the stored signed proof to any binding-compatible caller — even with a wrong
+            // code — would be an oracle (no proof the caller is the one who verified), and
+            // a stale receipt could outlive its own expiry. The receipt is returned ONLY to
+            // the caller whose verify performed the one-time consumption (the match branch
+            // below). Network-loss recovery needs a dedicated authenticated recovery
+            // credential (cross-service blocker), not a replay of grant + challenge + code.
             ch.status == "CONSUMED" -> VerifyOutcome.Unknown
             ch.cooldownUntil != null && nowMs < ch.cooldownUntil -> VerifyOutcome.Locked(ch.cooldownUntil)
             nowMs >= ch.expiresAt -> { setStatus(c, id, "EXPIRED"); VerifyOutcome.Expired }
@@ -110,9 +125,15 @@ class OtpRepository(private val db: Db, private val hasher: OtpHasher) {
             // never even compared, so a timed-out/unsent challenge stays unusable.
             ch.status != OtpStatus.SENT.name -> VerifyOutcome.Unknown
             Otp.looksValid(enteredCode) && hasher.matches(ch.salt, enteredCode, ch.codeHash) -> {
-                setStatus(c, id, "CONSUMED")
+                // Mint the receipt and consume atomically: the receipt exists iff the
+                // challenge is CONSUMED, so it is impossible to issue two for one OTP.
+                val receipt = mintReceipt(ch, nowMs)
+                c.prepareStatement("UPDATE trusted_exit.challenge SET status='CONSUMED', receipt=? WHERE id=?").use { ps ->
+                    if (receipt != null) ps.setString(1, receipt) else ps.setNull(1, java.sql.Types.VARCHAR)
+                    ps.setString(2, id); ps.executeUpdate()
+                }
                 redeemJti(c, ch.jti, nowMs)
-                VerifyOutcome.Valid
+                VerifyOutcome.Valid(receipt)
             }
             else -> {
                 val left = ch.attemptsLeft - 1
@@ -204,13 +225,14 @@ class OtpRepository(private val db: Db, private val hasher: OtpHasher) {
             attemptsLeft = rs.getInt("attempts_left"), status = rs.getString("status"),
             issuedAt = rs.getLong("issued_at"), expiresAt = rs.getLong("expires_at"),
             cooldownUntil = cooldown, smsRef = rs.getString("sms_ref"),
+            receipt = rs.getString("receipt"),
         )
     }
 
     private companion object {
         const val SELECT_COLS =
             "SELECT id, jti, user_id, series_id, period_id, device_id, contact_id, salt, code_hash, " +
-                "attempts_left, status, issued_at, expires_at, cooldown_until, sms_ref, send_attempts " +
+                "attempts_left, status, issued_at, expires_at, cooldown_until, sms_ref, send_attempts, receipt " +
                 "FROM trusted_exit.challenge"
     }
 }

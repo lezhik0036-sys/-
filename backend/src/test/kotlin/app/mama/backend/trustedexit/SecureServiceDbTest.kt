@@ -1,6 +1,7 @@
 package app.mama.backend.trustedexit
 
 import app.mama.backend.auth.GrantVerifier
+import app.mama.backend.auth.ReceiptSigner
 import app.mama.backend.db.JdbcDb
 import com.google.gson.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -68,6 +69,17 @@ class SecureServiceDbTest {
         sms = sms,
         destinations = ContactDestinationResolver { "+70000000000" },
         limits = limits,
+    )
+
+    // A receipt-signing keypair generated in the test — no production private key.
+    private val receiptKp: KeyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+    private fun newServiceWithSigner() = SecureTrustedExitService(
+        verifier = GrantVerifier(pub),
+        repo = OtpRepository(db, hasher),
+        hasher = hasher,
+        sms = sms,
+        destinations = ContactDestinationResolver { "+70000000000" },
+        receiptSigner = ReceiptSigner(Base64.getEncoder().encodeToString(receiptKp.private.encoded)),
     )
 
     // ---- grant signing helper (test only) -------------------------------------
@@ -149,7 +161,8 @@ class SecureServiceDbTest {
         val b = bearer()
         val created = service.request(b, "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!! // the fake captured the OTP; the API never returns it
-        assertEquals(VerifyOutcome.Valid, service.verify(b, created.challengeId, code))
+        assertTrue(service.verify(b, created.challengeId, code) is VerifyOutcome.Valid)
+        // No receipt signer here, so a consumed challenge is a denied replay.
         assertEquals(VerifyOutcome.Unknown, service.verify(b, created.challengeId, code)) // consumed
     }
 
@@ -238,7 +251,7 @@ class SecureServiceDbTest {
                     3, OtpStatus.SENT.name, now, now + 900_000, null, "ref"),
             ),
         )
-        assertEquals(VerifyOutcome.Valid, repo.verifyAndConsume(id, "00042", now, 1_800_000))
+        assertTrue(repo.verifyAndConsume(id, "00042", now, 1_800_000) is VerifyOutcome.Valid)
     }
 
     // ---- ChatGPT review item 5: concurrency ------------------------------------
@@ -255,7 +268,7 @@ class SecureServiceDbTest {
             pool.submit {
                 start.await()
                 when (service.verify(b, created.challengeId, code)) {
-                    VerifyOutcome.Valid -> valid.incrementAndGet()
+                    is VerifyOutcome.Valid -> valid.incrementAndGet()
                     VerifyOutcome.Unknown -> unknown.incrementAndGet()
                     else -> {}
                 }
@@ -303,8 +316,93 @@ class SecureServiceDbTest {
         val created = service.request(requestGrant, "1.2.3.4") as RequestOutcome.Created
         val code = sms.lastCode!!
         val freshVerifyGrant = bearer(jti = newJti()) // same sub/series/period/device/contact, new jti
-        assertEquals(VerifyOutcome.Valid, service.verify(freshVerifyGrant, created.challengeId, code))
-        // Still single-use: a replay of either grant is denied.
+        assertTrue(service.verify(freshVerifyGrant, created.challengeId, code) is VerifyOutcome.Valid)
+        // Still single-use: with no receipt signer, a replay of either grant is denied.
         assertEquals(VerifyOutcome.Unknown, service.verify(requestGrant, created.challengeId, code))
+    }
+
+    // ---- Issue #8 + PR #9 review: verified-OTP receipt, no re-exposure ----------
+
+    @Test fun `the correct code returns the receipt exactly once and never re-exposes it`() {
+        val svc = newServiceWithSigner()
+        val b = bearer()
+        val created = svc.request(b, "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        val first = svc.verify(b, created.challengeId, code)
+        assertTrue(first is VerifyOutcome.Valid)
+        val receipt = (first as VerifyOutcome.Valid).receipt
+        assertTrue(receipt != null && receipt.split(".").size == 3, "a signed JWT receipt is returned once")
+        // The receipt was minted exactly once (persisted), but a second call — even with
+        // the correct code and the same grant — must NOT re-expose it. Fail closed.
+        assertEquals(receipt, repo.byId(created.challengeId)!!.receipt, "minted once and persisted")
+        assertEquals(VerifyOutcome.Unknown, svc.verify(b, created.challengeId, code))
+    }
+
+    @Test fun `a wrong or random code against a consumed challenge never retrieves the receipt`() {
+        // The attack ChatGPT flagged: obtain a binding-compatible fresh grant + the
+        // challenge id, submit an arbitrary code after consumption, try to harvest the
+        // stored signed receipt. Must fail closed with no receipt.
+        val svc = newServiceWithSigner()
+        val b = bearer()
+        val created = svc.request(b, "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        assertTrue(svc.verify(b, created.challengeId, code) is VerifyOutcome.Valid) // consume
+        val freshGrant = bearer(jti = newJti()) // same bindings, brand-new grant
+        assertEquals(VerifyOutcome.Unknown, svc.verify(freshGrant, created.challengeId, "00000"))
+        assertEquals(VerifyOutcome.Unknown, svc.verify(freshGrant, created.challengeId, code))
+        assertEquals(VerifyOutcome.Unknown, svc.verify(freshGrant, created.challengeId, "99999"))
+    }
+
+    @Test fun `a cross-account grant never retrieves a consumed receipt`() {
+        val svc = newServiceWithSigner()
+        val b = bearer()
+        val created = svc.request(b, "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        assertTrue(svc.verify(b, created.challengeId, code) is VerifyOutcome.Valid) // consume
+        val otherAccount = bearer(series = "99999999-9999-4999-8999-999999999999")
+        assertEquals(VerifyOutcome.Forbidden, svc.verify(otherAccount, created.challengeId, code))
+    }
+
+    @Test fun `a stored receipt is never returned for an already-consumed challenge`() {
+        // Even a (possibly expired) receipt already sitting on a CONSUMED row is never
+        // handed back — the consume branch is the only path that returns a receipt.
+        val salt = Otp.salt()
+        val now = System.currentTimeMillis()
+        val id = "tec-" + UUID.randomUUID()
+        assertTrue(
+            repo.insertIfAbsent(
+                StoredChallenge(id, newJti(), sub, series, period, device, contact, salt, hasher.hash(salt, "24680"),
+                    3, OtpStatus.CONSUMED.name, now, now + 900_000, null, "ref", receipt = "stale.receipt.jwt"),
+            ),
+        )
+        assertEquals(VerifyOutcome.Unknown, repo.verifyAndConsume(id, "24680", now, 1_800_000) { _, _ -> "new.receipt.jwt" })
+    }
+
+    @Test fun `parallel verification yields exactly one authorization and one minted receipt`() {
+        val svc = newServiceWithSigner()
+        val b = bearer()
+        val created = svc.request(b, "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        val pool = Executors.newFixedThreadPool(8)
+        val start = CountDownLatch(1)
+        val receipts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val valid = AtomicInteger(0)
+        val unknown = AtomicInteger(0)
+        val tasks = (1..8).map {
+            pool.submit {
+                start.await()
+                when (val r = svc.verify(b, created.challengeId, code)) {
+                    is VerifyOutcome.Valid -> { valid.incrementAndGet(); r.receipt?.let(receipts::add) }
+                    VerifyOutcome.Unknown -> unknown.incrementAndGet()
+                    else -> {}
+                }
+            }
+        }
+        start.countDown()
+        tasks.forEach { it.get() }
+        pool.shutdown()
+        assertEquals(1, valid.get(), "exactly one caller is authorized (performs the consume)")
+        assertEquals(7, unknown.get(), "the rest get no receipt")
+        assertEquals(1, receipts.size, "exactly one receipt/jti is ever minted")
     }
 }

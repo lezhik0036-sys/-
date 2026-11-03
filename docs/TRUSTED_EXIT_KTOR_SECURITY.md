@@ -42,9 +42,10 @@ dedicated DB role is expected in production. Tables:
 
 - `challenge(id PK, jti UNIQUE, user_id, series_id, period_id, device_id,
   contact_id, salt, code_hash, attempts_left, status, issued_at, expires_at,
-  cooldown_until, sms_ref, send_attempts)` — no plaintext OTP; only a
+  cooldown_until, sms_ref, send_attempts, receipt)` — no plaintext OTP; only a
   peppered+salted **HMAC-SHA256** verifier (`OtpHasher`, pepper from env
-  `MAMA_OTP_PEPPER`).
+  `MAMA_OTP_PEPPER`). `receipt` holds the one verified-OTP proof minted on
+  consume (§3b), so a retry returns the same one.
 - `jti_ledger(jti PK, redeemed_at)` — one-time spend of a grant.
 - `rate_counter(scope, window_start, count, PK(scope,window_start))`.
 
@@ -79,18 +80,67 @@ No in-memory maps are used for any auth decision.
 ## 3a. `VALID` is a match result, NOT an unlock authorization
 
 A `VALID` from `/verify` means only that the entered OTP matched a delivered
-challenge. It carries **no receipt and no token**, and the Android client MUST NOT
-end the phone lock on it alone. The server-authoritative series/period transition
-is owned by FastAPI and must be obtained through a **single-use redemption**
-(Deliverable B, §7.3). Until that exists, a `VALID` is informational only.
+challenge. On its own it MUST NOT end the phone lock. When receipt signing is
+configured it carries a signed **verified-OTP receipt** (§3b) for Android to
+forward to FastAPI; the server-authoritative series/period transition is owned by
+FastAPI, which authenticates the internal caller, persists the receipt once and
+performs the transition. Without a signing key, `VALID` carries no receipt and is
+informational only — nothing can unlock (fail-closed).
 
 This also resolves a lifetime mismatch: the request grant lives ≤ 60s while the OTP
 lives 15 min, so the request grant is normally expired by the time the user types
 the code. Verify therefore authenticates on the **signed bindings** of a *freshly
 issued* grant (new `jti`, same `sub/series_id/period_id/device_id/contact_id`),
-never the one-time request `jti`; the challenge is still single-use (replay →
-`Unknown`). The clean long-term answer is a dedicated `purpose=trusted-exit:verify`
-grant or a redemption token minted at verify time — an open item for FastAPI (§7.3).
+never the one-time request `jti`; the challenge is still single-use. The clean
+long-term answer is a dedicated `purpose=trusted-exit:verify` grant or a redemption
+token minted at verify time — an open item for FastAPI (§7.3).
+
+## 3b. Verified-OTP receipt (test-only, issue #8 / FastAPI PR #13)
+
+On a successful verification Ktor mints a **verified-OTP receipt**: a Ktor-signed
+Ed25519 compact JWT that attests the OTP matched, for FastAPI to redeem. It matches
+the FastAPI `trusted_exit_ktor_receipt_format.py` verifier (proposal v1) exactly:
+
+- header `{alg:EdDSA, typ:JWT, kid:mama-ktor-exit-v1}`; issuer
+  `mama-ktor-trusted-exit`, audience `mama-fastapi`, purpose
+  `trusted-exit:verified-otp`;
+- exact claims `{iss,aud,purpose,sub,series_id,period_id,device_id,contact_id,
+  challenge_id,jti,iat,nbf,exp,verified_at}`; canonical lower-case UUIDs;
+  `challenge_id = tec-<uuid>`; integer NumericDate; `nbf≥iat`, `exp>nbf`,
+  `exp-iat≤60`, `verified_at∈[iat-60, iat]`; no phone and no OTP.
+- **Bindings come from the server-owned challenge row, never the client.**
+
+**Minted once, inside the consume transaction, and returned only to the consuming
+caller.** The receipt is produced in the same `verifyAndConsume` transaction that
+flips the challenge to `CONSUMED` and is persisted in `challenge.receipt`, so a
+receipt exists **iff** the challenge is consumed — it is impossible to issue two
+for one OTP. It is returned **only** to the caller whose `/verify` performed that
+one-time consumption; a parallel burst of correct-code verifies yields exactly one
+authorized caller with the receipt and the rest `Unknown`
+(`parallel verification yields exactly one authorization and one minted receipt`).
+
+**A consumed challenge never re-exposes its receipt (fail closed).** Once `CONSUMED`,
+`verifyAndConsume` returns `Unknown` unconditionally — the stored receipt is never
+handed back, not even for the correct code or the same grant. Re-handing a stored
+signed proof to any binding-compatible caller would be an oracle (a fresh grant +
+challenge id + an *arbitrary* code could harvest it without proving the OTP was
+ever known), and a 45–60s receipt could be re-exposed after its own expiry. So
+network-loss recovery (returning the same proof to a client that lost the HTTP
+response) is **deferred**: it requires a dedicated, independently authenticated,
+one-time recovery credential proving the original successful verification — a
+cross-service item to design with FastAPI (§7), not a replay of grant/challenge/code.
+With no signer configured, a successful verify is a bare `VALID` and a consumed
+challenge is likewise `Unknown`.
+
+**Keys (no private key in Git).** Ktor signs with an Ed25519 private key from
+`MAMA_RECEIPT_SIGNING_KEY` (PKCS#8 DER, base64), **off by default** — tests use an
+ephemeral in-process keypair. FastAPI pins the **raw 32-byte** public key; the JVM
+emits X.509 SPKI, so ops strip the 12-byte prefix `302a300506032b6570032100`
+(`ReceiptSigner.rawPublicFromSpki`) to export the raw key and distribute the
+private key only through a secret store. Compatibility is proven two ways offline:
+`KtorReceiptFormatTest` is a faithful Kotlin port of the FastAPI verifier (positive
++ every tamper/expiry/binding negative), and the minted signature also verifies
+under an independent implementation (OpenSSL / `Ed25519PublicKey.from_public_bytes`).
 
 ## 4. Anti-abuse / rate limits
 
@@ -143,17 +193,26 @@ after the FastAPI single-use redemption and series transition (§7.3).
 2. **Destination:** Ktor resolves the phone via a pinned, internally-authenticated
    FastAPI call/proxy keyed by `contact_id` — never the client. (Stub = null now.)
 3. **Redemption → series transition:** a `VALID` is only an OTP match (§3a), never
-   the unlock. It must be redeemed **once** in FastAPI to authorize the
-   server-side series/period transition (FastAPI owns the state machine). Proposed:
-   Ktor calls a pinned FastAPI "redeem" endpoint with the verified
-   `(challenge_id, bindings)`; FastAPI enforces its own one-time redemption and the
-   Android client ends the lock only on that result. **Open item:** verify currently
-   authenticates on the binding-checked grant (a freshly issued one, since the ≤60s
-   request grant has expired by verify time, §3a); a dedicated
-   `purpose=trusted-exit:verify` grant or a redemption token should be defined with
-   FastAPI.
+   the unlock. Ktor now mints the signed **verified-OTP receipt** (§3b) as that
+   proof; it must be redeemed **once** in FastAPI to authorize the server-side
+   series/period transition (FastAPI owns the state machine). The receipt format is
+   agreed (FastAPI PR #13 verifier ↔ Ktor `ReceiptSigner`, cross-checked offline).
+   **Still on the FastAPI side (cross-service blockers for issue #8):**
+   (a) a service-authenticated internal endpoint that *accepts* the receipt
+   (ingestion is DISABLED in PR #12); (b) durable one-time redemption keyed by the
+   receipt `jti`/`challenge_id` with a live re-check of series/device/period/contact;
+   (c) the authenticated internal transport (mTLS / internal token) between Ktor and
+   FastAPI; (d) the inbound verify credential — a dedicated `purpose=trusted-exit:verify`
+   grant (or redemption token) carrying `challenge_id`, since verify today
+   authenticates on the binding-checked request grant (a freshly issued one; the
+   ≤60s request grant has expired by verify time, §3a); (e) a **network-loss recovery
+   credential** — an independently authenticated, one-time secret proving the original
+   successful verification, so a client that lost the first response can re-obtain the
+   proof without the current fail-closed `CONSUMED → Unknown` becoming a receipt oracle
+   (§3b). Android ends the lock only on FastAPI's authoritative result, never on
+   `VALID`/the receipt alone.
 4. **No bypass:** client-chosen `sessionId/contactPhone` are not accepted anywhere;
-   bindings are the signed claims only.
+   bindings are the signed claims / the server-owned challenge row only.
 
 ## 8. Answers to the issue's questions
 
