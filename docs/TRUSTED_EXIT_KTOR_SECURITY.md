@@ -16,6 +16,20 @@ contract (draft PR #4 `docs/TRUSTED_EXIT_SECURITY_CONTRACT.md`).
   `{iss,aud,purpose,sub,series_id,period_id,device_id,contact_id,jti,iat,nbf,exp}`;
   UUIDs canonical lower-case; lifetime ≤ 60s; ≤ 5s future skew; single pinned key
   (no `jku`, no URL fetch, no client-supplied destination).
+- **Strict JWT parsing** (mirrors the FastAPI verifier): header key set is EXACTLY
+  `{alg,typ,kid}` (no `jku`/`x5u`/`crit`); all three segments must be canonical
+  base64url (no padding, no `+`/`/`); **duplicate JSON keys are rejected** in both
+  header and payload (a lenient parser would silently keep the last); timestamps
+  are **integer** NumericDate only (a fractional or string token is rejected);
+  `nbf ≥ iat`. See `GrantVerifierTest` for the negative cases.
+- **Public-key format contract (no private keys exchanged).** Ktor's
+  `MAMA_GRANT_PUBLIC_KEY` is the base64 of the Ed25519 **X.509 SubjectPublicKeyInfo**
+  (SPKI) DER — what `KeyFactory("Ed25519")` + `X509EncodedKeySpec` consume. FastAPI's
+  verifier currently takes the **32 raw** Ed25519 public-key bytes. Conversion
+  (public material only): SPKI DER = the 12-byte prefix
+  `302a300506032b6570032100` ++ the 32 raw bytes; base64 that for Ktor. Reverse:
+  the last 32 bytes of the SPKI DER are the raw key. No signing/private key exists
+  or should be added on the Ktor side.
 - **Identity and bindings come only from the grant.** There is no client
   `sessionId`/`contactPhone` in the request body; the SMS destination is resolved
   server-side (§5). The verify endpoint checks the challenge is owned by the
@@ -52,8 +66,31 @@ No in-memory maps are used for any auth decision.
   locks with `cooldown_until`. On success/lock the challenge's `jti` is written to
   `jti_ledger`, so a replayed grant cannot mint a new challenge. All state is in
   PostgreSQL, so it survives a process restart (proven by the restart test).
+- **Deliverable-status gate (fail-closed):** a challenge is verifiable ONLY while
+  its status is `SENT`. `PENDING_SEND`, `SENDING` and `SEND_FAILED` can never be
+  turned into a `VALID` even if the code is somehow known — so a provider timeout
+  (left `SENDING`, reported `UNKNOWN`) or an unsent/failed challenge is unusable.
+  A verify against a non-deliverable status returns a non-committal `Unknown` and
+  does **not** consume an attempt (attempts preserved; the code is never even
+  compared). Tested for every forbidden status and for the provider-timeout case.
 - **One-time JTI:** `jti_ledger` `INSERT … ON CONFLICT DO NOTHING`, checked before
   create.
+
+## 3a. `VALID` is a match result, NOT an unlock authorization
+
+A `VALID` from `/verify` means only that the entered OTP matched a delivered
+challenge. It carries **no receipt and no token**, and the Android client MUST NOT
+end the phone lock on it alone. The server-authoritative series/period transition
+is owned by FastAPI and must be obtained through a **single-use redemption**
+(Deliverable B, §7.3). Until that exists, a `VALID` is informational only.
+
+This also resolves a lifetime mismatch: the request grant lives ≤ 60s while the OTP
+lives 15 min, so the request grant is normally expired by the time the user types
+the code. Verify therefore authenticates on the **signed bindings** of a *freshly
+issued* grant (new `jti`, same `sub/series_id/period_id/device_id/contact_id`),
+never the one-time request `jti`; the challenge is still single-use (replay →
+`Unknown`). The clean long-term answer is a dedicated `purpose=trusted-exit:verify`
+grant or a redemption token minted at verify time — an open item for FastAPI (§7.3).
 
 ## 4. Anti-abuse / rate limits
 
@@ -62,6 +99,15 @@ if any key is over budget the whole reservation rolls back (no partial charge)
 and the request is denied with no SMS. Keys: `user(sub)`, `device`, `contact`,
 `ip`, and a `global` budget, each a windowed counter. Defaults in `RateLimits`.
 Retention via `OtpRepository.cleanup` (run periodically; documented, not a cron yet).
+
+**The `ip` key is not attacker-forgeable.** `X-Forwarded-For` is honoured only when
+the actual socket peer is an explicitly configured trusted proxy
+(`MAMA_TRUSTED_PROXIES`); otherwise the socket address is used and the header is
+ignored. With no proxies configured (the test-only default) XFF is always ignored,
+so a client cannot vary a header to dodge or inflate the per-IP quota. When the peer
+is trusted, the client is the right-most forwarded hop that is not itself a trusted
+proxy (`resolveClientIp`, with a forged-XFF test). The other quota keys come from the
+signed grant, not from any client input.
 
 **Authoritative side:** Ktor is authoritative for OTP attempts/cooldown and for
 the per-request SMS budget tied to a grant; FastAPI is authoritative for *issuing*
@@ -84,7 +130,9 @@ by design.
 is liveness; `/ready` is strict (200 only when grant key + DB + SMS are all present,
 503 otherwise) and leaks no secrets. Server errors never consume a verify attempt
 (the attempt counter moves only on an explicit server INVALID), and a transient is
-never VALID — so the Android client maps them to retry, never to a bypass.
+never VALID — so the Android client maps them to retry, never to a bypass. `VALID`
+itself is a match result, not an unlock authorization (§3a): the lock ends only
+after the FastAPI single-use redemption and series transition (§7.3).
 
 ## 7. Deliverable B — authenticated integration contract (design)
 
@@ -94,13 +142,16 @@ never VALID — so the Android client maps them to retry, never to a bypass.
    bypass is added to production.
 2. **Destination:** Ktor resolves the phone via a pinned, internally-authenticated
    FastAPI call/proxy keyed by `contact_id` — never the client. (Stub = null now.)
-3. **Redemption → series transition:** a successful OTP verify must be redeemed
-   **once** in FastAPI to authorize the server-side series/period transition
-   (FastAPI owns the state machine). Proposed: Ktor calls a pinned FastAPI
-   "redeem" endpoint with the verified `(jti, challenge_id, bindings)`; FastAPI
-   enforces its own one-time redemption. **Open item:** verify currently reuses the
-   protocol-v0 request grant (binding-checked); a dedicated `purpose=trusted-exit:verify`
-   grant or a redemption token should be defined with FastAPI.
+3. **Redemption → series transition:** a `VALID` is only an OTP match (§3a), never
+   the unlock. It must be redeemed **once** in FastAPI to authorize the
+   server-side series/period transition (FastAPI owns the state machine). Proposed:
+   Ktor calls a pinned FastAPI "redeem" endpoint with the verified
+   `(challenge_id, bindings)`; FastAPI enforces its own one-time redemption and the
+   Android client ends the lock only on that result. **Open item:** verify currently
+   authenticates on the binding-checked grant (a freshly issued one, since the ≤60s
+   request grant has expired by verify time, §3a); a dedicated
+   `purpose=trusted-exit:verify` grant or a redemption token should be defined with
+   FastAPI.
 4. **No bypass:** client-chosen `sessionId/contactPhone` are not accepted anywhere;
    bindings are the signed claims only.
 

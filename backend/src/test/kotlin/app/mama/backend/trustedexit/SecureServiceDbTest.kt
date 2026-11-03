@@ -39,6 +39,7 @@ class SecureServiceDbTest {
     private val hasher = OtpHasher("test-pepper")
     private lateinit var sms: MockSmsProvider
     private lateinit var service: SecureTrustedExitService
+    private lateinit var repo: OtpRepository
 
     private val sub = "11111111-1111-4111-8111-111111111111"
     private val series = "22222222-2222-4222-8222-222222222222"
@@ -56,6 +57,7 @@ class SecureServiceDbTest {
             }
         }
         sms = MockSmsProvider()
+        repo = OtpRepository(db, hasher)
         service = newService()
     }
 
@@ -182,6 +184,34 @@ class SecureServiceDbTest {
         assertEquals("UNKNOWN", r.delivery)
         svc.request(b, "1.2.3.4") // retry: must reuse, not re-send
         assertEquals(1, throwing.n.get())
+        // Fail-closed: a timed-out (SENDING/UNKNOWN) challenge is never verifiable,
+        // and the failed attempt does not burn the user's attempts.
+        assertEquals(VerifyOutcome.Unknown, svc.verify(b, r.challengeId, "00000"))
+        assertEquals(3, repo.byId(r.challengeId)!!.attemptsLeft)
+    }
+
+    // ---- ChatGPT review item 1: only a delivered (SENT) challenge is verifiable ----
+
+    private fun insertWithStatus(status: OtpStatus, code: String): String {
+        val salt = Otp.salt()
+        val now = System.currentTimeMillis()
+        val id = "tec-" + UUID.randomUUID()
+        assertTrue(
+            repo.insertIfAbsent(
+                StoredChallenge(id, newJti(), sub, series, period, device, contact, salt, hasher.hash(salt, code),
+                    3, status.name, now, now + 900_000, null, "ref"),
+            ),
+        )
+        return id
+    }
+
+    @Test fun `a challenge that was never sent cannot be verified even with the right code`() {
+        for (status in listOf(OtpStatus.PENDING_SEND, OtpStatus.SENDING, OtpStatus.SEND_FAILED)) {
+            val id = insertWithStatus(status, "13579")
+            assertEquals(VerifyOutcome.Unknown, repo.verifyAndConsume(id, "13579", System.currentTimeMillis(), 1_800_000),
+                "status $status must not verify")
+            assertEquals(3, repo.byId(id)!!.attemptsLeft, "attempts preserved for status $status")
+        }
     }
 
     @Test fun `rate limit denies beyond budget with no extra SMS`() {
@@ -202,7 +232,6 @@ class SecureServiceDbTest {
         val salt = Otp.salt()
         val now = System.currentTimeMillis()
         val id = "tec-" + UUID.randomUUID()
-        val repo = OtpRepository(db, hasher)
         assertTrue(
             repo.insertIfAbsent(
                 StoredChallenge(id, newJti(), sub, series, period, device, contact, salt, hasher.hash(salt, "00042"),
@@ -210,5 +239,72 @@ class SecureServiceDbTest {
             ),
         )
         assertEquals(VerifyOutcome.Valid, repo.verifyAndConsume(id, "00042", now, 1_800_000))
+    }
+
+    // ---- ChatGPT review item 5: concurrency ------------------------------------
+
+    @Test fun `parallel verification of the correct code consumes it exactly once`() {
+        val b = bearer()
+        val created = service.request(b, "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        val pool = Executors.newFixedThreadPool(8)
+        val start = CountDownLatch(1)
+        val valid = AtomicInteger(0)
+        val unknown = AtomicInteger(0)
+        val tasks = (1..8).map {
+            pool.submit {
+                start.await()
+                when (service.verify(b, created.challengeId, code)) {
+                    VerifyOutcome.Valid -> valid.incrementAndGet()
+                    VerifyOutcome.Unknown -> unknown.incrementAndGet()
+                    else -> {}
+                }
+            }
+        }
+        start.countDown()
+        tasks.forEach { it.get() }
+        pool.shutdown()
+        assertEquals(1, valid.get(), "exactly one VALID")
+        assertEquals(7, unknown.get(), "the rest see a consumed challenge")
+    }
+
+    @Test fun `concurrent requests with distinct grants never exceed the per-user SMS budget`() {
+        val svc = newService(RateLimits(userPerHour = 2)) // same user (sub), distinct jti each
+        val pool = Executors.newFixedThreadPool(6)
+        val start = CountDownLatch(1)
+        val created = AtomicInteger(0)
+        val limited = AtomicInteger(0)
+        val tasks = (1..6).map {
+            pool.submit {
+                start.await()
+                when (svc.request(bearer(jti = newJti()), "9.9.9.9")) {
+                    is RequestOutcome.Created -> created.incrementAndGet()
+                    RequestOutcome.RateLimited -> limited.incrementAndGet()
+                    else -> {}
+                }
+            }
+        }
+        start.countDown()
+        tasks.forEach { it.get() }
+        pool.shutdown()
+        assertEquals(2, created.get(), "only the budgeted requests create a challenge")
+        assertEquals(4, limited.get(), "the rest are rate-limited")
+        assertEquals(2, sms.calls, "at most the budget is ever sent")
+    }
+
+    // ---- ChatGPT review item 4: VALID is match-only, verify uses a fresh grant ----
+
+    @Test fun `verify accepts a freshly issued grant with the same bindings (not the one-time request jti)`() {
+        // The 60s request grant is too short to still be valid when the user types
+        // the code, so verify authenticates on the signed bindings of a NEW grant
+        // (different jti), never the original request jti. VALID is match-only; the
+        // series transition stays with FastAPI (Deliverable B).
+        val requestGrant = bearer()
+        val created = service.request(requestGrant, "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        val freshVerifyGrant = bearer(jti = newJti()) // same sub/series/period/device/contact, new jti
+        assertEquals(VerifyOutcome.Valid, service.verify(freshVerifyGrant, created.challengeId, code))
+        // Still single-use: a replay of either grant is denied.
+        assertEquals(VerifyOutcome.Unknown, service.verify(requestGrant, created.challengeId, code))
     }
 }

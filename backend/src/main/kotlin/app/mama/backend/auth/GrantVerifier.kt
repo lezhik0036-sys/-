@@ -1,7 +1,11 @@
 package app.mama.backend.auth
 
+import com.google.gson.JsonNull
 import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
+import java.io.StringReader
+import java.math.BigDecimal
 import java.security.KeyFactory
 import java.security.PublicKey
 import java.security.Signature
@@ -51,8 +55,12 @@ class GrantVerifier(
         val parts = token.split(".")
         if (parts.size != 3) return Result.Invalid("malformed grant")
         val (h64, p64, s64) = parts
+        // Canonical base64url, no padding, no standard-base64 chars (+, /, =).
+        if (parts.any { it.isEmpty() || !B64URL.matches(it) }) return Result.Invalid("non-canonical base64url")
 
         val header = decodeJson(h64) ?: return Result.Invalid("bad header")
+        // Exact header key set — no missing, no extra (e.g. no jku/x5u/crit).
+        if (header.keySet() != REQUIRED_HEADER_KEYS) return Result.Invalid("header key set mismatch")
         if (header.str("alg") != "EdDSA") return Result.Invalid("alg not allowed")
         if (header.str("typ") != "JWT") return Result.Invalid("typ not allowed")
         if (header.str("kid") != KID) return Result.Invalid("kid not allowed")
@@ -85,6 +93,7 @@ class GrantVerifier(
         val nbf = payload.epoch("nbf") ?: return Result.Invalid("nbf")
         val exp = payload.epoch("exp") ?: return Result.Invalid("exp")
 
+        if (nbf < iat) return Result.Invalid("nbf before iat")
         if (exp - iat > MAX_LIFETIME_SEC) return Result.Invalid("lifetime too long")
         if (exp <= iat) return Result.Invalid("exp not after iat")
         val t = now()
@@ -95,18 +104,49 @@ class GrantVerifier(
         return Result.Valid(Grant(sub, seriesId, periodId, deviceId, contactId, jti, iat, nbf, exp))
     }
 
+    /**
+     * Strict, flat-object JSON decode of a JWT segment. Rejects (returns null on)
+     * duplicate keys — Gson's default parser silently keeps the last — anything
+     * other than a single top-level object of primitive values, and any trailing
+     * content after the object. Numbers are kept exact (BigDecimal) so [epoch]
+     * can require integers and reject fractional NumericDate tokens.
+     */
     private fun decodeJson(b64: String): JsonObject? = runCatching {
-        JsonParser.parseString(String(Base64.getUrlDecoder().decode(b64), Charsets.UTF_8)).asJsonObject
+        val json = String(Base64.getUrlDecoder().decode(b64), Charsets.UTF_8)
+        JsonReader(StringReader(json)).use { reader ->
+            reader.isLenient = false
+            if (reader.peek() != JsonToken.BEGIN_OBJECT) return@runCatching null
+            val obj = JsonObject()
+            val seen = HashSet<String>()
+            reader.beginObject()
+            while (reader.hasNext()) {
+                val name = reader.nextName()
+                if (!seen.add(name)) return@runCatching null // duplicate key
+                when (reader.peek()) {
+                    JsonToken.STRING -> obj.addProperty(name, reader.nextString())
+                    JsonToken.NUMBER -> obj.addProperty(name, BigDecimal(reader.nextString()))
+                    JsonToken.BOOLEAN -> obj.addProperty(name, reader.nextBoolean())
+                    JsonToken.NULL -> { reader.nextNull(); obj.add(name, JsonNull.INSTANCE) }
+                    else -> return@runCatching null // nested object/array not allowed
+                }
+            }
+            reader.endObject()
+            if (reader.peek() != JsonToken.END_DOCUMENT) return@runCatching null // trailing garbage
+            obj
+        }
     }.getOrNull()
 
     private fun JsonObject.str(k: String): String? =
-        get(k)?.takeIf { it.isJsonPrimitive }?.asString
+        get(k)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
 
     private fun JsonObject.uuid(k: String): String? =
         str(k)?.takeIf { UUID_LOWER.matches(it) }
 
-    private fun JsonObject.epoch(k: String): Long? =
-        get(k)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asLong
+    /** An integer NumericDate only: a fractional token (e.g. 1700000000.5) is rejected. */
+    private fun JsonObject.epoch(k: String): Long? {
+        val prim = get(k)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asJsonPrimitive ?: return null
+        return runCatching { prim.asBigDecimal.longValueExact() }.getOrNull()
+    }
 
     companion object {
         const val KID = "mama-ktor-sms-v1"
@@ -119,7 +159,9 @@ class GrantVerifier(
             "iss", "aud", "purpose", "sub", "series_id", "period_id",
             "device_id", "contact_id", "jti", "iat", "nbf", "exp",
         )
+        val REQUIRED_HEADER_KEYS = setOf("alg", "typ", "kid")
         private val UUID_LOWER = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+        private val B64URL = Regex("^[A-Za-z0-9_-]+$")
     }
 }
 

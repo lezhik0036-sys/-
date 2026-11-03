@@ -55,6 +55,13 @@ class GrantVerifierTest {
         return "$h.$p.${sign("$h.$p", key)}"
     }
 
+    /** Signs arbitrary RAW header/payload JSON text (to exercise duplicate keys etc. that JsonObject can't represent). */
+    private fun rawToken(headerJson: String, payloadJson: String, key: PrivateKey = kp.private): String {
+        val h = b64.encodeToString(headerJson.toByteArray(Charsets.UTF_8))
+        val p = b64.encodeToString(payloadJson.toByteArray(Charsets.UTF_8))
+        return "$h.$p.${sign("$h.$p", key)}"
+    }
+
     @Test fun `a well-formed grant verifies and exposes the signed bindings`() {
         val r = verifier().verify("Bearer ${token()}")
         assertTrue(r is GrantVerifier.Result.Valid)
@@ -129,5 +136,48 @@ class GrantVerifierTest {
         val bad = GrantVerifier("not-a-key", now = { now })
         assertTrue(!bad.configured)
         assertTrue(bad.verify("Bearer ${token()}") is GrantVerifier.Result.Invalid)
+    }
+
+    // ---- strict parsing (ChatGPT review item 3) --------------------------------
+
+    @Test fun `extra header keys are rejected`() {
+        val h = header().apply { addProperty("jku", "https://evil.example/keys") }
+        assertTrue(verifier().verify("Bearer ${token(header = h)}") is GrantVerifier.Result.Invalid)
+    }
+
+    @Test fun `duplicate JSON keys in the payload are rejected`() {
+        // Two "jti" entries: a lenient parser would silently keep the last; we reject.
+        val dup = "{\"jti\":\"66666666-6666-4666-8666-666666666666\"," + claims().toString().substring(1)
+        assertTrue(verifier().verify("Bearer ${rawToken(header().toString(), dup)}") is GrantVerifier.Result.Invalid)
+    }
+
+    @Test fun `duplicate JSON keys in the header are rejected`() {
+        val dupHeader = "{\"alg\":\"EdDSA\"," + header().toString().substring(1)
+        assertTrue(verifier().verify("Bearer ${rawToken(dupHeader, claims().toString())}") is GrantVerifier.Result.Invalid)
+    }
+
+    @Test fun `a fractional NumericDate is rejected`() {
+        // iat with a fractional part must not be truncated into a valid integer.
+        assertTrue(verifier().verify("Bearer ${token(payload = claims().apply { addProperty("iat", 1_000_000.5) })}") is GrantVerifier.Result.Invalid)
+    }
+
+    @Test fun `nbf before iat is rejected`() {
+        assertTrue(verifier().verify("Bearer ${token(payload = claims().apply { addProperty("nbf", now - 10) })}") is GrantVerifier.Result.Invalid)
+    }
+
+    @Test fun `non-canonical base64url segments are rejected`() {
+        val parts = token().split(".")
+        val padded = "${parts[0]}=.${parts[1]}.${parts[2]}" // '=' padding is not base64url-canonical
+        assertTrue(verifier().verify("Bearer $padded") is GrantVerifier.Result.Invalid)
+    }
+
+    @Test fun `a string NumericDate is rejected`() {
+        // iat as a quoted string (not a JSON number) must not be accepted.
+        val raw = "{\"iss\":\"mama-fastapi\",\"aud\":\"mama-ktor-trusted-exit\",\"purpose\":\"trusted-exit:sms-request\"," +
+            "\"sub\":\"11111111-1111-4111-8111-111111111111\",\"series_id\":\"22222222-2222-4222-8222-222222222222\"," +
+            "\"period_id\":\"33333333-3333-4333-8333-333333333333\",\"device_id\":\"44444444-4444-4444-8444-444444444444\"," +
+            "\"contact_id\":\"55555555-5555-4555-8555-555555555555\",\"jti\":\"66666666-6666-4666-8666-666666666666\"," +
+            "\"iat\":\"$now\",\"nbf\":$now,\"exp\":${now + 30}}"
+        assertTrue(verifier().verify("Bearer ${rawToken(header().toString(), raw)}") is GrantVerifier.Result.Invalid)
     }
 }

@@ -91,6 +91,12 @@ class OtpRepository(private val db: Db, private val hasher: OtpHasher) {
      * so a used code can never pass twice. Wrong code decrements attempts; the
      * third wrong one locks with a cooldown. On success the challenge's own jti
      * is written to the ledger so the grant cannot be replayed to make a new one.
+     *
+     * A challenge is verifiable ONLY in an explicitly deliverable status
+     * (SENT). PENDING_SEND / SENDING / SEND_FAILED are never
+     * verifiable — a provider timeout (left SENDING, reported UNKNOWN) or an
+     * unsent/failed challenge can never be turned into a VALID, and such an
+     * attempt does NOT burn the user's attempts (fail-closed, attempts preserved).
      */
     fun verifyAndConsume(id: String, enteredCode: String, nowMs: Long, cooldownMs: Long): VerifyOutcome = db.tx { c ->
         val ch = selectForUpdate(c, id) ?: return@tx VerifyOutcome.Unknown
@@ -99,6 +105,10 @@ class OtpRepository(private val db: Db, private val hasher: OtpHasher) {
             ch.cooldownUntil != null && nowMs < ch.cooldownUntil -> VerifyOutcome.Locked(ch.cooldownUntil)
             nowMs >= ch.expiresAt -> { setStatus(c, id, "EXPIRED"); VerifyOutcome.Expired }
             ch.attemptsLeft <= 0 -> VerifyOutcome.Locked(ch.cooldownUntil ?: nowMs)
+            // Fail-closed: only a delivered (SENT) challenge may be verified. No
+            // attempt is consumed for a non-deliverable status, and the code is
+            // never even compared, so a timed-out/unsent challenge stays unusable.
+            ch.status != OtpStatus.SENT.name -> VerifyOutcome.Unknown
             Otp.looksValid(enteredCode) && hasher.matches(ch.salt, enteredCode, ch.codeHash) -> {
                 setStatus(c, id, "CONSUMED")
                 redeemJti(c, ch.jti, nowMs)

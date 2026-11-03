@@ -24,7 +24,12 @@ import io.ktor.server.routing.routing
 import org.slf4j.LoggerFactory
 
 /** The service + strict-readiness the server runs with (null service = fail closed). */
-class ServerDeps(val service: SecureTrustedExitService?, val readiness: Readiness)
+class ServerDeps(
+    val service: SecureTrustedExitService?,
+    val readiness: Readiness,
+    /** Socket peers whose X-Forwarded-For may be trusted (from MAMA_TRUSTED_PROXIES); empty = ignore XFF. */
+    val trustedProxies: Set<String> = emptySet(),
+)
 
 /**
  * The MAMA Trusted Exit backend. Grant-gated, durable (PostgreSQL), fail-closed.
@@ -75,7 +80,15 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
     } else {
         null
     }
-    return ServerDeps(service, Readiness(grant = verifier.configured, db = db != null, sms = sms != null))
+    // Trusted reverse-proxy peers whose X-Forwarded-For we honour (comma/space
+    // separated). Empty by default → XFF ignored, per-IP quota keys on the socket.
+    val trustedProxies = System.getenv("MAMA_TRUSTED_PROXIES").orEmpty()
+        .split(",", " ").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    return ServerDeps(
+        service,
+        Readiness(grant = verifier.configured, db = db != null, sms = sms != null),
+        trustedProxies,
+    )
 }
 
 /** The Ktor application, shared by [main] and tests (which pass a test-wired [deps]). */
@@ -88,7 +101,7 @@ fun Application.module(deps: ServerDeps) {
         }
     }
     routing {
-        trustedExitRoutes(deps.service)
+        trustedExitRoutes(deps.service, deps.trustedProxies)
         readinessRoutes(deps.readiness)
     }
 }

@@ -18,14 +18,14 @@ import io.ktor.server.routing.post
  * the service is not configured (missing grant key / DB / SMS), the endpoints
  * fail closed with 503. `/health` is liveness; `/ready` is strict.
  */
-fun Routing.trustedExitRoutes(service: SecureTrustedExitService?) {
+fun Routing.trustedExitRoutes(service: SecureTrustedExitService?, trustedProxies: Set<String> = emptySet()) {
     post("/trusted-exit/request") {
         if (service == null) {
             call.respond(HttpStatusCode.ServiceUnavailable, ErrorResponse("not configured"))
             return@post
         }
         val bearer = call.request.headers["Authorization"]
-        val ip = call.clientIp()
+        val ip = call.clientIp(trustedProxies)
         when (val r = service.request(bearer, ip)) {
             RequestOutcome.Unauthorized -> call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
             RequestOutcome.RateLimited -> call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited"))
@@ -64,6 +64,11 @@ fun Routing.trustedExitRoutes(service: SecureTrustedExitService?) {
         when (val r = service.verify(bearer, challengeId, code)) {
             VerifyOutcome.Unauthorized -> call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
             VerifyOutcome.Forbidden -> call.respond(HttpStatusCode.Forbidden, ErrorResponse("forbidden"))
+            // VALID means only that the OTP matched. It is NOT an unlock
+            // authorization: the Android client must not act on it alone. The
+            // server-authoritative series/period transition is owned by FastAPI
+            // and must be obtained via a one-time redemption (Deliverable B); see
+            // docs/TRUSTED_EXIT_KTOR_SECURITY.md §4.
             VerifyOutcome.Valid -> call.respond(VerifyResponse("VALID"))
             is VerifyOutcome.Invalid -> call.respond(VerifyResponse("INVALID", attemptsLeft = r.attemptsLeft))
             VerifyOutcome.Expired -> call.respond(VerifyResponse("EXPIRED"))
@@ -88,7 +93,10 @@ fun Routing.readinessRoutes(readiness: Readiness) {
     }
 }
 
-/** Client IP for rate limiting: X-Forwarded-For (behind the TLS proxy) then the socket. */
-private fun io.ktor.server.application.ApplicationCall.clientIp(): String =
-    request.headers["X-Forwarded-For"]?.substringBefore(",")?.trim()?.takeIf { it.isNotEmpty() }
-        ?: request.origin.remoteHost
+/**
+ * Client IP for rate limiting. X-Forwarded-For is honoured only when the socket
+ * peer is a configured trusted proxy; otherwise the socket address is used (see
+ * [resolveClientIp]). With no trusted proxies configured, XFF is ignored.
+ */
+private fun io.ktor.server.application.ApplicationCall.clientIp(trustedProxies: Set<String>): String =
+    resolveClientIp(request.origin.remoteHost, request.headers["X-Forwarded-For"], trustedProxies)
