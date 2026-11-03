@@ -109,10 +109,14 @@ class OtpRepository(private val db: Db, private val hasher: OtpHasher) {
     ): VerifyOutcome = db.tx { c ->
         val ch = selectForUpdate(c, id) ?: return@tx VerifyOutcome.Unknown
         when {
-            // Idempotent recovery: a consumed challenge returns its ONE stored receipt
-            // (same jti) for a lost-response retry, never a new one. With no receipt
-            // (signer off) a consumed challenge is a denied replay.
-            ch.status == "CONSUMED" -> if (ch.receipt != null) VerifyOutcome.Valid(ch.receipt) else VerifyOutcome.Unknown
+            // Fail closed: a consumed challenge NEVER re-exposes its receipt. Re-handing
+            // the stored signed proof to any binding-compatible caller — even with a wrong
+            // code — would be an oracle (no proof the caller is the one who verified), and
+            // a stale receipt could outlive its own expiry. The receipt is returned ONLY to
+            // the caller whose verify performed the one-time consumption (the match branch
+            // below). Network-loss recovery needs a dedicated authenticated recovery
+            // credential (cross-service blocker), not a replay of grant + challenge + code.
+            ch.status == "CONSUMED" -> VerifyOutcome.Unknown
             ch.cooldownUntil != null && nowMs < ch.cooldownUntil -> VerifyOutcome.Locked(ch.cooldownUntil)
             nowMs >= ch.expiresAt -> { setStatus(c, id, "EXPIRED"); VerifyOutcome.Expired }
             ch.attemptsLeft <= 0 -> VerifyOutcome.Locked(ch.cooldownUntil ?: nowMs)

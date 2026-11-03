@@ -110,15 +110,27 @@ the FastAPI `trusted_exit_ktor_receipt_format.py` verifier (proposal v1) exactly
   `exp-iat≤60`, `verified_at∈[iat-60, iat]`; no phone and no OTP.
 - **Bindings come from the server-owned challenge row, never the client.**
 
-**Minted once, inside the consume transaction.** The receipt is produced in the
-same `verifyAndConsume` transaction that flips the challenge to `CONSUMED` and
-stored in `challenge.receipt`. So a receipt exists **iff** the challenge is
-consumed — it is impossible to issue two for one OTP. An idempotent retry (lost
-HTTP response) returns the **same** stored receipt (same `jti`), never a new one;
-a parallel burst of correct-code verifies yields exactly one receipt that all
-callers share (`parallel verification mints a single shared receipt`). With no
-signer configured, a consumed challenge has no receipt and a replay is a denied
-`Unknown`.
+**Minted once, inside the consume transaction, and returned only to the consuming
+caller.** The receipt is produced in the same `verifyAndConsume` transaction that
+flips the challenge to `CONSUMED` and is persisted in `challenge.receipt`, so a
+receipt exists **iff** the challenge is consumed — it is impossible to issue two
+for one OTP. It is returned **only** to the caller whose `/verify` performed that
+one-time consumption; a parallel burst of correct-code verifies yields exactly one
+authorized caller with the receipt and the rest `Unknown`
+(`parallel verification yields exactly one authorization and one minted receipt`).
+
+**A consumed challenge never re-exposes its receipt (fail closed).** Once `CONSUMED`,
+`verifyAndConsume` returns `Unknown` unconditionally — the stored receipt is never
+handed back, not even for the correct code or the same grant. Re-handing a stored
+signed proof to any binding-compatible caller would be an oracle (a fresh grant +
+challenge id + an *arbitrary* code could harvest it without proving the OTP was
+ever known), and a 45–60s receipt could be re-exposed after its own expiry. So
+network-loss recovery (returning the same proof to a client that lost the HTTP
+response) is **deferred**: it requires a dedicated, independently authenticated,
+one-time recovery credential proving the original successful verification — a
+cross-service item to design with FastAPI (§7), not a replay of grant/challenge/code.
+With no signer configured, a successful verify is a bare `VALID` and a consumed
+challenge is likewise `Unknown`.
 
 **Keys (no private key in Git).** Ktor signs with an Ed25519 private key from
 `MAMA_RECEIPT_SIGNING_KEY` (PKCS#8 DER, base64), **off by default** — tests use an
@@ -193,8 +205,12 @@ after the FastAPI single-use redemption and series transition (§7.3).
    FastAPI; (d) the inbound verify credential — a dedicated `purpose=trusted-exit:verify`
    grant (or redemption token) carrying `challenge_id`, since verify today
    authenticates on the binding-checked request grant (a freshly issued one; the
-   ≤60s request grant has expired by verify time, §3a). Android ends the lock only
-   on FastAPI's authoritative result, never on `VALID`/the receipt alone.
+   ≤60s request grant has expired by verify time, §3a); (e) a **network-loss recovery
+   credential** — an independently authenticated, one-time secret proving the original
+   successful verification, so a client that lost the first response can re-obtain the
+   proof without the current fail-closed `CONSUMED → Unknown` becoming a receipt oracle
+   (§3b). Android ends the lock only on FastAPI's authoritative result, never on
+   `VALID`/the receipt alone.
 4. **No bypass:** client-chosen `sessionId/contactPhone` are not accepted anywhere;
    bindings are the signed claims / the server-owned challenge row only.
 
