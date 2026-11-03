@@ -177,6 +177,57 @@ private key only through a secret store. Compatibility is proven two ways offlin
 + every tamper/expiry/binding negative), and the minted signature also verifies
 under an independent implementation (OpenSSL / `Ed25519PublicKey.from_public_bytes`).
 
+## 3d. Ktor→FastAPI evidence transport (issue #12 / FastAPI PR #15) — design, test-only
+
+The receipt JWT alone cannot admit evidence: the Android client can read it. FastAPI
+PR #15 (`internal_record_signed_ktor_evidence`) therefore requires **two** proofs — the
+pinned Ed25519 receipt **and** a server-only HMAC that only the two servers can produce.
+
+**Dual proof.** `IngestProof` computes, matching FastAPI byte-for-byte:
+
+```
+MAC_DOMAIN = "MAMA/ktor-verified-otp-ingest/v1\n"            # note trailing LF
+mac = HMAC-SHA256(shared_secret, MAC_DOMAIN + ascii(receipt_jwt))   # 32 bytes
+```
+
+The shared secret (≥32 bytes) lives only in each server's env/secret store
+(`MAMA_INGEST_HMAC_KEY`), never in the APK, Git, logs, or any Android-facing response.
+Byte-exact cross-check: the Kotlin MAC equals Python `hmac.new(secret, MAC_DOMAIN+token,
+sha256)` (`IngestProofTest` + an offline `hmac`/`hashlib` comparison).
+
+**Topology (recommended).** Ktor delivers **directly** to FastAPI's internal admission
+service over a pinned **mTLS** channel (both ends present a service certificate), with
+internal-IP allow-rules as defense-in-depth — not a public proxy and never a
+client-reachable HMAC endpoint. A FastAPI-pull proxy is rejected: it would have Ktor
+expose an endpoint FastAPI polls, widening attack surface. The HMAC authenticates the
+*message*; mTLS authenticates the *channel* — both are required.
+
+**Key management / failure modes.** Secret absent or <32 bytes ⇒ `IngestProof` is
+unconfigured and delivery is **fail-closed** (nothing sent). Key rotation: carry a key id
+and let FastAPI accept the current + previous secret during an overlap window (design
+note; not implemented). A delivery timeout/`Unknown` ⇒ safe to retry because the proof is
+a pure function of the receipt and FastAPI dedups on `UNIQUE(ktor_jti)` +
+`UNIQUE(provider_challenge_id)` — no double transition or double cooldown. Every
+admission attempt is audited on the FastAPI side (PR #15 ledger).
+
+**Safe flow (no unlock here).** Ktor OTP verified (one-time, `CONSUMED`) → the verifying
+server holds the minted receipt (returned once, never re-exposed, §3b) → it computes the
+HMAC and delivers `{token, mac}` over the authenticated channel → FastAPI re-verifies the
+Ed25519 signature, the HMAC, owner/active-series/registered-period/device-not-revoked/
+verified-contact, stores the receipt once → a **separate** FastAPI business transition
+(EARLY_EXIT + cooldown) → Android is told only the authoritative series status. **No
+unlock on Ktor `VALID` or the receipt JWT.** The payload never carries a client-chosen
+destination number or Android session id as authority (`EvidenceSubmission` is only
+`{token, macB64}`).
+
+**This increment is disabled by default and builds no HTTP.** `ReceiptDeliveryClient`'s
+production default (`DisabledReceiptDelivery`) sends nothing; `EvidenceSubmitter.enabled`
+is false unless both a secret and a non-disabled transport are wired, and no route invokes
+it. The real mTLS transport, the FastAPI admission route (`accept_ktor_verified_receipt`
+is hard-disabled in PR #15), the single-use business transition, account/session auth,
+current-device proof and the verified-contact provider remain **cross-service blockers**
+for a later, reviewed increment.
+
 ## 4. Anti-abuse / rate limits
 
 `RateLimiter` via `rate_counter`, reserved in ONE transaction **before** any send;
