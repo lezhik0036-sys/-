@@ -114,11 +114,23 @@ class GrantVerifier(
         val nbf = payload.epoch("nbf") ?: return Result.Invalid("nbf")
         val exp = payload.epoch("exp") ?: return Result.Invalid("exp")
 
-        if (nbf < iat) return Result.Invalid("nbf before iat")
-        if (exp - iat > MAX_LIFETIME_SEC) return Result.Invalid("lifetime too long")
-        if (exp <= iat) return Result.Invalid("exp not after iat")
+        // Timestamps are all attacker-controlled (the signature is over them), so every
+        // comparison must be overflow-safe. iat/nbf/exp already fit in Long (longValueExact
+        // rejected anything larger at parse). The ONLY subtraction of two claim values is
+        // the lifetime, done with a checked subtraction so an extreme pair (e.g.
+        // iat=Long.MIN_VALUE, exp=now) cannot wrap past the ≤60s gate; everything else is a
+        // plain comparison. `t` is the server clock, so `t ± small` never overflows.
         val t = now()
+        if (nbf < iat) return Result.Invalid("nbf before iat")
+        if (exp <= nbf) return Result.Invalid("exp not after nbf")
+        val lifetime = try {
+            Math.subtractExact(exp, iat)
+        } catch (_: ArithmeticException) {
+            return Result.Invalid("lifetime out of range")
+        }
+        if (lifetime > MAX_LIFETIME_SEC) return Result.Invalid("lifetime too long")
         if (iat > t + SKEW_SEC) return Result.Invalid("iat in the future")
+        if (iat < t - MAX_LIFETIME_SEC) return Result.Invalid("iat stale") // mirrors FastAPI
         if (nbf > t + SKEW_SEC) return Result.Invalid("not yet valid")
         if (exp <= t) return Result.Invalid("expired")
 

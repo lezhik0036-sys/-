@@ -104,7 +104,12 @@ FastAPI `trusted_exit_verify_grant_format.py` contract:
 - exact claims `{iss,aud,purpose,sub,series_id,period_id,device_id,contact_id,
   challenge_id,jti,iat,nbf,exp}` — a `challenge_id = tec-<uuid>` the grant authorizes;
   canonical lower-case UUIDs; strict base64url; no duplicate keys; **integer** (bare,
-  no decimal/exponent) NumericDate; `nbf≥iat`, `exp>nbf`, `exp-iat≤60`, skew ≤5s.
+  no decimal/exponent) NumericDate; `nbf≥iat`, `exp>nbf`, `exp-iat≤60`, skew ≤5s, and
+  a stale-`iat` reject (`iat ≥ now-60`, mirroring FastAPI). All timestamp claims are
+  attacker-controlled, so the lifetime is computed with a **checked subtraction**
+  (`Math.subtractExact`): an extreme pair such as `iat=Long.MIN_VALUE`, `exp=now`
+  cannot wrap past the ≤60s gate — it is rejected, not accepted. This applies to both
+  the sms-request and verify scopes (shared verifier).
 
 **Scope separation (enforced, tested):** `/request` requires sms-request scope and
 **rejects** a verify grant with **zero** provider sends; `/verify` requires verify

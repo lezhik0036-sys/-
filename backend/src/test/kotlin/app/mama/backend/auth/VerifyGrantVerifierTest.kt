@@ -124,6 +124,18 @@ class VerifyGrantVerifierTest {
         invalid(token(payload = claims().apply { remove("jti") }))                // missing claim
     }
 
+    @Test fun `extreme or overflowing NumericDate values cannot bypass the lifetime gate`() {
+        // iat/nbf = Long.MIN_VALUE with a near-future exp: exp - iat overflows Long, which
+        // must NOT wrap past the =<60s lifetime check (ChatGPT PR #11 review).
+        invalid(token(payload = claims().apply { addProperty("iat", Long.MIN_VALUE); addProperty("nbf", Long.MIN_VALUE); addProperty("exp", now + 30) }))
+        // A very stale but non-overflowing iat is rejected too.
+        invalid(token(payload = claims().apply { addProperty("iat", now - 100_000); addProperty("nbf", now - 100_000); addProperty("exp", now + 30) }))
+        // An extreme exp (no overflow, huge lifetime) is rejected.
+        invalid(token(payload = claims().apply { addProperty("exp", Long.MAX_VALUE) }))
+        // Both extremes together: the subtraction itself overflows and is rejected.
+        invalid(token(payload = claims().apply { addProperty("iat", Long.MIN_VALUE); addProperty("nbf", Long.MIN_VALUE); addProperty("exp", Long.MAX_VALUE) }))
+    }
+
     @Test fun `a float NumericDate is rejected`() {
         // iat written as a float (1000000.0) — Python parses it as float and rejects; so must we.
         val raw = claims().toString().replace("\"iat\":1000000", "\"iat\":1000000.0")
