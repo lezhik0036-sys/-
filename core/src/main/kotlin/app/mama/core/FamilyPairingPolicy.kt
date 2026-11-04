@@ -79,7 +79,7 @@ object FamilyPairingPolicy {
         if (actor !is Actor.Parent || actor.accountId != request.parentAccountId) {
             if (actor !is Actor.ChildDevice || actor.deviceId != request.childDeviceId) return Decision.Forbidden
         }
-        if (now.isBefore(request.linkedAt)) return Decision.NoLongerAvailable
+        if (request.linkedAt == null || now.isBefore(request.linkedAt)) return Decision.NoLongerAvailable
         return Decision.Accepted(request.copy(state = State.REVOKED, revokedAt = now))
     }
 
