@@ -30,6 +30,42 @@ class FamilyPairingPolicyTest {
         assertFalse(FamilyPairingPolicy.mayManageChild(linked, "other-parent"))
     }
 
+    @Test fun `FastAPI child initiated invite needs parent approval only once`() {
+        // FastAPI required a fresh signed child-device challenge before
+        // returning the invitation. The local projection is not proof.
+        val scanned = FamilyPairingPolicy.afterServerVerifiedChildInvitation(
+            id = request.id,
+            authenticatedParentAccountId = "parent-1",
+            verifiedChildDeviceId = "tablet-1",
+            createdAt = t0,
+            expiresAt = t0.plusSeconds(300),
+        )
+        assertEquals(t0, scanned.childApprovedAt)
+        assertEquals(FamilyPairingPolicy.State.PENDING, scanned.state)
+        assertFalse(FamilyPairingPolicy.mayManageChild(scanned, "parent-1"))
+        assertEquals(
+            FamilyPairingPolicy.Decision.Forbidden,
+            FamilyPairingPolicy.approve(
+                scanned, FamilyPairingPolicy.Actor.Parent("intruder"), t0.plusSeconds(1),
+            ),
+        )
+        val approved = accepted(FamilyPairingPolicy.approve(scanned, parent, t0.plusSeconds(2)))
+        assertEquals(FamilyPairingPolicy.State.LINKED, approved.state)
+        assertTrue(FamilyPairingPolicy.mayManageChild(approved, "parent-1"))
+    }
+
+    @Test fun `expired FastAPI invitation never links a parent`() {
+        val scanned = FamilyPairingPolicy.afterServerVerifiedChildInvitation(
+            id = "expired", authenticatedParentAccountId = "parent-1",
+            verifiedChildDeviceId = "tablet-1",
+            createdAt = t0, expiresAt = t0.plusSeconds(300),
+        )
+        assertEquals(
+            FamilyPairingPolicy.Decision.NoLongerAvailable,
+            FamilyPairingPolicy.approve(scanned, parent, t0.plusSeconds(300)),
+        )
+    }
+
     @Test fun `reverse approval order also works`() {
         val first = accepted(FamilyPairingPolicy.approve(request, child, t0.plusSeconds(1)))
         val linked = accepted(FamilyPairingPolicy.approve(first, parent, t0.plusSeconds(2)))
