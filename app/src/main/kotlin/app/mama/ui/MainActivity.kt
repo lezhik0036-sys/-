@@ -482,8 +482,12 @@ class MainActivity : Activity() {
         stopTicker()
         val r = object : Runnable {
             override fun run() {
+                // tick() may synchronously switch screens via render(), which
+                // cancels this ticker, or replace it with a new one. Never
+                // resurrect the old countdown after the screen transition.
+                if (ticker !== this) return
                 tick()
-                tickHandler.postDelayed(this, 1_000)
+                if (ticker === this) tickHandler.postDelayed(this, 1_000)
             }
         }
         ticker = r
