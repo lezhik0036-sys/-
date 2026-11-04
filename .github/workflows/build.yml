@@ -81,7 +81,7 @@ jobs:
           grep -Eq 'Verified using v2 scheme.*true' /tmp/mama-apk-signature-audit.txt || {
             echo "::error::APK Signature Scheme v2 verification failed"; exit 1;
           }
-          grep -Eq 'Signer #1 certificate DN: .*Android Debug' /tmp/mama-apk-signature-audit.txt || {
+          grep -Eq '(V2 Signer:|Signer #1) certificate DN: .*Android Debug' /tmp/mama-apk-signature-audit.txt || {
             echo "::error::smoke APK was not signed with Android Debug certificate"; exit 1;
           }
       - name: Confirm the APK does not request direct SMS permission
