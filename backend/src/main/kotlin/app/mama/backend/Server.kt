@@ -116,7 +116,16 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
 
     return ServerDeps(
         service,
-        Readiness(grant = verifier.configured, db = db != null, sms = sms != null),
+        Readiness(
+            grant = verifier.configured,
+            db = db != null,
+            sms = sms != null,
+            // Both are OFF while the actual verified-contact resolver and
+            // private FastAPI mTLS evidence delivery are not installed.
+            // Never promote /ready to 200 based on an SMS API key alone.
+            destination = false,
+            authoritativeReceiptDelivery = false,
+        ),
         trustedProxies,
         evidence,
     )
