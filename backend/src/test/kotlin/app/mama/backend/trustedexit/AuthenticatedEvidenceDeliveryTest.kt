@@ -26,6 +26,7 @@ class AuthenticatedEvidenceDeliveryTest {
             timestamp = { fixedTime }, nonce = { fixedNonce },
         )
         val submitter = EvidenceSubmitter(IngestProof.fromEnv(ingestKey), adapter)
+        assertTrue(submitter.enabled)
         assertEquals(DeliveryOutcome.Accepted, submitter.submit(testReceipt))
         val request = captured!!
         assertEquals("POST", request.method)
@@ -56,6 +57,8 @@ class AuthenticatedEvidenceDeliveryTest {
         val noNetwork = AuthenticatedEvidenceDelivery(
             KtorInternalRequestSigner(transportKey.toByteArray()),
         )
+        assertFalse(EvidenceSubmitter(IngestProof.fromEnv(ingestKey), noNetwork).enabled)
+        assertFalse(EvidenceSubmitter(IngestProof.fromEnv(ingestKey), notConfigured).enabled)
         assertEquals(DeliveryOutcome.Disabled,
             EvidenceSubmitter(IngestProof.fromEnv(ingestKey), noNetwork)
                 .submit(testReceipt))
