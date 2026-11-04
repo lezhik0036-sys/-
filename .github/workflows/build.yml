@@ -49,6 +49,10 @@ jobs:
           f=$(find app/build/generated -path '*release*' -name BuildConfig.java | head -n 1)
           echo "checking $f"
           grep -q "PILOT_TEST_CREDITS = false" "$f" || { echo "::error::release build enables test credits"; cat "$f"; exit 1; }
+          grep -q "TEST_MODE = false" "$f" || { echo "::error::release build enables test/OTP mode"; cat "$f"; exit 1; }
+          d=$(find app/build/generated -path '*debug*' -name BuildConfig.java | head -n 1)
+          test -n "$d" && test -s "$d" || { echo "::error::debug BuildConfig missing"; exit 1; }
+          grep -q "TEST_MODE = true" "$d" || { echo "::error::smoke-test APK is not in debug test mode"; exit 1; }
       - name: Name the APK after its version
         id: apk
         run: |
@@ -64,6 +68,22 @@ jobs:
           aapt2="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)aapt2"
           if [ -x "$aapt2" ]; then "$aapt2" dump badging out/*.apk | head -n 1; fi
           cd out && sha256sum MAMA-v*.apk | tee "MAMA-v${{ steps.apk.outputs.version }}.apk.sha256"
+      - name: Independently check debug APK signature and archived checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="out/MAMA-v${{ steps.apk.outputs.version }}.apk"
+          test -s "$apk"
+          (cd out && sha256sum --check "MAMA-v${{ steps.apk.outputs.version }}.apk.sha256")
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
+          test -x "$apksigner" || { echo "::error::apksigner missing"; exit 1; }
+          "$apksigner" verify --verbose --print-certs "$apk" | tee /tmp/mama-apk-signature-audit.txt
+          grep -Eq 'Verified using v2 scheme.*true' /tmp/mama-apk-signature-audit.txt || {
+            echo "::error::APK Signature Scheme v2 verification failed"; exit 1;
+          }
+          grep -Eq 'Signer #1 certificate DN: .*Android Debug' /tmp/mama-apk-signature-audit.txt || {
+            echo "::error::smoke APK was not signed with Android Debug certificate"; exit 1;
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: MAMA-v${{ steps.apk.outputs.version }}
