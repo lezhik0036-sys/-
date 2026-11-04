@@ -21,7 +21,7 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
     OVERLAY("Поверх других приложений", "Экран MAMA закрывает всё остальное во время блокировки.", true, Icon.LAYERS),
     GUARD("Специальные возможности", "Не даёт открыть шторку, «Недавние» и настройки во время блокировки.", true, Icon.ACCESSIBILITY),
     ADMIN("Администратор устройства", "MAMA нельзя удалить, пока идёт блокировка.", true, Icon.SHIELD),
-    SMS("Телефон и звонки", "Код доверенному контакту отправляет сервер MAMA. Для звонков с экрана блокировки нужны разрешения телефона.", true, Icon.PHONE),
+    SMS("Телефон и звонки", "Код приходит доверенному контакту через сервер MAMA. Разрешения звонков нужны только на устройствах с телефонным модулем.", true, Icon.PHONE),
     CALL_CONTROL(
         "Контроль исходящих звонков",
         "MAMA разрешает экстренные и доверенные звонки, но не позволяет использовать телефонные звонки как обход блокировки.",
@@ -44,9 +44,9 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
         GUARD -> guardEnabled(context) && GuardService.running
         ADMIN -> context.getSystemService(DevicePolicyManager::class.java)!!
             .isAdminActive(ComponentName(context, MamaDeviceAdmin::class.java))
-        SMS -> smsPermissions.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        SMS -> !deviceHasTelephony(context) || smsPermissions.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
         // Android 10+; on older phones there is nothing to grant.
-        CALL_CONTROL -> CallControl.held(context)
+        CALL_CONTROL -> !deviceHasTelephony(context) || CallControl.held(context)
         EXACT_ALARMS -> Alarms.canScheduleExact(context)
         BATTERY -> context.getSystemService(PowerManager::class.java)!!
             .isIgnoringBatteryOptimizations(context.packageName)
@@ -71,8 +71,8 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
                     .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(activity, MamaDeviceAdmin::class.java))
                     .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Так MAMA нельзя будет удалить во время блокировки."),
             )
-            SMS -> activity.requestPermissions(smsPermissions, 1)
-            CALL_CONTROL -> CallControl.requestIntent(activity)?.let {
+            SMS -> if (deviceHasTelephony(activity)) activity.requestPermissions(smsPermissions, 1)
+            CALL_CONTROL -> if (deviceHasTelephony(activity)) CallControl.requestIntent(activity)?.let {
                 @Suppress("DEPRECATION")
                 activity.startActivityForResult(it, 3)
             }
@@ -112,6 +112,17 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
         }
 
     companion object {
+        /**
+         * AndroidManifest marks telephony as optional. Wi-Fi-only tablets have
+         * no dialer/cellular call capabilities and must never be trapped in
+         * onboarding by permissions or a call role they cannot use.
+         *
+         * Phones with telephony hardware still need the existing call guards,
+         * even if there is currently no SIM inserted.
+         */
+        internal fun deviceHasTelephony(context: Context): Boolean =
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)
+
         private val smsPermissions = arrayOf(
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.CALL_PHONE,
