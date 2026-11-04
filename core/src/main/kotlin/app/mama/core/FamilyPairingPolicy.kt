@@ -31,6 +31,28 @@ object FamilyPairingPolicy {
         }
     }
 
+    /**
+     * Projection of a FastAPI invitation *after* the authenticated parent scans
+     * it. FastAPI's child-owned device already proved key possession when it
+     * requested the invitation, so the child approval is represented by
+     * createdAt. Only an authenticated server reply may supply this projection;
+     * creating it locally does NOT prove identity or link a device.
+     */
+    fun afterServerVerifiedChildInvitation(
+        id: String,
+        authenticatedParentAccountId: String,
+        verifiedChildDeviceId: String,
+        createdAt: Instant,
+        expiresAt: Instant,
+    ): Request = Request(
+        id = id,
+        parentAccountId = authenticatedParentAccountId,
+        childDeviceId = verifiedChildDeviceId,
+        createdAt = createdAt,
+        expiresAt = expiresAt,
+        childApprovedAt = createdAt,
+    )
+
     sealed interface Actor {
         data class Parent(val accountId: String) : Actor
         data class ChildDevice(val deviceId: String) : Actor
