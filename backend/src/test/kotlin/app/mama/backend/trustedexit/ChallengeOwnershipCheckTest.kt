@@ -44,7 +44,6 @@ class ChallengeOwnershipCheckTest {
         assertFalse(policy.matchesCurrentSentChallenge(id, owner.copy(contactId = "another-contact")))
         assertFalse(policy.matchesCurrentSentChallenge("other-challenge", owner))
         assertFalse(policy.matchesCurrentSentChallenge("tec-" + "A".repeat(36), owner))
-        assertFalse(policy.matchesCurrentSentChallenge(id, owner) && false)
         assertFalse(policy(challenge = null).matchesCurrentSentChallenge(id, owner))
         assertFalse(policy(challenge = ch.copy(id = "unexpected")).matchesCurrentSentChallenge(id, owner))
     }
