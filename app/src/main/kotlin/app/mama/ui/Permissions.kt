@@ -21,7 +21,7 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
     OVERLAY("Поверх других приложений", "Экран MAMA закрывает всё остальное во время блокировки.", true, Icon.LAYERS),
     GUARD("Специальные возможности", "Не даёт открыть шторку, «Недавние» и настройки во время блокировки.", true, Icon.ACCESSIBILITY),
     ADMIN("Администратор устройства", "MAMA нельзя удалить, пока идёт блокировка.", true, Icon.SHIELD),
-    SMS("Телефон, SMS и звонки", "Код для выхода приходит доверенному контакту. Звонки работают с экрана блокировки.", true, Icon.PHONE),
+    SMS("Телефон и звонки", "Код доверенному контакту отправляет сервер MAMA. Для звонков с экрана блокировки нужны разрешения телефона.", true, Icon.PHONE),
     CALL_CONTROL(
         "Контроль исходящих звонков",
         "MAMA разрешает экстренные и доверенные звонки, но не позволяет использовать телефонные звонки как обход блокировки.",
@@ -113,7 +113,6 @@ enum class Requirement(val title: String, val why: String, val required: Boolean
 
     companion object {
         private val smsPermissions = arrayOf(
-            Manifest.permission.SEND_SMS,
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.CALL_PHONE,
             Manifest.permission.ANSWER_PHONE_CALLS,
