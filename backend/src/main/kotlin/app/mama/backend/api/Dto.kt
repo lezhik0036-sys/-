@@ -51,12 +51,28 @@ data class ReadinessResponse(
     val grant: Boolean,
     val db: Boolean,
     val sms: Boolean,
+    val destination: Boolean = false,
+    val authoritativeReceiptDelivery: Boolean = false,
 )
 
 /** Generic error body (no internals, nothing code-shaped). */
 data class ErrorResponse(val error: String)
 
-/** Strict-readiness snapshot: all three must hold for the service to be ready. */
-data class Readiness(val grant: Boolean, val db: Boolean, val sms: Boolean) {
-    val ready: Boolean get() = grant && db && sms
+/**
+ * Strict production readiness: provider config alone cannot mean real
+ * Trusted Exit is available. A verified-contact destination resolver AND the
+ * authenticated Ktor→FastAPI signed receipt channel are both mandatory,
+ * otherwise Android could enter BRICK with no authoritative early exit.
+ *
+ * These capabilities default to FALSE. Tests can explicitly simulate both.
+ */
+data class Readiness(
+    val grant: Boolean,
+    val db: Boolean,
+    val sms: Boolean,
+    val destination: Boolean = false,
+    val authoritativeReceiptDelivery: Boolean = false,
+) {
+    val ready: Boolean get() =
+        grant && db && sms && destination && authoritativeReceiptDelivery
 }
