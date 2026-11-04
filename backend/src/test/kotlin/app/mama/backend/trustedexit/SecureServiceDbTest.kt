@@ -470,4 +470,27 @@ class SecureServiceDbTest {
         assertEquals(7, unknown.get(), "the rest get no receipt")
         assertEquals(1, receipts.size, "exactly one receipt/jti is ever minted")
     }
+
+    // ---- Issue #12: server-only dual-proof evidence delivery (test-only) --------
+
+    @Test fun `a verified receipt is delivered as dual-proof evidence and a consumed challenge cannot be resubmitted`() {
+        val svc = newServiceWithSigner()
+        val created = svc.request(bearer(), "1.2.3.4") as RequestOutcome.Created
+        val code = sms.lastCode!!
+        val outcome = svc.verify(verifyBearer(created.challengeId), created.challengeId, code)
+        assertTrue(outcome is VerifyOutcome.Valid)
+        val receipt = (outcome as VerifyOutcome.Valid).receipt!!
+
+        // Server-only ingest: HMAC over the REAL minted receipt, delivered via a fake transport.
+        val secret = "ephemeral-integration-only-ktor-service-secret-001"
+        val sent = mutableListOf<EvidenceSubmission>()
+        val submitter = EvidenceSubmitter(IngestProof.fromEnv(secret), ReceiptDeliveryClient { sent.add(it); DeliveryOutcome.Accepted })
+        assertEquals(DeliveryOutcome.Accepted, submitter.submit(receipt))
+        assertEquals(receipt, sent.single().token, "the signed receipt is delivered verbatim")
+        val expectedMac = Base64.getEncoder().encodeToString(IngestProof.fromEnv(secret).mac(receipt)!!)
+        assertEquals(expectedMac, sent.single().macB64, "the server-only HMAC over the exact token")
+
+        // CONSUMED stays fail-closed: the receipt is never re-exposed, so nothing can be resubmitted later.
+        assertEquals(VerifyOutcome.Unknown, svc.verify(verifyBearer(created.challengeId), created.challengeId, code))
+    }
 }

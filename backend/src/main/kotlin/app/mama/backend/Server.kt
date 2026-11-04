@@ -9,6 +9,8 @@ import app.mama.backend.auth.ReceiptSigner
 import app.mama.backend.db.JdbcDb
 import app.mama.backend.trustedexit.ContactDestinationResolver
 import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
+import app.mama.backend.trustedexit.EvidenceSubmitter
+import app.mama.backend.trustedexit.IngestProof
 import app.mama.backend.trustedexit.OtpHasher
 import app.mama.backend.trustedexit.OtpRepository
 import app.mama.backend.trustedexit.SecureTrustedExitService
@@ -30,6 +32,13 @@ class ServerDeps(
     val readiness: Readiness,
     /** Socket peers whose X-Forwarded-For may be trusted (from MAMA_TRUSTED_PROXIES); empty = ignore XFF. */
     val trustedProxies: Set<String> = emptySet(),
+    /**
+     * The Ktor→FastAPI evidence channel (issue #12), **disabled by default**: no transport
+     * is wired and no route invokes it, so it sends nothing. The future server-authenticated
+     * transfer step would call [EvidenceSubmitter.submit] with a verified receipt; it never
+     * unlocks Android.
+     */
+    val evidence: EvidenceSubmitter = EvidenceSubmitter(IngestProof.fromEnv(null)),
 )
 
 /**
@@ -97,10 +106,19 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
     // separated). Empty by default → XFF ignored, per-IP quota keys on the socket.
     val trustedProxies = System.getenv("MAMA_TRUSTED_PROXIES").orEmpty()
         .split(",", " ").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
+    // Ktor→FastAPI evidence channel (issue #12): the server-only HMAC proof. Off by
+    // default and never auto-invoked — no transport is wired (DisabledReceiptDelivery),
+    // so even a configured key sends nothing. The HMAC key must never be logged.
+    val ingest = IngestProof.fromEnv(System.getenv("MAMA_INGEST_HMAC_KEY"))
+    val evidence = EvidenceSubmitter(ingest)
+    log.info("evidence ingest HMAC configured: ${ingest.configured}; delivery transport: disabled")
+
     return ServerDeps(
         service,
         Readiness(grant = verifier.configured, db = db != null, sms = sms != null),
         trustedProxies,
+        evidence,
     )
 }
 
