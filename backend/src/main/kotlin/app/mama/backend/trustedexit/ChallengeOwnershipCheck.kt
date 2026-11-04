@@ -26,6 +26,7 @@ data class ChallengeOwner(
 
 class ChallengeOwnershipCheck(
     private val challengeById: (String) -> StoredChallenge?,
+    private val jtiRedeemed: (String) -> Boolean = { false },
     private val nowMs: () -> Long = { System.currentTimeMillis() },
 ) {
     fun matchesCurrentSentChallenge(challengeId: String, expected: ChallengeOwner): Boolean {
@@ -36,6 +37,7 @@ class ChallengeOwnershipCheck(
         return challenge.id == challengeId &&
             challenge.status == OtpStatus.SENT.name &&
             challenge.attemptsLeft > 0 &&
+            !jtiRedeemed(challenge.jti) &&
             time >= challenge.issuedAt && time < challenge.expiresAt &&
             (challenge.cooldownUntil == null || time >= challenge.cooldownUntil) &&
             challenge.userId == expected.userId &&
@@ -52,6 +54,6 @@ class ChallengeOwnershipCheck(
         fun fromRepository(
             repository: OtpRepository,
             nowMs: () -> Long = { System.currentTimeMillis() },
-        ) = ChallengeOwnershipCheck(repository::byId, nowMs)
+        ) = ChallengeOwnershipCheck(repository::byId, repository::isJtiRedeemed, nowMs)
     }
 }
