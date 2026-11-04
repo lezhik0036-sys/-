@@ -82,7 +82,9 @@ class EvidenceSubmitter(
     private val ingest: IngestProof,
     private val delivery: ReceiptDeliveryClient = DisabledReceiptDelivery,
 ) {
-    val enabled: Boolean get() = ingest.configured && delivery !== DisabledReceiptDelivery
+    val enabled: Boolean get() =
+        ingest.configured && delivery !== DisabledReceiptDelivery &&
+            (delivery !is AuthenticatedEvidenceDelivery || delivery.configured)
 
     /** Submits the receipt as dual-proof evidence, or [DeliveryOutcome.Disabled] if not wired. */
     fun submit(receiptJwt: String): DeliveryOutcome {
