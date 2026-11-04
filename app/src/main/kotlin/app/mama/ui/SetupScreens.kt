@@ -357,6 +357,13 @@ internal fun MainActivity.onboardingBack() {
 internal fun MainActivity.permissionsScreen(): Pair<View, Boolean> {
     val d = design
     val b = d.body(26)
+    if (!Requirement.deviceHasTelephony(this)) {
+        b.addView(d.noteCard(
+            "MAMA может работать через Wi-Fi без SIM-карты. Код придёт на отдельный телефон доверенного контакта. " +
+                "Это устройство не поддерживает обычные сотовые звонки: для экстренной связи нужен другой способ.",
+            "Устройство без телефонного модуля", NoteTone.CARE, Icon.PHONE,
+        ), d.gap(16))
+    }
     // All required permissions are in place: a calm confirmation, not a technical checklist.
     if (Requirement.missingRequired(this).isEmpty()) {
         b.addView(d.titleBlock("MAMA готова ✓", "Все нужные разрешения на месте — можно переходить к серии.", narrow = true))
