@@ -88,6 +88,8 @@ fun Routing.readinessRoutes(readiness: Readiness) {
         val body = ReadinessResponse(
             status = if (readiness.ready) "ready" else "not_ready",
             ready = readiness.ready, grant = readiness.grant, db = readiness.db, sms = readiness.sms,
+            destination = readiness.destination,
+            authoritativeReceiptDelivery = readiness.authoritativeReceiptDelivery,
         )
         if (readiness.ready) call.respond(body) else call.respond(HttpStatusCode.ServiceUnavailable, body)
     }
