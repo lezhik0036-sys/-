@@ -52,15 +52,26 @@ class EvidenceSubmissionTest {
         assertTrue(fake.sent.isEmpty(), "no MAC, so nothing is delivered (fail-closed)")
     }
 
-    @Test fun `a lost ACK is retried with byte-identical evidence (idempotent)`() {
-        val fake = FakeDelivery(ArrayDeque(listOf(DeliveryOutcome.Unknown("timeout"), DeliveryOutcome.Accepted)))
+    @Test fun `a lost-ACK retry re-sends byte-identical evidence and a dedup refusal stays unresolved`() {
+        // First attempt: the ACK is lost (FastAPI may or may not have recorded the receipt).
+        // Retry: FastAPI PR #15 denies the duplicate (INSERT ... ON CONFLICT DO NOTHING RETURNING id
+        // → raise), so the retry comes back as Rejected — NOT Accepted. The submitter returns that
+        // faithfully; it must not be upgraded to success. True state is unresolved pending a status API.
+        val fake = FakeDelivery(ArrayDeque(listOf(DeliveryOutcome.Unknown("timeout"), DeliveryOutcome.Rejected("duplicate"))))
         val submitter = EvidenceSubmitter(IngestProof.fromEnv(secret), fake)
         val first = submitter.submit(receipt)
         assertTrue(first is DeliveryOutcome.Unknown)
         val second = submitter.submit(receipt) // retry
-        assertEquals(DeliveryOutcome.Accepted, second)
+        assertTrue(second is DeliveryOutcome.Rejected, "a duplicate is refused, not acked (no permissive acceptance)")
         assertEquals(2, fake.sent.size)
-        // Same token AND same MAC on the retry → FastAPI dedups by jti+challenge, no double transition.
+        // The retry is byte-identical, so FastAPI's UNIQUE(jti)+UNIQUE(challenge) store at most one
+        // receipt / one transition — the refusal prevents a duplicate, it does not mean "never recorded".
         assertEquals(fake.sent[0], fake.sent[1])
+    }
+
+    @Test fun `a first delivery with no prior record is accepted`() {
+        val fake = FakeDelivery(ArrayDeque())
+        val submitter = EvidenceSubmitter(IngestProof.fromEnv(secret), fake)
+        assertEquals(DeliveryOutcome.Accepted, submitter.submit(receipt))
     }
 }

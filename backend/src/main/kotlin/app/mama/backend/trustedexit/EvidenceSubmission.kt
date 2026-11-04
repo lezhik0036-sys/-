@@ -31,10 +31,22 @@ sealed interface DeliveryOutcome {
     /** No transport/secret configured — nothing was sent (the default, fail-closed). */
     data object Disabled : DeliveryOutcome
 
-    /** The ACK was lost (timeout / connection drop). Safe to retry: FastAPI dedups by jti + challenge. */
+    /**
+     * The ACK was lost (timeout / connection drop): the evidence may or may not have been
+     * recorded. The result is **unresolved** — it must NOT be read as success. A blind retry
+     * cannot resolve it either: FastAPI PR #15 currently *denies* a duplicate (see [Rejected]),
+     * so a resend of already-recorded evidence comes back looking like a refusal. Resolving a
+     * lost ACK needs a future authenticated status / idempotent-ACK API (cross-service blocker).
+     */
     data class Unknown(val reason: String) : DeliveryOutcome
 
-    /** FastAPI refused the evidence (bad proof, binding, replay, policy). */
+    /**
+     * FastAPI refused the evidence. Today this covers BOTH a genuine rejection (bad proof,
+     * binding, policy) AND the dedup refusal of an already-recorded receipt — FastAPI's
+     * `INSERT … ON CONFLICT DO NOTHING RETURNING id` raises when the row already exists, so a
+     * retry of previously-admitted evidence is indistinguishable from a real rejection. Ktor
+     * must therefore NOT infer "evidence was never recorded" from this outcome.
+     */
     data class Rejected(val reason: String) : DeliveryOutcome
 }
 
@@ -58,8 +70,13 @@ object DisabledReceiptDelivery : ReceiptDeliveryClient {
  *
  * Idempotency / lost-network: [submit] is a pure function of the receipt (same token →
  * same MAC), so a retry after a lost ACK re-sends byte-identical evidence. FastAPI's
- * `UNIQUE(ktor_jti)` + `UNIQUE(provider_challenge_id)` make a re-delivery a no-op, so there
- * is no double transition or double cooldown.
+ * `UNIQUE(ktor_jti)` + `UNIQUE(provider_challenge_id)` guarantee **at most one** stored
+ * receipt and transition — a duplicate inserts nothing (no double transition or cooldown).
+ * But note FastAPI PR #15 *denies* that duplicate rather than acking it, so a genuine
+ * lost-ACK retry returns [DeliveryOutcome.Rejected]/[DeliveryOutcome.Unknown], not
+ * [DeliveryOutcome.Accepted]: this submitter never upgrades such a result to success. The
+ * caller keeps it unresolved pending a future authenticated status API; it adds no
+ * permissive replay acceptance.
  */
 class EvidenceSubmitter(
     private val ingest: IngestProof,

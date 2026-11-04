@@ -25,10 +25,21 @@ class IngestProof(secret: ByteArray) {
 
     val configured: Boolean get() = key != null
 
-    /** The 32-byte HMAC over `MAC_DOMAIN + ascii(token)`, or null if not configured. */
+    /**
+     * The 32-byte HMAC over `MAC_DOMAIN + ascii(token)`, or null when not configured OR
+     * when [token] is not a well-formed compact JWS of base64url segments.
+     *
+     * The token MUST be rejected (not silently coerced) when it is not pure ASCII: Kotlin's
+     * `US_ASCII` encoder replaces an unmappable char with `?`, which would produce a MAC over
+     * different bytes than FastAPI — whose `token.encode("ascii")` *raises* and rejects such a
+     * token. Requiring the compact-JWS base64url shape (`[A-Za-z0-9_-]+` ×3) enforces ASCII
+     * inherently and refuses to MAC arbitrary/garbage input. A real minted receipt always
+     * matches; anything else is fail-closed (null → nothing delivered).
+     */
     fun mac(token: String): ByteArray? {
         val k = key ?: return null
-        val ascii = token.toByteArray(Charsets.US_ASCII)
+        if (!COMPACT_JWS.matches(token)) return null
+        val ascii = token.toByteArray(Charsets.US_ASCII) // guaranteed pure ASCII by the shape check
         return Mac.getInstance("HmacSHA256").apply { init(k) }.run {
             update(MAC_DOMAIN)
             doFinal(ascii)
@@ -39,6 +50,9 @@ class IngestProof(secret: ByteArray) {
         /** Exact purpose-separation prefix shared with FastAPI (note the trailing LF). */
         val MAC_DOMAIN: ByteArray = "MAMA/ktor-verified-otp-ingest/v1\n".toByteArray(Charsets.US_ASCII)
         const val MIN_SECRET_BYTES = 32
+
+        /** A compact JWS: three non-empty base64url segments. Also guarantees pure ASCII. */
+        private val COMPACT_JWS = Regex("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$")
 
         /**
          * Builds an [IngestProof] from the configured shared secret string (its UTF-8

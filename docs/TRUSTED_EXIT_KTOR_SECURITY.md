@@ -203,11 +203,23 @@ expose an endpoint FastAPI polls, widening attack surface. The HMAC authenticate
 *message*; mTLS authenticates the *channel* — both are required.
 
 **Key management / failure modes.** Secret absent or <32 bytes ⇒ `IngestProof` is
-unconfigured and delivery is **fail-closed** (nothing sent). Key rotation: carry a key id
-and let FastAPI accept the current + previous secret during an overlap window (design
-note; not implemented). A delivery timeout/`Unknown` ⇒ safe to retry because the proof is
-a pure function of the receipt and FastAPI dedups on `UNIQUE(ktor_jti)` +
-`UNIQUE(provider_challenge_id)` — no double transition or double cooldown. Every
+unconfigured and delivery is **fail-closed** (nothing sent). A token that is not a
+well-formed compact JWS of base64url segments (incl. any non-ASCII character) is refused
+before MAC construction, so Ktor never MACs US-ASCII replacement bytes that would diverge
+from FastAPI's `token.encode("ascii")`. Key rotation: carry a key id and let FastAPI accept
+the current + previous secret during an overlap window (design note; not implemented).
+
+**Lost-ACK / retry — unresolved, not "accepted" (corrected per review).** A retry re-sends
+byte-identical evidence, and FastAPI's `UNIQUE(ktor_jti)` + `UNIQUE(provider_challenge_id)`
+guarantee **at most one** stored receipt and transition — a duplicate inserts nothing, so
+there is never a double transition or double cooldown. However, FastAPI PR #15's
+`internal_record_signed_ktor_evidence` does `INSERT … ON CONFLICT DO NOTHING RETURNING id`
+and **raises** when the row already exists, so a genuine lost-ACK retry of
+already-recorded evidence comes back to Ktor as a **refusal**, not an acknowledgment. Ktor
+therefore cannot distinguish "already recorded OK" from "genuinely rejected" from the
+retry alone, and keeps the result **`Unknown`/unresolved** — it never infers success and
+adds no permissive replay acceptance. Resolving a lost ACK needs a future authenticated
+status endpoint or a deliberately idempotent admission ACK (cross-service blocker). Every
 admission attempt is audited on the FastAPI side (PR #15 ledger).
 
 **Safe flow (no unlock here).** Ktor OTP verified (one-time, `CONSUMED`) → the verifying

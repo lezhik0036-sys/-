@@ -45,6 +45,27 @@ class IngestProofTest {
         assertFalse(a.contentEquals(b))
     }
 
+    @Test fun `a non-ASCII token is refused, never coerced with replacement bytes`() {
+        val p = IngestProof.fromEnv(secret)
+        // Kotlin US-ASCII would replace 'é' with '?'; FastAPI's token.encode('ascii') rejects it.
+        // We must refuse (null), so the two sides never disagree on the MACed bytes.
+        assertNull(p.mac("aaa.bbéb.ccc"))
+        assertNull(p.mac("aaa.bbb.ccсc")) // Cyrillic 'с' (U+0441), looks ASCII but is not
+        // Sanity: the pure-ASCII sibling IS maced.
+        assertTrue(p.mac("aaa.bbb.ccc") != null)
+    }
+
+    @Test fun `a malformed non-JWS token is refused`() {
+        val p = IngestProof.fromEnv(secret)
+        assertNull(p.mac("not-a-jwt"))                 // no dots
+        assertNull(p.mac("aaa.bbb"))                   // two segments
+        assertNull(p.mac("aaa.bbb.ccc.ddd"))           // four segments
+        assertNull(p.mac("aaa..ccc"))                  // empty middle segment
+        assertNull(p.mac("aaa.bb+b.ccc"))              // '+' is base64, not base64url
+        assertNull(p.mac("aaa.bb=b.ccc"))              // padding not allowed
+        assertNull(p.mac(""))                          // empty
+    }
+
     @Test fun `an absent or too-short secret is unconfigured and mints nothing`() {
         assertFalse(IngestProof.fromEnv(null).configured)
         assertNull(IngestProof.fromEnv(null).mac(token))
