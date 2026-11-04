@@ -43,8 +43,11 @@ class AuthenticatedEvidenceDelivery(
     private val timestamp: () -> Long = { System.currentTimeMillis() / 1000 },
     private val nonce: () -> String = { UUID.randomUUID().toString() },
 ) : ReceiptDeliveryClient {
+    val configured: Boolean
+        get() = signer.configured && transport !== DisabledPrivateEvidenceHttpTransport
+
     override fun deliver(submission: EvidenceSubmission): DeliveryOutcome {
-        if (!signer.configured || transport === DisabledPrivateEvidenceHttpTransport) {
+        if (!configured) {
             return DeliveryOutcome.Disabled
         }
         val body = JsonObject().apply {
