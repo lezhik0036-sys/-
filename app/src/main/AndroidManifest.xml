@@ -14,8 +14,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Start/end exactly on time. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <!-- Code goes straight to the trusted contact, the user never sees it. -->
-    <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- Trusted Exit SMS is sent by the backend, never by this Android app. -->
     <!-- Know when a call from the lock screen has ended. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- Call the trusted contact directly, without an editable keypad. -->
