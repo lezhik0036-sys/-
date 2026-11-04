@@ -31,11 +31,19 @@ object TrustedExit {
     var backend: TrustedExitBackend = FakeTrustedExitBackend()
 
     /**
-     * TEST/DEBUG: the guaranteed exit must work before any lock, so the backend
-     * must round-trip. Production: the real backend's own readiness, treated as
-     * ready here until that backend exists. Tests restore [readiness] to this.
+     * Fail-closed for production: no release series may start until an audited,
+     * authenticated FastAPI/Ktor client with a tested early-exit recovery route
+     * replaces the disabled adapter AND supplies a fresh server readiness gate.
+     * Simply compiling with TEST_MODE=false is never an exit guarantee.
+     * Debug builds retain their local fake-OTP round-trip safety check.
      */
-    val defaultReadiness: (Context) -> Boolean = { !FeatureFlags.TEST_MODE || backendCanRoundTrip() }
+    val defaultReadiness: (Context) -> Boolean = {
+        defaultReadinessForTestMode(FeatureFlags.TEST_MODE) { backendCanRoundTrip() }
+    }
+
+    internal fun defaultReadinessForTestMode(
+        testMode: Boolean, debugRoundTrip: () -> Boolean,
+    ): Boolean = if (testMode) debugRoundTrip() else false
 
     /**
      * Readiness check run before a series is allowed to lock the device
