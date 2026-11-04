@@ -22,8 +22,9 @@ class PythonSignedGrantInteropTest {
         val smsVerifier = GrantVerifier(publicKeyDerBase64, now = { issuedAt })
         val result = smsVerifier.verify("Bearer $smsToken")
         assertTrue(result is GrantVerifier.Result.Valid)
-        assertEquals("11111111-1111-4111-8111-111111111111", (result as GrantVerifier.Result.Valid).grant.sub)
-        assertEquals(null, result.grant.challengeId)
+        val grant = (result as GrantVerifier.Result.Valid).grant
+        assertEquals("11111111-1111-4111-8111-111111111111", grant.sub)
+        assertEquals(null, grant.challengeId)
         assertTrue(
             GrantVerifier.forVerify(publicKeyDerBase64, now = { issuedAt })
                 .verify("Bearer $smsToken") is GrantVerifier.Result.Invalid
@@ -47,8 +48,9 @@ class PythonSignedGrantInteropTest {
             GrantVerifier.forVerify(publicKeyDerBase64, now = { issuedAt + 45 })
                 .verify("Bearer $verifyToken") is GrantVerifier.Result.Invalid
         )
-        assertTrue(
-            verifier.verify("Bearer " + verifyToken.dropLast(1) + "A") is GrantVerifier.Result.Invalid
-        )
+        val signature = verifyToken.substringAfterLast(".")
+        val tampered = verifyToken.substringBeforeLast(".") + "." +
+            (if (signature[0] == 'A') "B" else "A") + signature.drop(1)
+        assertTrue(verifier.verify("Bearer $tampered") is GrantVerifier.Result.Invalid)
     }
 }
