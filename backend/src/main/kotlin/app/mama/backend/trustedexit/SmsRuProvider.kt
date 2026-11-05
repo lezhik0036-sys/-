@@ -64,7 +64,8 @@ class SmsRuProvider(
         }
         val json = runCatching { JsonParser.parseString(reply.body).asJsonObject }
             .getOrElse { return SmsResult.Failed("sms provider returned non-JSON") }
-        val topOk = json.get("status")?.asString == "OK"
+        // Treat malformed provider fields as a refusal, never as accepted or a crash.
+        val topOk = runCatching { json.get("status")?.asString }.getOrNull() == "OK"
         // Per-recipient status lives under sms["<number>"].status, with its sms_id.
         // A top-level OK only means that the batch request was accepted.
         // Never claim the SMS was accepted without a matching recipient
@@ -72,19 +73,15 @@ class SmsRuProvider(
         val perSms = runCatching {
             json.getAsJsonObject("sms")?.getAsJsonObject(to)
         }.getOrNull()
-        val smsOk = perSms?.get("status")?.asString == "OK"
+        val smsOk = runCatching { perSms?.get("status")?.asString }.getOrNull() == "OK"
         if (topOk && smsOk) {
-            val smsId = perSms?.get("sms_id")?.asString
+            val smsId = runCatching { perSms?.get("sms_id")?.asString }.getOrNull()
             log.info("SMS.RU accepted a Trusted Exit code for ${mask(to)} (sms_id ${smsId ?: "n/a"})")
             return SmsResult.Accepted(DeliveryStatus.SMS_ACCEPTED, smsId)
         }
-        val detail = perSms?.get("status_text")?.asString
-            ?: json.get("status_text")?.asString
-            ?: "status_code ${json.get("status_code")?.asString ?: "?"}"
-        // The provider's own text stays in the (masked) server log; the caller — and
-        // ultimately the Android client — gets only a generic reason, so no provider
-        // text can carry anything sensitive outward.
-        log.warn("SMS.RU refused for ${mask(to)}: $detail")
+        // Provider status_text is untrusted. It may echo API keys, OTPs or
+        // attacker-controlled strings. Never write it into a production log.
+        log.warn("SMS.RU did not confirm target recipient ${mask(to)}")
         return SmsResult.Failed("sms provider refused")
     }
 
