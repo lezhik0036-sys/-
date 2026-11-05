@@ -98,3 +98,38 @@ RuStore reference: https://www.rustore.ru/help/developers/publishing-and-verifyi
 **ChatGPT/product QA:** maintain this acceptance document, assess actual test evidence, flag inconsistent policy/UX and go/no-go readiness, prepare store content only for features that pass.
 
 **Human owner:** approve credentials/guardian-provider and data processing decisions, authorize carefully staged paid SMS, review real device UX, authorize any merge/deploy/publish and signing key custody.
+
+
+---
+
+## 2026-11-05 addendum: UNIVERSAL PERSONAL MAMA is the primary release journey
+
+**Owner clarification:** MAMA is for individuals of any age-appropriate user group — founders, professionals, teachers, students and people seeking better sleep or self-discipline. Family is explicitly **optional** and not a sign-in or setup prerequisite. See [issue #48](https://github.com/lezhik0036-sys/-/issues/48) and [copy/tests PR #49](https://github.com/lezhik0036-sys/-/pull/49).
+
+### Personal-mode pilot acceptance (must pass BEFORE claiming any public release)
+
+| ID | Real observed journey | Outcome required | Current status |
+| --- | --- | --- | --- |
+| P01 | Install on personal Android phone, never open Family | Complete onboarding, choose series/contact/time, start only with safe recovery; no parent/child role required | UI tests pass; real recovery BLOCKED |
+| P02 | Personal daytime work session 09:00–11:00 | BRICK works as chosen in local timezone; no night-only or sleep-only limit | Domain supported; physical test NOT RUN |
+| P03 | Teacher chooses 14:00–15:00 period | Same full scheduling, exit/emergency UX as nighttime | Physical test NOT RUN |
+| P04 | User configures evening and next-day overnight window | Correct interval and no duplicated completed period around DST | Server/physical E2E NOT RUN |
+| P05 | Self-managed Wi-Fi-only tablet with no SIM | No local cellular permissions; verified external trusted contact can receive server SMS; clear emergency warning | Partial UI in PR #26; live SMS BLOCKED |
+| P06 | Personal Trusted Exit after valid code delivered to external contact | Backend-only code generation and one-time authoritative state transition; no device-side fake OTP in release | BLOCKED: release adapter disabled |
+| P07 | No network, expired response, 3 wrong codes, retry | No accidental unlock or false failure; cooldown persists and lost-ACK recovers from server | Contract tests only; actual Android/HTTP E2E NOT RUN |
+| P08 | User completes 3, then 5, then 7 period series (separate runs) | Correct success/history, Restarts, scheduled intervals and payments | Physical test NOT RUN |
+| P09 | Independent user uses FLEX, statistics, motivation and contact changes | Features preserved, no regression caused by Family code | Not fully tested in functional pilot |
+| P10 | One adult uses own BRICK and separately opts into Family for a different device | Separate data, no role collision, no bypass of either person's active series | BLOCKED: Family UI/API connection absent |
+| P11 | Unlink Family child or revoke parent, then return to independent MAMA | Personal series, history and own credentials remain intact | API partial PR #40, no Android E2E |
+| P12 | Adult deletes account, revokes device/link and erases tokens appropriately | Data/retention legally reviewed, safe audit and privacy notice | BLOCKED |
+| P13 | User sees installation/setup prompts without telephone hardware | No fake emergency dial capability; show safe alternative communication instructions | Staging test and physical review NOT RUN |
+
+### Current verified source/CI inventory (do not confuse green CI with production behavior)
+
+- Android [PR #49](https://github.com/lezhik0036-sys/-/pull/49): universal copy and personal onboarding Robolectric tests, CI success on runs 41998525302 and 41998554279.
+- Claude test [PR #46](https://github.com/lezhik0036-sys/-/pull/46): APK v0.8.20-test21 is debug-only; locally simulated OTP. Do not claim working SMS.
+- FastAPI [PR #40](https://github.com/lezhik0036-sys/mama-fastapi/pull/40): actual ASGI authenticated family device list + revocation, CI success on 41999399629; no family create/approve public routes yet.
+- FastAPI [issue #41](https://github.com/lezhik0036-sys/mama-fastapi/issues/41): 30-day bearer is NOT fresh account-recovery proof for sensitive child unpair. Add server-confirmed step-up identity before shipping that route.
+- Functional release blocker tasks: [Android #47](https://github.com/lezhik0036-sys/-/issues/47), [FastAPI #39](https://github.com/lezhik0036-sys/mama-fastapi/issues/39).
+
+**Acceptance rule:** no family role is needed for solo use; every solo user's Trusted Exit also has to use the actual authenticated SMS/contact server. A green CI for mock provider / in-process contract does not establish paid live SMS, remote Android pairing or Selectel deployment. Preserve working personal MAMA functionality across any future parent/child additions.
