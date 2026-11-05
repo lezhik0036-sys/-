@@ -77,6 +77,30 @@ class SmsRuProviderTest {
     }
 
     @Test
+    fun `top level OK without a recipient acknowledgement is not accepted`() {
+        val (_, p) = provider(HttpReply(200, """{"status":"OK","status_code":100,"balance":100}"""))
+        assertTrue(p.send("79990000000", "12345") is SmsResult.Failed)
+    }
+
+    @Test
+    fun `top level OK with empty recipient list is not accepted`() {
+        val (_, p) = provider(HttpReply(200, """{"status":"OK","status_code":100,"sms":{}}"""))
+        assertTrue(p.send("79990000000", "12345") is SmsResult.Failed)
+    }
+
+    @Test
+    fun `a different recipients OK is not proof the target SMS was accepted`() {
+        val (_, p) = provider(HttpReply(200, """{"status":"OK","status_code":100,"sms":{"79991111111":{"status":"OK","sms_id":"other"}}}"""))
+        assertTrue(p.send("79990000000", "12345") is SmsResult.Failed)
+    }
+
+    @Test
+    fun `recipient acknowledgement malformed is safely refused`() {
+        val (_, p) = provider(HttpReply(200, """{"status":"OK","status_code":100,"sms":{"79990000000":"oops"}}"""))
+        assertTrue(p.send("79990000000", "12345") is SmsResult.Failed)
+    }
+
+    @Test
     fun `a non-2xx reply is Failed`() {
         val (_, p) = provider(HttpReply(500, "oops"))
         assertTrue(p.send("79990000000", "44444") is SmsResult.Failed)

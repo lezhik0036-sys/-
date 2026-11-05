@@ -49,7 +49,8 @@ class SmsRuProvider(
         }
         val reply = runCatching { transport.postForm(endpoint, form) }
             .getOrElse {
-                log.warn("SMS.RU request failed for ${mask(to)}: ${it.message}")
+                // Transport exception messages can embed request URLs, form fields or secrets.
+                log.warn("SMS.RU request failed for ${mask(to)} (transport error)")
                 return SmsResult.Failed("sms provider request failed")
             }
         return parse(reply, to)
@@ -65,9 +66,14 @@ class SmsRuProvider(
             .getOrElse { return SmsResult.Failed("sms provider returned non-JSON") }
         val topOk = json.get("status")?.asString == "OK"
         // Per-recipient status lives under sms["<number>"].status, with its sms_id.
-        val perSms = json.getAsJsonObject("sms")?.entrySet()?.firstOrNull()?.value?.asJsonObject
+        // A top-level OK only means that the batch request was accepted.
+        // Never claim the SMS was accepted without a matching recipient
+        // acknowledgement: a response about another number is not evidence.
+        val perSms = runCatching {
+            json.getAsJsonObject("sms")?.getAsJsonObject(to)
+        }.getOrNull()
         val smsOk = perSms?.get("status")?.asString == "OK"
-        if (topOk && (perSms == null || smsOk)) {
+        if (topOk && smsOk) {
             val smsId = perSms?.get("sms_id")?.asString
             log.info("SMS.RU accepted a Trusted Exit code for ${mask(to)} (sms_id ${smsId ?: "n/a"})")
             return SmsResult.Accepted(DeliveryStatus.SMS_ACCEPTED, smsId)
