@@ -101,6 +101,35 @@ class SmsRuProviderTest {
     }
 
     @Test
+    fun `object shaped top level status fails safely`() {
+        val (_, p) = provider(HttpReply(200, """{"status":{"unexpected":"OK"},"sms":{}}"""))
+        assertTrue(p.send("79990000000", "12345") is SmsResult.Failed)
+    }
+
+    @Test
+    fun `object shaped recipient status fails safely`() {
+        val (_, p) = provider(HttpReply(200, """{"status":"OK","sms":{"79990000000":{"status":{"unexpected":"OK"}}}}"""))
+        assertTrue(p.send("79990000000", "12345") is SmsResult.Failed)
+    }
+
+    @Test
+    fun `malformed successful sms id never crashes`() {
+        val (_, p) = provider(HttpReply(200, """{"status":"OK","sms":{"79990000000":{"status":"OK","sms_id":{"invalid":1}}}}"""))
+        val result = p.send("79990000000", "12345")
+        assertTrue(result is SmsResult.Accepted)
+        assertNull((result as SmsResult.Accepted).smsId)
+    }
+
+    @Test
+    fun `provider error text that contains secrets cannot leak through returned error`() {
+        val (_, p) = provider(HttpReply(200, """{"status":"ERROR","status_text":"api_id=test-key OTP=12345"}"""))
+        val result = p.send("79990000000", "12345")
+        assertTrue(result is SmsResult.Failed)
+        assertFalse(result.toString().contains("test-key"))
+        assertFalse(result.toString().contains("12345"))
+    }
+
+    @Test
     fun `a non-2xx reply is Failed`() {
         val (_, p) = provider(HttpReply(500, "oops"))
         assertTrue(p.send("79990000000", "44444") is SmsResult.Failed)
