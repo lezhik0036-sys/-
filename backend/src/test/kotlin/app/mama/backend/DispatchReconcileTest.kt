@@ -34,11 +34,11 @@ class DispatchReconcileTest {
         ) else null
     }
 
-    private fun deps(withReconcile: Boolean) = ServerDeps(
+    private fun deps(withReconcile: Boolean, overrideLookup: DispatchStatusLookup? = null) = ServerDeps(
         service = null,
         readiness = Readiness(grant = false, db = false, sms = false),
         reconcileSigner = if (withReconcile) signer else null,
-        reconcileLookup = if (withReconcile) lookup else null,
+        reconcileLookup = if (withReconcile) overrideLookup ?: lookup else null,
     )
 
     private fun body(jti: String) = """{"jti":"$jti"}""".toByteArray(Charsets.UTF_8)
@@ -100,6 +100,27 @@ class DispatchReconcileTest {
             setBody(b)
         }
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+    }
+
+    @Test fun `oversized body is refused before parsing or status lookup`() = testApplication {
+        var lookups = 0
+        val counting = DispatchStatusLookup { _ ->
+            lookups++
+            null
+        }
+        application {
+            module(deps(withReconcile = true, overrideLookup = counting))
+        }
+        val b = ByteArray(KtorInternalRequestSigner.MAX_BODY_BYTES + 200_000) { 0x41 }
+        val ts = System.currentTimeMillis() / 1000
+        val response = client.post(KtorInternalRequestSigner.PATH_EVIDENCE_STATUS) {
+            header("x-mama-timestamp", ts.toString())
+            header("x-mama-nonce", nonce)
+            header("x-mama-mac", "0".repeat(64))
+            setBody(b)
+        }
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
+        assertEquals(0, lookups)
     }
 
     @Test fun `a stale timestamp is refused (401)`() = testApplication {
