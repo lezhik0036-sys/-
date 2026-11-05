@@ -41,13 +41,38 @@ class KtorInternalRequestSigner(secret: ByteArray) {
         return KtorInternalRequestProof(timestamp, nonce, hex)
     }
 
+    /**
+     * Verify an inbound FastAPI→Ktor request envelope (the reverse direction of
+     * [sign]): recompute the MAC over the exact received body/path/timestamp/nonce
+     * and compare in constant time, with a ±[TIMESTAMP_WINDOW_SECONDS] freshness
+     * window. Returns false (fail-closed) when unconfigured, malformed, stale or
+     * mismatched. Replay is NOT gated here — this is only sound for a read-only,
+     * side-effect-free request (e.g. dispatch-status reconciliation); any request
+     * that changes state MUST additionally reserve a durable one-time nonce.
+     */
+    fun verify(
+        macHex: String?, body: ByteArray, path: String, timestamp: Long, nonce: String?,
+        nowEpochSeconds: Long,
+    ): Boolean {
+        if (key == null) return false
+        if (macHex == null || !HEX64.matches(macHex)) return false
+        if (nonce == null) return false
+        if (kotlin.math.abs(nowEpochSeconds - timestamp) > TIMESTAMP_WINDOW_SECONDS) return false
+        val expected = sign(body, path, timestamp, nonce)?.macHex ?: return false
+        return MessageDigest.isEqual(
+            macHex.toByteArray(Charsets.US_ASCII), expected.toByteArray(Charsets.US_ASCII),
+        )
+    }
+
     companion object {
         const val MIN_SECRET_BYTES = 32
         const val MAX_BODY_BYTES = 4096
+        const val TIMESTAMP_WINDOW_SECONDS = 30L
         const val PATH_EVIDENCE = "/internal/trusted-exit/evidence"
         const val PATH_EVIDENCE_STATUS = "/internal/trusted-exit/evidence-status"
         val DOMAIN = "MAMA/ktor-fastapi-request/v1\n".toByteArray(Charsets.US_ASCII)
         private val NONCE = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+        private val HEX64 = Regex("^[0-9a-f]{64}$")
 
         /** POST only; body bytes must not be reserialized after signing. */
         internal fun canonicalBytes(
