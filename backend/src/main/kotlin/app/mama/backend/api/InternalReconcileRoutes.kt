@@ -47,7 +47,12 @@ fun Routing.internalReconcileRoutes(
             call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "not configured"))
             return@post
         }
-        val body = call.receiveStream().readBytes()
+        // Bound memory allocation BEFORE authentication. readBytes() would load
+        // arbitrarily large unauthenticated bodies before the 4 KiB check.
+        // Read at most one byte beyond the limit, regardless of Content-Length.
+        val body = call.receiveStream().use {
+            it.readNBytes(KtorInternalRequestSigner.MAX_BODY_BYTES + 1)
+        }
         if (body.size > KtorInternalRequestSigner.MAX_BODY_BYTES) {
             call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "unauthenticated"))
             return@post
