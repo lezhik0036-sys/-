@@ -13,3 +13,7 @@ captures/
 # Server secrets: never commit a filled env file (.env.example is kept).
 .env
 **/.env
+
+# Python bytecode
+__pycache__/
+*.pyc

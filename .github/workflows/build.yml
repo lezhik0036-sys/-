@@ -31,6 +31,19 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # Robolectric fetches its instrumented android-all SDK jars (API 26/30/34)
+      # from Maven into ~/.m2 at test time. Caching that directory makes repeat
+      # runs resolve the SDK offline, so the app unit tests stop depending on a
+      # live network fetch. The restore-keys let an older cache (already holding
+      # the jars) be reused even when the test sources change.
+      - name: Cache Robolectric android-all SDKs
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-sdks-${{ runner.os }}-${{ hashFiles('app/build.gradle.kts') }}-${{ hashFiles('app/src/test/**/*.kt') }}
+          restore-keys: |
+            robolectric-sdks-${{ runner.os }}-${{ hashFiles('app/build.gradle.kts') }}-
+            robolectric-sdks-${{ runner.os }}-
       - name: Core tests
         run: ./gradlew :core:test --console=plain
       - name: Trusted Exit backend tests (ephemeral PostgreSQL, fake SMS)
@@ -39,8 +52,11 @@ jobs:
           MAMA_TEST_DATABASE_USER: mama
           MAMA_TEST_DATABASE_PASSWORD: mama
         run: ./gradlew :backend:test --console=plain
+      # Deterministic Robolectric run: retries ONLY a classified android-all
+      # SDK-download flake (MavenArtifactFetcher network fault), never a genuine
+      # test failure. No test is skipped or weakened. See the two scripts.
       - name: App startup tests (Robolectric)
-        run: ./gradlew :app:testDebugUnitTest --console=plain
+        run: bash .github/scripts/robolectric-tests.sh
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain
       - name: Release build has no test credits
