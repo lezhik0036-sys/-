@@ -2,17 +2,21 @@ package app.mama.backend
 
 import app.mama.backend.api.ErrorResponse
 import app.mama.backend.api.Readiness
+import app.mama.backend.api.internalReconcileRoutes
 import app.mama.backend.api.readinessRoutes
 import app.mama.backend.api.trustedExitRoutes
 import app.mama.backend.auth.GrantVerifier
 import app.mama.backend.auth.ReceiptSigner
 import app.mama.backend.db.JdbcDb
 import app.mama.backend.trustedexit.ContactDestinationResolver
+import app.mama.backend.trustedexit.DispatchStatusLookup
 import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
 import app.mama.backend.trustedexit.EvidenceSubmitter
 import app.mama.backend.trustedexit.IngestProof
+import app.mama.backend.trustedexit.KtorInternalRequestSigner
 import app.mama.backend.trustedexit.OtpHasher
 import app.mama.backend.trustedexit.OtpRepository
+import app.mama.backend.trustedexit.RepositoryDispatchStatusLookup
 import app.mama.backend.trustedexit.SecureTrustedExitService
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.gson.gson
@@ -39,6 +43,14 @@ class ServerDeps(
      * unlocks Android.
      */
     val evidence: EvidenceSubmitter = EvidenceSubmitter(IngestProof.fromEnv(null)),
+    /**
+     * Internal dispatch-status reconciliation (mama-fastapi #47), OFF by default:
+     * the transport-MAC verifier and the read-only challenge lookup are null
+     * unless a shared transport key (and DB) are configured, so the route is
+     * fail-closed (503). It never sends or mutates anything.
+     */
+    val reconcileSigner: KtorInternalRequestSigner? = null,
+    val reconcileLookup: DispatchStatusLookup? = null,
 )
 
 /**
@@ -87,12 +99,13 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
         ?.let { ReceiptSigner(it) }?.takeIf { it.configured }
     log.info("verified-OTP receipt signing: ${if (receiptSigner != null) "enabled" else "disabled"}")
 
+    val repo = db?.let { OtpRepository(it, hasher) }
     val configured = verifier.configured && hasher.configured && db != null && sms != null
     val service = if (configured) {
         SecureTrustedExitService(
             verifier = verifier,
             verifyVerifier = verifyVerifier,
-            repo = OtpRepository(db!!, hasher),
+            repo = repo!!,
             hasher = hasher,
             sms = sms!!,
             // Fail-closed until the FastAPI pinned internal resolution is wired (Deliverable B).
@@ -114,6 +127,20 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
     val evidence = EvidenceSubmitter(ingest)
     log.info("evidence ingest HMAC configured: ${ingest.configured}; delivery transport: disabled")
 
+    // Internal dispatch-status reconciliation (mama-fastapi #47), read-only and
+    // OFF by default: the FastAPI peer authenticates with the shared transport
+    // MAC (same key/contract as the evidence envelope) to recover a challenge id
+    // by grant jti after an ambiguous dispatch, NEVER triggering a new SMS. The
+    // transport key must never be logged and must match FastAPI's.
+    val reconcileSigner = KtorInternalRequestSigner(
+        System.getenv("MAMA_KTOR_TRANSPORT_KEY").orEmpty().toByteArray(Charsets.UTF_8),
+    ).takeIf { it.configured }
+    val reconcileLookup = repo?.let { RepositoryDispatchStatusLookup(it) }
+    log.info(
+        "dispatch-status reconciliation: " +
+            if (reconcileSigner != null && reconcileLookup != null) "enabled" else "disabled",
+    )
+
     return ServerDeps(
         service,
         Readiness(
@@ -128,6 +155,8 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
         ),
         trustedProxies,
         evidence,
+        reconcileSigner,
+        reconcileLookup,
     )
 }
 
@@ -143,5 +172,6 @@ fun Application.module(deps: ServerDeps) {
     routing {
         trustedExitRoutes(deps.service, deps.trustedProxies)
         readinessRoutes(deps.readiness)
+        internalReconcileRoutes(deps.reconcileSigner, deps.reconcileLookup)
     }
 }
