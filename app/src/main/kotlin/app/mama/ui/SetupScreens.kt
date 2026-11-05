@@ -259,14 +259,14 @@ internal fun MainActivity.onboardingScreen(page: Int): Pair<View, Boolean> {
     val b = d.body(18)
     b.addView(d.titleBlock(
         "Как работает MAMA",
-        "Ты принимаешь решение заранее.\nMAMA помогает сохранить его ночью.",
+        "Ты выбираешь время заранее.\nMAMA помогает сохранить решение в любой час.",
     ))
     // The hero card: one strong idea over a nature window — the decision is made for the night.
     b.addView(howItWorksHero(), d.gap(20))
     // Three compact step cards, side by side (reference «Как работает MAMA»); equal height for even bottoms.
     fun stepParam(leftDp: Int) = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = d.dp(leftDp) }
     val steps = d.row().apply { gravity = Gravity.TOP }
-    steps.addView(howItWorksStep("ШАГ 1", Scenery.MORNING, SceneMood.CALM, Icon.CALENDAR, "Выбери серию", "3, 5 или 7 ночей — в удобном ритме."), stepParam(0))
+    steps.addView(howItWorksStep("ШАГ 1", Scenery.MORNING, SceneMood.CALM, Icon.CALENDAR, "Выбери серию", "3, 5 или 7 периодов — в твоём ритме."), stepParam(0))
     steps.addView(howItWorksStep("ШАГ 2", Scenery.DAY, SceneMood.CALM, Icon.PEOPLE, "Назначь контакт", "Код выхода получит только он."), stepParam(10))
     steps.addView(howItWorksStep("ШАГ 3", Scenery.EVENING, SceneMood.QUIET, Icon.LOCK, "Следуй решению", "MAMA ведёт серию до конца."), stepParam(10))
     b.addView(steps, d.gap(14))
@@ -306,7 +306,7 @@ private fun MainActivity.howItWorksHero(): View {
         addView(d.icon(Icon.LEAF, Palette.Moss, 16), d.size(16).apply { rightMargin = d.dp(6) })
         addView(d.text("РИТМ", Typo.TAG, Palette.OliveInk))
     }, d.wrap())
-    col.addView(d.text("Ночью решение\nуже принято.", Typo.HEADLINE, V2.Ink).apply { textSize = 27f; maxWidth = narrow }, d.gap(16))
+    col.addView(d.text("В выбранное время\nрешение уже принято.", Typo.HEADLINE, V2.Ink).apply { textSize = 27f; maxWidth = narrow }, d.gap(16))
     col.addView(
         d.text("Телефон закрывается по выбранному расписанию, чтобы помочь тебе удержать выбранный ритм.", Typo.LABEL, V2.InkMuted).apply { maxWidth = narrow },
         d.gap(12),
@@ -407,7 +407,7 @@ internal fun MainActivity.seriesScreen(): Pair<View, Boolean> {
     b.addView(row1, d.gap(24))
     val row2 = d.row().apply { gravity = Gravity.TOP }
     row2.addView(card(Choice.SEVEN, Icon.MOUNTAIN, "7 дней", "Полная неделя. Самый сильный вариант.", "СОВЕТУЕМ"), cell(0))
-    row2.addView(card(Choice.FLEX, Icon.INFINITY, "FLEX", "${FlexPackage.PERIODS} ночей на выбор за ${FlexPackage.VALIDITY.toDays()} дней.", if (free) "БЕСПЛАТНО" else null), cell(12))
+    row2.addView(card(Choice.FLEX, Icon.INFINITY, "FLEX", "${FlexPackage.PERIODS} периодов на выбор за ${FlexPackage.VALIDITY.toDays()} дней.", if (free) "БЕСПЛАТНО" else null), cell(12))
     b.addView(row2, d.gap(12))
     // Test mode: a small service row for the test build only, kept out of the four product paths.
     if (FeatureFlags.TEST_MODE_ENABLED) {
