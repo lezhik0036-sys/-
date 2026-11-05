@@ -13,8 +13,8 @@ android {
         applicationId = "app.mama"
         minSdk = 26
         targetSdk = 35
-        versionCode = 51
-        versionName = "0.8.20-test20"
+        versionCode = 52
+        versionName = "0.8.20-test21"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
