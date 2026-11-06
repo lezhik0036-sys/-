@@ -22,7 +22,10 @@ object KeystoreDeviceKeyProvider {
     private const val AES_ALIAS = "mama.account.devicekey.aeswrap.v1"
     private const val KEY_FILE = "mama_device_key.v1"
 
-    fun isSupported(): Boolean = Build.VERSION.SDK_INT >= MIN_SDK
+    fun isSupported(): Boolean = isSupported(Build.VERSION.SDK_INT)
+
+    /** Pure, testable form of the platform gate. */
+    internal fun isSupported(sdkInt: Int): Boolean = sdkInt >= MIN_SDK
 
     fun loadOrCreate(context: Context): DeviceKey? {
         if (!isSupported()) return null
