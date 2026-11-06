@@ -1,6 +1,8 @@
 package app.mama.account
 
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -52,10 +54,44 @@ class UrlConnectionAccountTransport(
             conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
             val status = conn.responseCode
             val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            // A peer/proxy error response can be arbitrarily large. Do not read
+            // unbounded data into the Android process before parsing JSON.
+            val body = stream?.use { readBoundedBody(it) }.orEmpty()
             return HttpReply(status, body)
         } finally {
             conn.disconnect()
         }
     }
+}
+
+/**
+ * Read at most [MAX_ACCOUNT_RESPONSE_BYTES] + 1 bytes from an untrusted server.
+ * A large response is a transport failure, never a usable account session.
+ * Avoid InputStream.readNBytes (not available on all supported Android APIs).
+ */
+internal const val MAX_ACCOUNT_RESPONSE_BYTES = 64 * 1024
+
+@Throws(IOException::class)
+internal fun readBoundedBody(stream: InputStream): String {
+    val bytes = ByteArrayOutputStream()
+    val chunk = ByteArray(4096)
+    var remaining = MAX_ACCOUNT_RESPONSE_BYTES + 1
+    while (remaining > 0) {
+        val read = stream.read(chunk, 0, minOf(chunk.size, remaining))
+        if (read == -1) break
+        if (read == 0) {
+            // InputStream may return zero; still make progress or fail closed.
+            val single = stream.read()
+            if (single == -1) break
+            bytes.write(single)
+            remaining--
+        } else {
+            bytes.write(chunk, 0, read)
+            remaining -= read
+        }
+    }
+    if (bytes.size() > MAX_ACCOUNT_RESPONSE_BYTES) {
+        throw IOException("MAMA account response exceeds size limit")
+    }
+    return bytes.toByteArray().toString(Charsets.UTF_8)
 }
