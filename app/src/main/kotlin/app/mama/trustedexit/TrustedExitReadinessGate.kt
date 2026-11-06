@@ -27,6 +27,30 @@ object TrustedExitReadinessGate {
     @Volatile private var lastReady: Boolean = false
     @Volatile private var lastObservedAtMs: Long = 0L
     @Volatile private var everRecorded: Boolean = false
+    // Monotonic invalidation generation: an in-flight server response from a
+    // previous series/period must never reinstate its old readiness.
+    @Volatile private var generation: Long = 0L
+
+    /**
+     * Begin an asynchronous refresh and invalidate the previous observation.
+     * Call before the HTTP request. A later context change calls [clear] and
+     * invalidates this ticket, so the stale reply is silently discarded.
+     */
+    @Synchronized
+    fun beginRefresh(): Long {
+        generation++
+        lastReady = false
+        everRecorded = false
+        return generation
+    }
+
+    /** Commit a server response only if it belongs to the current refresh. */
+    @Synchronized
+    fun recordIfCurrent(ticket: Long, ready: Boolean, nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (ticket != generation) return false
+        record(ready, nowMs)
+        return true
+    }
 
     /** Record a fresh server readiness observation. Call OFF the main thread. */
     @Synchronized
@@ -39,6 +63,7 @@ object TrustedExitReadinessGate {
     /** Forget any observation (e.g. on sign-out or when the series ends). */
     @Synchronized
     fun clear() {
+        generation++
         lastReady = false
         lastObservedAtMs = 0L
         everRecorded = false
