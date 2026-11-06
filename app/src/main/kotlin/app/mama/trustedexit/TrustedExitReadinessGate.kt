@@ -1,5 +1,7 @@
 package app.mama.trustedexit
 
+import android.os.SystemClock
+
 /**
  * The main-thread-safe BRICK lock-start preflight for the real server backend.
  *
@@ -15,6 +17,9 @@ package app.mama.trustedexit
  *     so a stale "ready" can never let a lock start minutes later;
  *   - a never-recorded or cleared gate is not ready;
  *   - a clock that went backwards (negative age) is not ready.
+ *   - time is measured with SystemClock.elapsedRealtime(), NOT adjustable
+ *     wall-clock time; a user changing date/time cannot refresh stale state.
+ *   - reads and writes are synchronized to avoid racing with invalidation.
  *
  * This deliberately refuses to start a strict physical lock merely because
  * `/activate` returned active or a period reads registered — only a fresh,
@@ -25,6 +30,7 @@ object TrustedExitReadinessGate {
     const val MAX_AGE_MS = 2 * 60_000L
 
     @Volatile private var lastReady: Boolean = false
+    // Elapsed time since boot: immune to wall-clock, timezone and DST edits.
     @Volatile private var lastObservedAtMs: Long = 0L
     @Volatile private var everRecorded: Boolean = false
     // Monotonic invalidation generation: an in-flight server response from a
@@ -46,7 +52,7 @@ object TrustedExitReadinessGate {
 
     /** Commit a server response only if it belongs to the current refresh. */
     @Synchronized
-    fun recordIfCurrent(ticket: Long, ready: Boolean, nowMs: Long = System.currentTimeMillis()): Boolean {
+    fun recordIfCurrent(ticket: Long, ready: Boolean, nowMs: Long = SystemClock.elapsedRealtime()): Boolean {
         if (ticket != generation) return false
         record(ready, nowMs)
         return true
@@ -54,7 +60,7 @@ object TrustedExitReadinessGate {
 
     /** Record a fresh server readiness observation. Call OFF the main thread. */
     @Synchronized
-    fun record(ready: Boolean, nowMs: Long = System.currentTimeMillis()) {
+    fun record(ready: Boolean, nowMs: Long = SystemClock.elapsedRealtime()) {
         lastReady = ready
         lastObservedAtMs = nowMs
         everRecorded = true
@@ -73,7 +79,8 @@ object TrustedExitReadinessGate {
      * Main-thread-safe: true ONLY when the last observation was `ready == true`
      * and is still fresh. Pure given [nowMs], so the policy is unit-testable.
      */
-    fun ready(nowMs: Long = System.currentTimeMillis()): Boolean {
+    @Synchronized
+    fun ready(nowMs: Long = SystemClock.elapsedRealtime()): Boolean {
         if (!everRecorded || !lastReady) return false
         val age = nowMs - lastObservedAtMs
         return age in 0..MAX_AGE_MS
