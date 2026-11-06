@@ -47,12 +47,18 @@ class SmsRuProvider(
             put("json", "1")
             if (!from.isNullOrBlank()) put("from", from!!)
         }
-        val reply = runCatching { transport.postForm(endpoint, form) }
-            .getOrElse {
-                // Transport exception messages can embed request URLs, form fields or secrets.
-                log.warn("SMS.RU request failed for ${mask(to)} (transport error)")
-                return SmsResult.Failed("sms provider request failed")
-            }
+        val reply = try {
+            transport.postForm(endpoint, form)
+        } catch (_: Exception) {
+            // A connection reset/timeout does not prove the SMS was NOT sent.
+            // The provider may have accepted the OTP before its ACK was lost.
+            // Propagate a sanitized, intentionally ambiguous outcome: the
+            // SecureTrustedExitService catches it and keeps the durable
+            // challenge SENDING/UNKNOWN, with no immediate second SMS.
+            // Never include raw transport exception text, keys, or OTPs.
+            log.warn("SMS.RU delivery outcome unknown for ${mask(to)} (transport error)")
+            throw SmsDeliveryOutcomeUnknown()
+        }
         return parse(reply, to)
     }
 
@@ -99,6 +105,13 @@ class SmsRuProvider(
             if (number.length <= 2) "**" else "*".repeat(number.length - 2) + number.takeLast(2)
     }
 }
+
+/**
+ * The provider HTTP ACK was lost. This is NOT proof that SMS failed to send.
+ * SecureTrustedExitService must preserve the existing challenge for recovery
+ * instead of marking it SEND_FAILED or triggering a second send.
+ */
+class SmsDeliveryOutcomeUnknown : RuntimeException("SMS delivery outcome unknown")
 
 /** A minimal HTTP seam so the provider is testable without the network. */
 interface HttpTransport {
