@@ -48,14 +48,7 @@ object MamaTrustedExit {
         val ctx = appContext ?: return null
         if (!isConfigured) return null
         val deviceKey = KeystoreDeviceKeyProvider.loadOrCreate(ctx) ?: return null
-        val accountClient = MamaAccount.client() ?: return null
-        val sessionSource = object : TrustedExitSessionSource {
-            override fun ensureSession(): AccountSession? =
-                (accountClient.ensureSession() as? MamaAccountClient.Result.Ok)?.session
-            override fun forgetSession() {
-                accountClient.forgetSession()
-            }
-        }
+        val sessionSource = sessionSource() ?: return null
         return HttpTrustedExitBackend(
             transport = UrlConnectionAccountTransport(baseUrl),
             deviceKey = deviceKey,
@@ -63,6 +56,34 @@ object MamaTrustedExit {
             context = FileExitContextStore(ctx),
             requestKeys = SecureExitRequestKeyStore(ctx),
         ).also { cached = it }
+    }
+
+    /**
+     * The provisioning client that builds the server-owned prerequisites over the
+     * `/v1/setup` routes and records the resulting [ExitContext]. Null when not
+     * configured (fail-closed). Call OFF the main thread.
+     */
+    fun setup(): HttpTrustedExitSetup? {
+        val ctx = appContext ?: return null
+        if (!isConfigured) return null
+        val sessionSource = sessionSource() ?: return null
+        return HttpTrustedExitSetup(
+            transport = UrlConnectionAccountTransport(baseUrl),
+            session = sessionSource,
+            context = FileExitContextStore(ctx)::set,
+        )
+    }
+
+    /** Session source for the Trusted Exit clients: the account client's bearer, or null. */
+    private fun sessionSource(): TrustedExitSessionSource? {
+        val accountClient = MamaAccount.client() ?: return null
+        return object : TrustedExitSessionSource {
+            override fun ensureSession(): AccountSession? =
+                (accountClient.ensureSession() as? MamaAccountClient.Result.Ok)?.session
+            override fun forgetSession() {
+                accountClient.forgetSession()
+            }
+        }
     }
 
     /**
