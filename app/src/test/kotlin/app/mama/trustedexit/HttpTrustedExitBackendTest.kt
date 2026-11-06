@@ -90,6 +90,47 @@ class HttpTrustedExitBackendTest {
     // --- scenarios -----------------------------------------------------------
 
     @Test
+    fun corruptedRequestStoreCannotTriggerAnySMS() {
+        val broken = object : ExitRequestKeyStore {
+            override fun loadOrCreate(idempotencyKey: String): ExitRequestRecord {
+                throw java.io.IOException("simulated corrupted encrypted state")
+            }
+            override fun recordRequestId(idempotencyKey: String, requestId: String) {
+                throw AssertionError("must not reach recordRequestId")
+            }
+        }
+        val client = HttpTrustedExitBackend(
+            transport = server, deviceKey = deviceKey, session = session,
+            context = context, requestKeys = broken,
+        )
+        val outcome = client.createChallenge(CreateChallengeRequest("sess-1", "END_SESSION", "corrupt"))
+        assertTrue(outcome is CreateChallengeResult.Failed)
+        assertEquals(0, server.proofCount)
+        assertEquals(0, server.requestCount)
+        assertEquals(0, server.sendCount)
+    }
+
+    @Test
+    fun failedRequestIdPersistenceNeverClaimsCodeWasSent() {
+        val broken = object : ExitRequestKeyStore {
+            override fun loadOrCreate(idempotencyKey: String): ExitRequestRecord =
+                ExitRequestRecord(idempotencyKey, UUID.randomUUID().toString(), null)
+            override fun recordRequestId(idempotencyKey: String, requestId: String) {
+                throw java.io.IOException("simulated full disk")
+            }
+        }
+        val client = HttpTrustedExitBackend(
+            transport = server, deviceKey = deviceKey, session = session,
+            context = context, requestKeys = broken,
+        )
+        val result = client.createChallenge(CreateChallengeRequest("sess-1", "END_SESSION", "disk-full"))
+        assertTrue(result is CreateChallengeResult.Failed)
+        // Request may have reached the server: the app must not claim it can
+        // safely recover a known request id when persistence failed.
+        assertEquals(1, server.sendCount)
+    }
+
+    @Test
     fun happyPath_codeSent_then_verify_exits() {
         val created = create("A") as CreateChallengeResult.Created
         assertEquals(DeliveryStatus.SMS_ACCEPTED, created.delivery)
