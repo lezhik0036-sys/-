@@ -83,7 +83,10 @@ object MamaTrustedExit {
             override fun ensureSession(): AccountSession? =
                 (accountClient.ensureSession() as? MamaAccountClient.Result.Ok)?.session
             override fun forgetSession() {
-                accountClient.forgetSession()
+                // All Trusted Exit 401 paths must revoke cached BRICK preflight
+                // approval as well as the stored bearer. Use the central
+                // account invalidation path, never clear only this client.
+                MamaAccount.forgetSession()
             }
         }
     }
