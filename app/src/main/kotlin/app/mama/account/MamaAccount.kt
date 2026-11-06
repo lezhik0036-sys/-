@@ -1,6 +1,7 @@
 package app.mama.account
 
 import android.content.Context
+import android.os.Build
 
 /**
  * App-wide access to the real MAMA server session. Holds the HTTPS account client
@@ -31,7 +32,11 @@ object MamaAccount {
 
     /** True only when a backend URL is set AND the platform can hold the device key. */
     val isConfigured: Boolean
-        get() = baseUrl.isNotBlank() && KeystoreDeviceKeyProvider.isSupported()
+        get() = configured(baseUrl, Build.VERSION.SDK_INT)
+
+    /** Pure, testable gate: a non-blank URL on a platform that can hold the key. */
+    internal fun configured(url: String, sdkInt: Int): Boolean =
+        url.isNotBlank() && KeystoreDeviceKeyProvider.isSupported(sdkInt)
 
     /**
      * The HTTPS account client, building it on first use (loads or creates the
