@@ -9,7 +9,7 @@ import org.json.JSONObject
  * this device should request an early exit for, persisted across restarts.
  *
  * It is set by the setup/provisioning step (after the server activates the series
- * and registers the lock period via `/v1/setup/*`) and read by
+ * and registers the lock period via the `/v1/setup` endpoints) and read by
  * [HttpTrustedExitBackend]. The ids are server UUIDs, not secrets, so a plain
  * app-private file is sufficient; the security of the exit rests on the session
  * bearer and the device-key proof, not on hiding these ids.

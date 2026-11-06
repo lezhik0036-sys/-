@@ -11,7 +11,7 @@ import org.json.JSONObject
 
 /**
  * The real, server-authoritative [TrustedExitBackend]: a thin HTTPS client for
- * the authenticated FastAPI Trusted Exit API (`/v1/trusted-exit/*`). It replaces
+ * the authenticated FastAPI Trusted Exit API (the `/v1/trusted-exit` routes). It replaces
  * the on-device [FakeTrustedExitBackend] with NO local code logic at all — the
  * OTP is generated, delivered (by the private Ktor worker FastAPI reaches
  * server-to-server) and verified entirely on the server. This device only:
@@ -311,7 +311,7 @@ interface TrustedExitSessionSource {
 
 /**
  * The server-owned series + lock period this exit is for, provisioned via the
- * `/v1/setup/*` API (draft series + selected contact + activation + a registered
+ * `/v1/setup` API (draft series + selected contact + activation + a registered
  * period). The device id comes from the authenticated session, never from here.
  */
 data class ExitContext(val seriesId: String, val periodId: String)
