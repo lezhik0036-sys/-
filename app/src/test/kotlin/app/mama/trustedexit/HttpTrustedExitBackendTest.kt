@@ -198,6 +198,20 @@ class HttpTrustedExitBackendTest {
         }
     }
 
+    @Test
+    fun readiness_requires_exact_current_registered_period_not_just_series() {
+        server.readinessReady = true
+        server.readinessPeriodMatch = false
+        assertEquals(false, backend().serverReadiness()!!.ready)
+        // Even when the server claims period_matches_requested, the returned
+        // period identity must match the context stored on Android.
+        server.readinessPeriodMatch = true
+        server.responsePeriodOverride = UUID.randomUUID().toString()
+        assertEquals(false, backend().serverReadiness()!!.ready)
+        server.responsePeriodOverride = null
+        assertEquals(true, backend().serverReadiness()!!.ready)
+    }
+
     // --- fake FastAPI server -------------------------------------------------
 
     private inner class FakeServer : AccountHttpTransport {
@@ -211,6 +225,8 @@ class HttpTrustedExitBackendTest {
         var proofFirst401 = false
         var verifyReturnsPendingThenExit = false
         var readinessReady = false
+        var readinessPeriodMatch = true
+        var responsePeriodOverride: String? = null
 
         private val proofs = HashMap<String, ByteArray>()
         private val rows = HashMap<String, Row>()
@@ -307,10 +323,15 @@ class HttpTrustedExitBackendTest {
                     .put("attempts_remaining", maxOf(0, MAX - r.attempts)).toString())
             }
             if (path.endsWith("/readiness")) {
+                val expectedPath = "/v1/setup/series/$seriesId/periods/$periodId/readiness"
+                if (path != expectedPath) return HttpReply(404, "{}")
                 return HttpReply(200, JSONObject()
+                    .put("series_id", seriesId)
+                    .put("period_id", responsePeriodOverride ?: periodId)
                     .put("active", true).put("contact_selected", true)
                     .put("contact_verified", readinessReady)
                     .put("has_registered_period", true)
+                    .put("period_matches_requested", readinessPeriodMatch)
                     .put("ready", readinessReady).toString())
             }
             return HttpReply(404, "{}")
