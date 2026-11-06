@@ -57,7 +57,12 @@ class HttpTrustedExitBackend(
         // STEP 5 / issue #47: persist the stable idempotency UUID BEFORE any
         // network call. A dropped connection then recovers THIS request instead
         // of starting a new one, so the contact is never sent a second code.
-        val record = requestKeys.loadOrCreate(request.idempotencyKey)
+        val record = runCatching {
+            requestKeys.loadOrCreate(request.idempotencyKey)
+        }.getOrElse {
+            // No request is sent if its no-resend identity is not durable.
+            return CreateChallengeResult.Failed("request-storage-unavailable")
+        }
         record.requestId?.let { rid ->
             // The server already has this request: recover its state, never re-request.
             return recover(sess, rid, request.kind)
@@ -178,8 +183,13 @@ class HttpTrustedExitBackend(
             } else {
                 // Persist the server id the instant it is known, so recovery works
                 // even if this process dies before returning.
-                requestKeys.recordRequestId(record.idempotencyKey, requestId)
-                deliveryFor(j.optString("status", ""), requestId, kind)
+                if (runCatching {
+                    requestKeys.recordRequestId(record.idempotencyKey, requestId)
+                }.isFailure) {
+                    CreateChallengeResult.Failed("request-storage-unavailable")
+                } else {
+                    deliveryFor(j.optString("status", ""), requestId, kind)
+                }
             }
         }
         403 -> CreateChallengeResult.Failed("not-authorized")
@@ -220,7 +230,9 @@ class HttpTrustedExitBackend(
             ?: return CreateChallengeResult.Failed("delivery-unavailable")
         val requestId = runCatching { j.getString("request_id") }.getOrNull()
             ?: return CreateChallengeResult.Failed("delivery-unavailable")
-        requestKeys.recordRequestId(record.idempotencyKey, requestId)
+        if (runCatching {
+            requestKeys.recordRequestId(record.idempotencyKey, requestId)
+        }.isFailure) return CreateChallengeResult.Failed("request-storage-unavailable")
         return deliveryFor(j.optString("status", ""), requestId, kind)
     }
 
