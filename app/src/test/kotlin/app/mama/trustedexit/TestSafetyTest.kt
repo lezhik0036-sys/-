@@ -102,6 +102,16 @@ class TestSafetyTest {
         assertEquals("the phone was not locked", LockState.Free, Mama.state(context))
     }
 
+    // The same gate protects the field-test lock: startTest is a real strict lock,
+    // so it must not start without a ready exit (no 15-minute trap without a way out).
+    @Test
+    fun `a test lock does not start when Trusted Exit is not ready`() {
+        TrustedExit.readiness = { false }
+        assertEquals(Mama.TestStart.TrustedExitUnavailable, Mama.startTest(context, contact, zone, SessionMode.SLEEP))
+        assertNull("no session was created", Mama.session(context))
+        assertEquals("the phone was not locked", LockState.Free, Mama.state(context))
+    }
+
     // Production gate: with the TEST flag off, no recorded code is ever revealed — a release build shows no TEST CODE.
     @Test
     fun `a production build never reveals the TEST CODE`() {
