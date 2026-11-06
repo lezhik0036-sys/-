@@ -517,6 +517,9 @@ object Mama {
         data class Started(val sessionId: String) : TestStart
         data object Busy : TestStart
         data class Rejected(val reason: LockEngine.CreateError) : TestStart
+
+        /** The Trusted Exit way out is not ready, so the test lock must not start. */
+        data object TrustedExitUnavailable : TestStart
     }
 
     /**
@@ -528,6 +531,9 @@ object Mama {
         if (!FeatureFlags.TEST_MODE_ENABLED) return TestStart.Busy
         val r = reconcile(context)
         if (!idle(r)) return TestStart.Busy
+        // Trusted Exit readiness check: the field-test lock is a real strict lock,
+        // so it must never start without a working way out — same gate as a series.
+        if (!TrustedExit.ready(context)) return TestStart.TrustedExitUnavailable
         val id = UUID.randomUUID().toString()
         return when (val created = engine.create(id, TestMode.plan(r.trustedNow, zone, mode), contact, r.trustedNow)) {
             is LockEngine.CreateResult.Rejected -> TestStart.Rejected(created.reason)

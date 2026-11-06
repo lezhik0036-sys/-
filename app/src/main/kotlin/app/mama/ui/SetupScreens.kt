@@ -752,6 +752,7 @@ internal fun MainActivity.startChosen() {
                 closeDraft()
             }
             Mama.TestStart.Busy -> alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
+            Mama.TestStart.TrustedExitUnavailable -> alert("Trusted Exit недоступен", "Тестовая блокировка не запущена: сейчас нет подтверждённого способа выхода.")
             is Mama.TestStart.Rejected -> alert("Не получилось", Texts.createError(r.reason))
         }
         Choice.FLEX -> {
