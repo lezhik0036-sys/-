@@ -79,6 +79,26 @@ class TrustedExitReadinessGateTest {
     }
 
     @Test
+    fun elapsedClockCannotExtendCachedApprovalBeyondTwoMinutes() {
+        // The parameter models Android's monotonic elapsedRealtime() clock;
+        // changing timezone or the wall clock has no impact on this age.
+        val sampledElapsed = 700_000L
+        TrustedExitReadinessGate.record(true, sampledElapsed)
+        assertTrue(TrustedExitReadinessGate.ready(sampledElapsed + maxAge))
+        assertFalse(TrustedExitReadinessGate.ready(sampledElapsed + maxAge + 1))
+        // A clock reset / reboot is also fail-closed even in an injected test.
+        assertFalse(TrustedExitReadinessGate.ready(sampledElapsed - 1))
+    }
+
+    @Test
+    fun clearingDuringRefreshAlwaysInvalidatesItsTicket() {
+        val ticket = TrustedExitReadinessGate.beginRefresh()
+        TrustedExitReadinessGate.clear()
+        assertFalse(TrustedExitReadinessGate.recordIfCurrent(ticket, true, t0))
+        assertFalse(TrustedExitReadinessGate.ready(t0))
+    }
+
+    @Test
     fun clear_dropsReadiness() {
         TrustedExitReadinessGate.record(true, t0)
         TrustedExitReadinessGate.clear()
