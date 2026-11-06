@@ -58,8 +58,15 @@ class MamaAccountClient(
         }
 
     private fun persist(session: AccountSession): Result {
-        store.save(session)
-        return Result.Ok(session)
+        // A server-issued bearer is not a durable session if Android Keystore
+        // or the encrypted store cannot save it. Never tell the caller that
+        // account setup succeeded after an at-rest persistence failure.
+        return try {
+            store.save(session)
+            Result.Ok(session)
+        } catch (_: Exception) {
+            Result.Unavailable
+        }
     }
 
     private sealed interface Attempt {
