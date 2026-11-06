@@ -100,6 +100,18 @@ object MamaTrustedExit {
      */
     fun serverReadiness(): ServerReadiness? = backend()?.serverReadiness()
 
+    /**
+     * Fetch the server readiness OFF the main thread and record it into
+     * [TrustedExitReadinessGate], so the main-thread lock-start gate can read a
+     * recent result. Call before a lock attempt (and/or periodically). A null or
+     * not-ready result records "not ready" — fail-closed. Returns the observation.
+     */
+    fun refreshReadiness(): ServerReadiness? {
+        val r = serverReadiness()
+        TrustedExitReadinessGate.record(r?.ready == true)
+        return r
+    }
+
     /** The persisted provisioned-context store, for the setup/provisioning step to write. */
     fun contextStore(context: Context): FileExitContextStore = FileExitContextStore(context)
 }
