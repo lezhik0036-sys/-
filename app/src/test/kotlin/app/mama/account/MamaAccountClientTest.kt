@@ -89,7 +89,8 @@ class MamaAccountClientTest {
                 registerCalls++
                 if (registered.containsKey(pub)) HttpReply(409, "")
                 else {
-                    val uid = "u-${++seq}"; val did = "d-${++seq}"
+                    val uid = java.util.UUID.randomUUID().toString()
+                    val did = java.util.UUID.randomUUID().toString()
                     registered[pub] = uid to did
                     HttpReply(200, session(uid, did))
                 }
@@ -101,7 +102,8 @@ class MamaAccountClientTest {
         }
 
         private fun session(uid: String, did: String) = JSONObject()
-            .put("user_id", uid).put("device_id", did).put("session_token", "tok-$uid").toString()
+            .put("user_id", uid).put("device_id", did)
+            .put("session_token", "A".repeat(43)).toString()
 
         private fun verify(pubB64: String, sigB64: String, message: ByteArray): Boolean = runCatching {
             val spki = SPKI_PREFIX + unb64.decode(pubB64)
@@ -125,7 +127,7 @@ class MamaAccountClientTest {
         val r = client.ensureSession()
         assertTrue(r is MamaAccountClient.Result.Ok)
         val ok = r as MamaAccountClient.Result.Ok
-        assertEquals("tok-${ok.session.userId}", ok.session.token)
+        assertEquals("A".repeat(43), ok.session.token)
         assertEquals(1, server.registerCalls)
         assertEquals(1, server.loginCalls) // one 401 login probe before register
         assertTrue(server.registered.containsKey(key.publicKeyB64()))
@@ -190,6 +192,42 @@ class MamaAccountClientTest {
         }
         val r = MamaAccountClient(flaky, key, MemStore()).ensureSession()
         assertTrue(r is MamaAccountClient.Result.Ok)
+    }
+
+    @Test fun `malformed HTTP 200 session is refused and never persisted`() {
+        val key = EphemeralDeviceKey()
+        val validServer = FakeServer()
+        // Allow the full proof to finish but replace the response claiming
+        // success with malformed identity or attacker-chosen bearer data.
+        val responses = listOf(
+            """{"user_id":"","device_id":"bad","session_token":"x"}""",
+            """{"user_id":"not-uuid","device_id":"not-uuid","session_token":"Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}""",
+            """{"user_id":"00000000-0000-4000-8000-000000000000","device_id":"00000000-0000-4000-8000-000000000001","session_token":""}""",
+            """{"user_id":"00000000-0000-4000-8000-000000000000","device_id":"00000000-0000-4000-8000-000000000001","session_token":"invalid whitespace bearer token"}""",
+            """{"user_id":null,"device_id":{},"session_token":[]}""",
+        )
+        for (response in responses) {
+            val server = object : AccountHttpTransport {
+                override fun postJson(path: String, jsonBody: String, bearer: String?): HttpReply {
+                    val actual = validServer.postJson(path, jsonBody, bearer)
+                    return if (path == MamaAccountClient.PATH_REGISTER ||
+                        path == MamaAccountClient.PATH_LOGIN && actual.status == 200
+                    ) HttpReply(200, response) else actual
+                }
+            }
+            val store = MemStore()
+            val result = MamaAccountClient(server, key, store).ensureSession()
+            assertEquals(MamaAccountClient.Result.Unavailable, result)
+            assertNull(store.load())
+        }
+    }
+
+    @Test fun `canonical UUID and opaque bearer format must match server`() {
+        assertTrue(MamaAccountClient.isCanonicalUuid("00000000-0000-4000-8000-000000000000"))
+        assertTrue(!MamaAccountClient.isCanonicalUuid("00000000-0000-4000-8000-000000000000suffix"))
+        assertTrue(MamaAccountClient.isBearerFormat("A".repeat(43)))
+        assertTrue(!MamaAccountClient.isBearerFormat("A".repeat(257)))
+        assertTrue(!MamaAccountClient.isBearerFormat("unsafe-token with spaces"))
     }
 
     @Test fun `forgetSession clears the cache`() {
