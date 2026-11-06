@@ -18,6 +18,16 @@ data class HttpReply(val status: Int, val body: String)
 interface AccountHttpTransport {
     @Throws(IOException::class)
     fun postJson(path: String, jsonBody: String, bearer: String?): HttpReply
+
+    /**
+     * GET [path] with an optional bearer, same reply/throw contract as [postJson].
+     * Used by read-only polls (Trusted Exit status, setup readiness). A POST-only
+     * transport need not implement it: the default throws and the caller treats an
+     * exception as "unavailable" / fail-closed, never a success.
+     */
+    @Throws(IOException::class)
+    fun getJson(path: String, bearer: String?): HttpReply =
+        throw UnsupportedOperationException("getJson not supported by this transport")
 }
 
 /**
@@ -56,6 +66,30 @@ class UrlConnectionAccountTransport(
             val stream = if (status in 200..299) conn.inputStream else conn.errorStream
             // A peer/proxy error response can be arbitrarily large. Do not read
             // unbounded data into the Android process before parsing JSON.
+            val body = stream?.use { readBoundedBody(it) }.orEmpty()
+            return HttpReply(status, body)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    @Throws(IOException::class)
+    override fun getJson(path: String, bearer: String?): HttpReply {
+        val url = URL(base + path)
+        if (!url.protocol.equals("https", ignoreCase = true)) {
+            throw IOException("MAMA backend must be HTTPS")
+        }
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
+            instanceFollowRedirects = false
+            setRequestProperty("accept", "application/json")
+            bearer?.let { setRequestProperty("authorization", "Bearer $it") }
+        }
+        try {
+            val status = conn.responseCode
+            val stream = if (status in 200..299) conn.inputStream else conn.errorStream
             val body = stream?.use { readBoundedBody(it) }.orEmpty()
             return HttpReply(status, body)
         } finally {
