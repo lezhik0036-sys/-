@@ -62,6 +62,10 @@ object MamaAccount {
 
     /** Drop the cached bearer after an authenticated 401 so the next call re-authenticates. */
     fun forgetSession() {
+        // A revoked/expired session cannot retain a recent BRICK lock-start
+        // approval. Invalidate BEFORE touching Keystore or calling the client
+        // so even a storage error cannot preserve a stale ready=true result.
+        app.mama.trustedexit.TrustedExitReadinessGate.clear()
         client()?.forgetSession()
     }
 }

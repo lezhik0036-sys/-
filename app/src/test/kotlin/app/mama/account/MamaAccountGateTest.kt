@@ -3,6 +3,7 @@ package app.mama.account
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import app.mama.trustedexit.TrustedExitReadinessGate
 
 /**
  * The account gate, as pure logic (no Robolectric, Context, or SDK download):
@@ -16,6 +17,20 @@ class MamaAccountGateTest {
         assertFalse(KeystoreDeviceKeyProvider.isSupported(32))
         assertTrue(KeystoreDeviceKeyProvider.isSupported(33))
         assertTrue(KeystoreDeviceKeyProvider.isSupported(34))
+    }
+
+    @Test fun `dropping session revokes cached BRICK readiness even without a client`() {
+        // The device-key session might be revoked/expired while a cached
+        // server-readiness observation is still within its two-minute TTL.
+        TrustedExitReadinessGate.clear()
+        TrustedExitReadinessGate.record(true, 10_000L)
+        assertTrue(TrustedExitReadinessGate.ready(10_000L))
+        try {
+            MamaAccount.forgetSession()
+            assertFalse(TrustedExitReadinessGate.ready(10_000L))
+        } finally {
+            TrustedExitReadinessGate.clear()
+        }
     }
 
     @Test fun `configured needs both a url and a supported platform`() {
