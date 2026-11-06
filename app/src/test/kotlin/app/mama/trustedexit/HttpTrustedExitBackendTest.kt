@@ -131,6 +131,16 @@ class HttpTrustedExitBackendTest {
     }
 
     @Test
+    fun malformedServerRequestIdIsNeverPersistedOrClaimedSent() {
+        server.invalidRequestId = true
+        val result = create("invalid-response-id")
+        assertTrue(result is CreateChallengeResult.Failed)
+        assertEquals(1, server.sendCount)
+        // No malformed server UUID has been saved in the durable map.
+        assertNull(keyStore.loadOrCreate("invalid-response-id").requestId)
+    }
+
+    @Test
     fun happyPath_codeSent_then_verify_exits() {
         val created = create("A") as CreateChallengeResult.Created
         assertEquals(DeliveryStatus.SMS_ACCEPTED, created.delivery)
@@ -249,6 +259,7 @@ class HttpTrustedExitBackendTest {
 
         var otp = "12345"
         var ambiguousFirstRequest = false
+        var invalidRequestId = false
         var proofFirst401 = false
         var verifyReturnsPendingThenExit = false
         var readinessReady = false
@@ -307,7 +318,9 @@ class HttpTrustedExitBackendTest {
                         return HttpReply(503, "{}") // ACK lost; row durable, maybe sent
                     }
                     rows[rid] = Row("dispatched"); byKey[key] = rid
-                    HttpReply(200, JSONObject().put("request_id", rid).put("status", "code_sent").toString())
+                    HttpReply(200, JSONObject()
+                        .put("request_id", if (invalidRequestId) "wrong-request-id" else rid)
+                        .put("status", "code_sent").toString())
                 }
                 "/v1/trusted-exit/verify" -> {
                     val rid = j.getString("request_id")
