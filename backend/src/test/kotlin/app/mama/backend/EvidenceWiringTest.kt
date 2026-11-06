@@ -16,19 +16,19 @@ class EvidenceWiringTest {
     private val key = "synthetic-private-transport-secret-32bytes-001"
     private val ingest = "synthetic-ingest-secret-is-not-transport-secret-0001"
 
-    @Test fun `url + key + ingest + receipt signer -> channel enabled and authoritative`() {
+    @Test fun `full config makes the channel enabled and delivery authoritative`() {
         val w = buildEvidenceWiring(ingest, url, key, receiptSignerConfigured = true)
         assertTrue(w.submitter.enabled, "channel should be enabled")
         assertTrue(w.authoritativeDelivery, "delivery should be authoritative")
     }
 
-    @Test fun `missing FastAPI url -> disabled and never authoritative`() {
+    @Test fun `missing FastAPI url disables the channel and is never authoritative`() {
         val w = buildEvidenceWiring(ingest, null, key, receiptSignerConfigured = true)
         assertFalse(w.submitter.enabled)
         assertFalse(w.authoritativeDelivery)
     }
 
-    @Test fun `blank transport key -> disabled and never authoritative`() {
+    @Test fun `blank transport key disables the channel and is never authoritative`() {
         val w = buildEvidenceWiring(ingest, url, "   ", receiptSignerConfigured = true)
         assertFalse(w.submitter.enabled)
         assertFalse(w.authoritativeDelivery)
@@ -40,12 +40,12 @@ class EvidenceWiringTest {
         assertFalse(w.authoritativeDelivery)
     }
 
-    @Test fun `missing ingest HMAC -> not authoritative even with transport wired`() {
+    @Test fun `missing ingest HMAC is not authoritative even with transport wired`() {
         val w = buildEvidenceWiring(null, url, key, receiptSignerConfigured = true)
         assertFalse(w.authoritativeDelivery)
     }
 
-    @Test fun `no receipt signer -> channel may carry bytes but delivery is not authoritative`() {
+    @Test fun `no receipt signer leaves the channel usable but delivery not authoritative`() {
         val w = buildEvidenceWiring(ingest, url, key, receiptSignerConfigured = false)
         assertFalse(w.authoritativeDelivery)
     }
