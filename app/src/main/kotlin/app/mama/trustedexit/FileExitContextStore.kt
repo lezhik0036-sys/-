@@ -32,6 +32,9 @@ class FileExitContextStore(private val context: Context) : ExitContextSource {
 
     /** Record the provisioned series + period. Overwrites any previous context. */
     fun set(ctx: ExitContext) {
+        // Clear any readiness for the PREVIOUS server series/period BEFORE
+        // changing files. If the write fails, strict BRICK remains disallowed.
+        TrustedExitReadinessGate.clear()
         val blob = JSONObject()
             .put("series_id", ctx.seriesId)
             .put("period_id", ctx.periodId)
@@ -46,6 +49,7 @@ class FileExitContextStore(private val context: Context) : ExitContextSource {
 
     /** Forget the provisioned context (e.g. the series ended or was reconfigured). */
     fun clear() {
+        TrustedExitReadinessGate.clear()
         runCatching { file.delete() }
     }
 

@@ -50,6 +50,35 @@ class TrustedExitReadinessGateTest {
     }
 
     @Test
+    fun changedSeriesInvalidatesInFlightServerResponse() {
+        val oldSeriesTicket = TrustedExitReadinessGate.beginRefresh()
+        // Provisioning a new series/period invokes clear().
+        TrustedExitReadinessGate.clear()
+        assertFalse(TrustedExitReadinessGate.recordIfCurrent(oldSeriesTicket, true, t0))
+        assertFalse(TrustedExitReadinessGate.ready(t0))
+    }
+
+    @Test
+    fun newestRefreshWinsAndOlderReadyReplyCannotReopenGate() {
+        val old = TrustedExitReadinessGate.beginRefresh()
+        val newer = TrustedExitReadinessGate.beginRefresh()
+        assertTrue(TrustedExitReadinessGate.recordIfCurrent(newer, false, t0))
+        assertFalse(TrustedExitReadinessGate.recordIfCurrent(old, true, t0))
+        assertFalse(TrustedExitReadinessGate.ready(t0))
+    }
+
+    @Test
+    fun refreshedServerReadyMustMatchMostRecentTicket() {
+        val old = TrustedExitReadinessGate.beginRefresh()
+        assertTrue(TrustedExitReadinessGate.recordIfCurrent(old, true, t0))
+        assertTrue(TrustedExitReadinessGate.ready(t0))
+        val fresh = TrustedExitReadinessGate.beginRefresh()
+        assertFalse(TrustedExitReadinessGate.ready(t0))
+        assertTrue(TrustedExitReadinessGate.recordIfCurrent(fresh, true, t0 + 1))
+        assertTrue(TrustedExitReadinessGate.ready(t0 + 1))
+    }
+
+    @Test
     fun clear_dropsReadiness() {
         TrustedExitReadinessGate.record(true, t0)
         TrustedExitReadinessGate.clear()
