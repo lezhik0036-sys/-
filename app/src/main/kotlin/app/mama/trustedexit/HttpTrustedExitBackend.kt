@@ -142,17 +142,24 @@ class HttpTrustedExitBackend(
     fun serverReadiness(): ServerReadiness? {
         val sess = session.ensureSession() ?: return null
         val ctx = context.current() ?: return null
-        val reply = runCatching { transport.getJson(readinessPath(ctx.seriesId), sess.token) }
+        val reply = runCatching { transport.getJson(readinessPath(ctx.seriesId, ctx.periodId), sess.token) }
             .getOrNull() ?: return null
         if (reply.status != 200) return null
         return runCatching {
             val j = JSONObject(reply.body)
+            // The series might have several registered periods. BRICK may
+            // start only after the server confirms the EXACT context period.
+            // Older servers lacking this binding are incompatible and must
+            // fail closed, not fall back to a series-wide ready=true.
+            val exactMatch = j.getBoolean("period_matches_requested") &&
+                j.getString("period_id") == ctx.periodId &&
+                j.getString("series_id") == ctx.seriesId
             ServerReadiness(
                 active = j.getBoolean("active"),
                 contactSelected = j.getBoolean("contact_selected"),
                 contactVerified = j.getBoolean("contact_verified"),
                 hasRegisteredPeriod = j.getBoolean("has_registered_period"),
-                ready = j.getBoolean("ready"),
+                ready = j.getBoolean("ready") && exactMatch,
             )
         }.getOrNull()
     }
@@ -286,8 +293,9 @@ class HttpTrustedExitBackend(
     private fun statusPath(requestId: String) =
         "/v1/trusted-exit/status/" + UUID.fromString(requestId)
 
-    private fun readinessPath(seriesId: String) =
-        "/v1/setup/series/" + UUID.fromString(seriesId) + "/readiness"
+    private fun readinessPath(seriesId: String, periodId: String) =
+        "/v1/setup/series/" + UUID.fromString(seriesId) +
+            "/periods/" + UUID.fromString(periodId) + "/readiness"
 
     private companion object {
         const val TAG = "MAMA"
