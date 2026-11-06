@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 /**
  * The SMS.RU provider, exercised without the network or a real key through a
@@ -46,13 +47,34 @@ class SmsRuProviderTest {
     }
 
     @Test
-    fun `a network error or timeout is Failed, not a crash`() {
+    fun `a network error means unknown SMS outcome not confirmed failure`() {
         val throwing = object : HttpTransport {
             override fun postForm(url: String, form: Map<String, String>): HttpReply =
-                throw java.io.IOException("connection reset / timeout")
+                throw java.io.IOException("connection reset / timeout: key=test-key OTP=88888")
         }
         val p = SmsRuProvider(apiId = "test-key", transport = throwing)
-        assertTrue(p.send("79990000000", "88888") is SmsResult.Failed)
+        val e = assertFailsWith<SmsDeliveryOutcomeUnknown> {
+            p.send("79990000000", "88888")
+        }
+        assertFalse(e.message.orEmpty().contains("test-key"))
+        assertFalse(e.message.orEmpty().contains("88888"))
+    }
+
+    @Test
+    fun `provider lost response after accepting SMS stays unknown and is not retried`() {
+        var attempted = 0
+        val throwingAfterSend = object : HttpTransport {
+            override fun postForm(url: String, form: Map<String, String>): HttpReply {
+                attempted++
+                // Simulated failure AFTER upstream accepted the SMS.
+                throw java.io.IOException("upstream response lost")
+            }
+        }
+        val p = SmsRuProvider(apiId = "test-key", transport = throwingAfterSend)
+        assertFailsWith<SmsDeliveryOutcomeUnknown> {
+            p.send("79990000000", "00042")
+        }
+        assertEquals(1, attempted)
     }
 
     @Test
