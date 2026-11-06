@@ -7,12 +7,17 @@ import app.mama.backend.api.trustedExitRoutes
 import app.mama.backend.auth.GrantVerifier
 import app.mama.backend.auth.ReceiptSigner
 import app.mama.backend.db.JdbcDb
+import app.mama.backend.trustedexit.AuthenticatedEvidenceDelivery
 import app.mama.backend.trustedexit.ContactDestinationResolver
+import app.mama.backend.trustedexit.DisabledReceiptDelivery
 import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
 import app.mama.backend.trustedexit.EvidenceSubmitter
 import app.mama.backend.trustedexit.IngestProof
+import app.mama.backend.trustedexit.JdkPrivateEvidenceHttpTransport
+import app.mama.backend.trustedexit.KtorInternalRequestSigner
 import app.mama.backend.trustedexit.OtpHasher
 import app.mama.backend.trustedexit.OtpRepository
+import app.mama.backend.trustedexit.ReceiptDeliveryClient
 import app.mama.backend.trustedexit.SecureTrustedExitService
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.gson.gson
@@ -107,12 +112,19 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
     val trustedProxies = System.getenv("MAMA_TRUSTED_PROXIES").orEmpty()
         .split(",", " ").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
-    // Ktor→FastAPI evidence channel (issue #12): the server-only HMAC proof. Off by
-    // default and never auto-invoked — no transport is wired (DisabledReceiptDelivery),
-    // so even a configured key sends nothing. The HMAC key must never be logged.
-    val ingest = IngestProof.fromEnv(System.getenv("MAMA_INGEST_HMAC_KEY"))
-    val evidence = EvidenceSubmitter(ingest)
-    log.info("evidence ingest HMAC configured: ${ingest.configured}; delivery transport: disabled")
+    // Ktor→FastAPI evidence channel (issue #12 / Stage 2b): the server-authenticated
+    // HTTP push of a signed OTP receipt. Wired to the REAL JDK transport only when
+    // BOTH the private FastAPI internal base URL and the ≥32-byte transport key are
+    // present; with either missing it stays Disabled and sends nothing (fail-closed).
+    // No route auto-invokes it yet, and neither the transport key nor any HMAC is
+    // ever logged.
+    val wiring = buildEvidenceWiring(
+        ingestKey = System.getenv("MAMA_INGEST_HMAC_KEY"),
+        fastapiInternalUrl = System.getenv("MAMA_FASTAPI_INTERNAL_URL"),
+        transportKey = System.getenv("MAMA_KTOR_TRANSPORT_KEY"),
+        receiptSignerConfigured = receiptSigner != null,
+    )
+    log.info("authoritative receipt delivery wired: ${wiring.authoritativeDelivery}")
 
     return ServerDeps(
         service,
@@ -120,15 +132,51 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
             grant = verifier.configured,
             db = db != null,
             sms = sms != null,
-            // Both are OFF while the actual verified-contact resolver and
-            // private FastAPI mTLS evidence delivery are not installed.
-            // Never promote /ready to 200 based on an SMS API key alone.
+            // destination stays OFF until the verified-contact resolver is installed,
+            // so /ready remains fail-closed regardless of the delivery channel.
+            // authoritativeReceiptDelivery now reflects the real wired channel.
             destination = false,
-            authoritativeReceiptDelivery = false,
+            authoritativeReceiptDelivery = wiring.authoritativeDelivery,
         ),
         trustedProxies,
-        evidence,
+        wiring.submitter,
     )
+}
+
+/** The evidence channel plus whether authoritative receipt delivery is live (Stage 2b). */
+data class EvidenceWiring(val submitter: EvidenceSubmitter, val authoritativeDelivery: Boolean)
+
+/**
+ * Builds the Ktor→FastAPI evidence channel from configuration, fail-closed.
+ *
+ * The real JDK transport is wired only when BOTH the private FastAPI internal base
+ * URL and the ≥32-byte transport key are present; with either missing the channel
+ * is [DisabledReceiptDelivery] and sends nothing. [EvidenceWiring.authoritativeDelivery]
+ * is true only when the channel is fully live (transport + transport key + ingest
+ * HMAC) AND a receipt signer is configured — there is both a signed receipt to
+ * deliver and an authenticated channel to carry it — so a base URL, a key, or an
+ * HMAC alone can never flip readiness. The transport key is consumed here, never
+ * logged, and a sub-threshold key fails closed via the signer.
+ */
+fun buildEvidenceWiring(
+    ingestKey: String?,
+    fastapiInternalUrl: String?,
+    transportKey: String?,
+    receiptSignerConfigured: Boolean,
+): EvidenceWiring {
+    val ingest = IngestProof.fromEnv(ingestKey)
+    val url = fastapiInternalUrl?.takeIf { it.isNotBlank() }
+    val key = transportKey?.takeIf { it.isNotBlank() }
+    val delivery: ReceiptDeliveryClient = if (url != null && key != null) {
+        AuthenticatedEvidenceDelivery(
+            KtorInternalRequestSigner(key.toByteArray(Charsets.UTF_8)),
+            JdkPrivateEvidenceHttpTransport(url),
+        )
+    } else {
+        DisabledReceiptDelivery
+    }
+    val submitter = EvidenceSubmitter(ingest, delivery)
+    return EvidenceWiring(submitter, submitter.enabled && receiptSignerConfigured)
 }
 
 /** The Ktor application, shared by [main] and tests (which pass a test-wired [deps]). */
