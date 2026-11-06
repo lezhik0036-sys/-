@@ -177,7 +177,7 @@ class HttpTrustedExitBackend(
     ): CreateChallengeResult = when (reply.status) {
         200 -> {
             val j = runCatching { JSONObject(reply.body) }.getOrNull()
-            val requestId = j?.let { runCatching { it.getString("request_id") }.getOrNull() }
+            val requestId = j?.let { parseServerRequestId(it) }
             if (requestId == null) {
                 CreateChallengeResult.Failed("request-malformed")
             } else {
@@ -201,6 +201,16 @@ class HttpTrustedExitBackend(
         401 -> CreateChallengeResult.Failed("no-session")
         else -> CreateChallengeResult.Failed("request-${reply.status}")
     }
+
+    /**
+     * The backend's request_id is an opaque server-issued UUID. Reject malformed
+     * successful responses BEFORE persisting them: a bad ID can otherwise get
+     * cached permanently and crash the next status poll at UUID.fromString.
+     */
+    private fun parseServerRequestId(payload: JSONObject): String? = runCatching {
+        val id = payload.getString("request_id")
+        if (UUID.fromString(id).toString() == id) id else null
+    }.getOrNull()
 
     /** Map the server's client-facing request/status vocabulary to a create result. */
     private fun deliveryFor(status: String, requestId: String, kind: String): CreateChallengeResult =
@@ -228,7 +238,7 @@ class HttpTrustedExitBackend(
         if (reply.status != 200) return CreateChallengeResult.Failed("delivery-unavailable")
         val j = runCatching { JSONObject(reply.body) }.getOrNull()
             ?: return CreateChallengeResult.Failed("delivery-unavailable")
-        val requestId = runCatching { j.getString("request_id") }.getOrNull()
+        val requestId = parseServerRequestId(j)
             ?: return CreateChallengeResult.Failed("delivery-unavailable")
         if (runCatching {
             requestKeys.recordRequestId(record.idempotencyKey, requestId)
