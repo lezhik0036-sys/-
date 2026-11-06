@@ -11,6 +11,7 @@ import app.mama.trustedexit.FakeTrustedExitBackend
 import app.mama.trustedexit.MamaTrustedExit
 import app.mama.trustedexit.ReleaseTrustedExitDisabled
 import app.mama.trustedexit.TrustedExit
+import app.mama.trustedexit.TrustedExitReadinessGate
 
 class MamaApp : Application() {
     override fun onCreate() {
@@ -36,6 +37,16 @@ class MamaApp : Application() {
                 sms = DebugCodeSmsService,
             )
             else -> ReleaseTrustedExitDisabled
+        }
+        // With the real server backend, the BRICK lock-start preflight must require
+        // a RECENT server-confirmed readiness (active series + provider-VERIFIED
+        // contact + registered period), never the local fake round-trip. The gate
+        // runs on the main thread, so it reads only the cached readiness that
+        // MamaTrustedExit.refreshReadiness() records off the main thread; it is
+        // fail-closed until a fresh ready==true is recorded. (Unconfigured builds
+        // keep the default readiness: fake round-trip in TEST_MODE, else disabled.)
+        if (MamaAccount.isConfigured) {
+            TrustedExit.readiness = { TrustedExitReadinessGate.ready() }
         }
         // Any process start (including after the system killed us) re-applies the lock.
         Mama.sync(this)
