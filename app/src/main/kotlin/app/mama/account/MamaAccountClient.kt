@@ -104,13 +104,20 @@ class MamaAccountClient(
         return when (reply.status) {
             200 -> runCatching {
                 val j = JSONObject(reply.body)
-                Attempt.Ok(
-                    AccountSession(
-                        userId = j.getString("user_id"),
-                        deviceId = j.getString("device_id"),
-                        token = j.getString("session_token"),
-                    )
-                )
+                // Never cache a malformed or partial "success" response.
+                // The backend issues UUID identities and a URL-safe 32-byte
+                // random bearer. Empty strings and fabricated object values
+                // must not become a persisted account identity.
+                val userId = j.getString("user_id")
+                val deviceId = j.getString("device_id")
+                val token = j.getString("session_token")
+                if (!isCanonicalUuid(userId) || !isCanonicalUuid(deviceId) ||
+                    !isBearerFormat(token)
+                ) {
+                    Attempt.Unavailable
+                } else {
+                    Attempt.Ok(AccountSession(userId, deviceId, token))
+                }
             }.getOrElse { Attempt.Unavailable }
             401 -> Attempt.Unauthorized
             409 -> Attempt.Conflict
@@ -128,6 +135,17 @@ class MamaAccountClient(
         // Must equal the server's account_device_auth_service.account_auth_message:
         // DOMAIN + "\n".join(purpose, challenge_id, nonce, public_key_b64).
         private const val DOMAIN = "MAMA/account/device-auth/v1\n"
+        // UUID string formatting must exactly match FastAPI's canonical UUID
+        // serialization; reject accidental "null", objects, or altered IDs.
+        private val UUID_PATTERN = Regex(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
+        private val BEARER_PATTERN = Regex("^[A-Za-z0-9_-]{20,256}$")
+
+        internal fun isCanonicalUuid(value: String): Boolean = UUID_PATTERN.matches(value)
+        internal fun isBearerFormat(value: String): Boolean = BEARER_PATTERN.matches(value)
+
+
         private val B64: Base64.Encoder = Base64.getEncoder()
 
         internal fun authMessage(
