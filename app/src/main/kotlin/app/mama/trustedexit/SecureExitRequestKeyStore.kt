@@ -4,6 +4,7 @@ import android.content.Context
 import app.mama.account.AesGcmWrap
 import app.mama.account.AndroidKeystoreAesKey
 import java.io.File
+import java.io.IOException
 import java.util.Base64
 import java.util.UUID
 import org.json.JSONObject
@@ -23,9 +24,9 @@ import org.json.JSONObject
  *
  * Android-only (not host-tested); the wrap/unwrap it relies on is tested
  * separately, and the pure store logic is covered against the in-memory store.
- * Fail-soft on read (a corrupt/missing file starts empty); writes are durable
- * (atomic rename) and errors propagate so a failed persist is never silently
- * treated as saved.
+ * Missing file is first-use only; corrupt/unreadable existing state fails closed
+ * so no fresh idempotency key can trigger an unintended duplicate SMS.
+ * Writes are atomic-or-error, never an unverified direct overwrite.
  */
 class SecureExitRequestKeyStore(private val context: Context) : ExitRequestKeyStore {
 
@@ -44,16 +45,20 @@ class SecureExitRequestKeyStore(private val context: Context) : ExitRequestKeySt
     @Synchronized
     override fun recordRequestId(idempotencyKey: String, requestId: String) {
         val map = read()
+        // Never mint a new idempotency UUID while recording a server reply:
+        // if the original row is gone, it could have dispatched SMS already.
         val rec = map[idempotencyKey]
-            ?: ExitRequestRecord(idempotencyKey, UUID.randomUUID().toString(), null)
+            ?: throw IOException("trusted exit request correlation was lost")
         map[idempotencyKey] = rec.copy(requestId = requestId)
         write(map)
     }
 
     private fun read(): MutableMap<String, ExitRequestRecord> {
         val out = HashMap<String, ExitRequestRecord>()
-        runCatching {
-            if (!file.exists()) return out
+        if (!file.exists()) return out  // first-use only
+        // A corrupt/unreadable existing file is NOT first-use. Fail closed:
+        // resetting the map would mint a new UUID and risk a duplicate SMS.
+        try {
             val aesKey = AndroidKeystoreAesKey.getOrCreate(AES_ALIAS)
             val plain = AesGcmWrap.unwrap(aesKey, Base64.getDecoder().decode(file.readText().trim()))
             val root = JSONObject(String(plain, Charsets.UTF_8))
@@ -61,12 +66,15 @@ class SecureExitRequestKeyStore(private val context: Context) : ExitRequestKeySt
             while (keys.hasNext()) {
                 val key = keys.next()
                 val o = root.getJSONObject(key)
+                val uuid = UUID.fromString(o.getString("uuid")).toString()
+                val requestId = if (o.isNull("request_id")) null
+                    else UUID.fromString(o.getString("request_id")).toString()
                 out[key] = ExitRequestRecord(
-                    idempotencyKey = key,
-                    idempotencyUuid = o.getString("uuid"),
-                    requestId = if (o.isNull("request_id")) null else o.getString("request_id"),
+                    idempotencyKey = key, idempotencyUuid = uuid, requestId = requestId,
                 )
             }
+        } catch (_: Exception) {
+            throw IOException("trusted exit correlation store unavailable")
         }
         return out
     }
@@ -82,9 +90,12 @@ class SecureExitRequestKeyStore(private val context: Context) : ExitRequestKeySt
         val blob = Base64.getEncoder()
             .encodeToString(AesGcmWrap.wrap(aesKey, root.toString().toByteArray(Charsets.UTF_8)))
         val tmp = File(context.filesDir, "$STORE_FILE.tmp")
-        tmp.writeText(blob)
-        if (!tmp.renameTo(file)) {
-            file.writeText(blob)
+        try {
+            tmp.writeText(blob)
+            // A failed rename must NOT overwrite the only durable SMS
+            // correlation map in place (which could truncate on power loss).
+            if (!tmp.renameTo(file)) throw IOException("atomic correlation write failed")
+        } finally {
             tmp.delete()
         }
     }
