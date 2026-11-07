@@ -30,8 +30,11 @@ class MamaApp : Application() {
         // session + provisioned series exist. No backend URL:
         //   * debug/TEST_MODE -> the strictly-isolated local fake (no real server);
         //   * release          -> fail CLOSED (no local OTP is ever accepted).
+        // A configured backend on Android <33 must FAIL CLOSED. It must not
+        // accidentally enter the debug fake-code path merely because the
+        // platform cannot hold our authenticated device credential.
         TrustedExit.backend = when {
-            MamaAccount.isConfigured -> MamaTrustedExit.deferredBackend()
+            MamaAccount.realBackendRequested -> MamaTrustedExit.deferredBackend()
             FeatureFlags.TEST_MODE -> FakeTrustedExitBackend(
                 vault = DeviceChallengeVault(this),
                 sms = DebugCodeSmsService,
@@ -45,7 +48,7 @@ class MamaApp : Application() {
         // MamaTrustedExit.refreshReadiness() records off the main thread; it is
         // fail-closed until a fresh ready==true is recorded. (Unconfigured builds
         // keep the default readiness: fake round-trip in TEST_MODE, else disabled.)
-        if (MamaAccount.isConfigured) {
+        if (MamaAccount.realBackendRequested) {
             TrustedExit.readiness = { TrustedExitReadinessGate.ready() }
         }
         // Any process start (including after the system killed us) re-applies the lock.
