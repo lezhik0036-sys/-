@@ -9,6 +9,7 @@ import app.mama.core.LockState
 import app.mama.core.SeriesKind
 import app.mama.core.SessionMode
 import app.mama.core.TrustedContact
+import app.mama.account.MamaAccount
 import app.mama.platform.Mama
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -100,6 +101,38 @@ class TestSafetyTest {
         assertEquals(Mama.SeriesStart.TrustedExitUnavailable, Mama.startSeries(context, SeriesKind.THREE, window, contact, SessionMode.SLEEP))
         assertNull("no series was scheduled", Mama.series(context))
         assertEquals("the phone was not locked", LockState.Free, Mama.state(context))
+    }
+
+    // The same gate protects the field-test lock: startTest is a real strict lock,
+    // so it must not start without a ready exit (no 15-minute trap without a way out).
+    @Test
+    fun `a test lock does not start when Trusted Exit is not ready`() {
+        TrustedExit.readiness = { false }
+        assertEquals(Mama.TestStart.TrustedExitUnavailable, Mama.startTest(context, contact, zone, SessionMode.SLEEP))
+        assertNull("no session was created", Mama.session(context))
+        assertEquals("the phone was not locked", LockState.Free, Mama.state(context))
+    }
+
+    @Test
+    fun `direct legacy start refuses real-server build without Trusted Exit readiness`() {
+        // A legacy entry point must not bypass the series/test preflight even
+        // when callers provide their own LockPlan.
+        MamaAccount.configure(context, "https://staging.mama.example")
+        TrustedExit.readiness = { false }
+        try {
+            val plan = LockPlan(
+                Instant.now().minus(Duration.ofMinutes(1)),
+                Instant.now().plus(Duration.ofMinutes(15)), zone,
+            )
+            assertEquals(
+                Mama.StartResult.TrustedExitUnavailable,
+                Mama.start(context, plan, contact),
+            )
+            assertNull("no legacy lock was created", Mama.session(context))
+            assertEquals(LockState.Free, Mama.state(context))
+        } finally {
+            MamaAccount.configure(context, "")
+        }
     }
 
     // Production gate: with the TEST flag off, no recorded code is ever revealed — a release build shows no TEST CODE.

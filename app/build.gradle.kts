@@ -5,6 +5,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Private FastAPI base URL for the real account + Trusted Exit client. Empty by
+// default (CI and any un-overridden build) => the client is disabled/fail-closed.
+// A field test supplies it with `-PmamaBackendBaseUrl=https://<host>` (HTTPS is
+// enforced at runtime); it is not a secret and never enables local OTP.
+val mamaBackendBaseUrl: String = (project.findProperty("mamaBackendBaseUrl") as String?)?.trim().orEmpty()
+
 android {
     namespace = "app.mama"
     compileSdk = 35
@@ -13,8 +19,8 @@ android {
         applicationId = "app.mama"
         minSdk = 26
         targetSdk = 35
-        versionCode = 51
-        versionName = "0.8.20-test20"
+        versionCode = 53
+        versionName = "0.8.21-integration1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -29,11 +35,13 @@ android {
             // TEST/DEBUG safety: cap every lock to 15 min, show the Trusted Exit TEST CODE,
             // run the readiness check. Never true in a release/production build.
             buildConfigField("boolean", "TEST_MODE", "true")
+            buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
         release {
             isMinifyEnabled = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
             buildConfigField("boolean", "TEST_MODE", "false")
+            buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
     }
 

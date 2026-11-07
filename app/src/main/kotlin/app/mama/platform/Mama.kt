@@ -517,6 +517,9 @@ object Mama {
         data class Started(val sessionId: String) : TestStart
         data object Busy : TestStart
         data class Rejected(val reason: LockEngine.CreateError) : TestStart
+
+        /** The Trusted Exit way out is not ready, so the test lock must not start. */
+        data object TrustedExitUnavailable : TestStart
     }
 
     /**
@@ -528,6 +531,9 @@ object Mama {
         if (!FeatureFlags.TEST_MODE_ENABLED) return TestStart.Busy
         val r = reconcile(context)
         if (!idle(r)) return TestStart.Busy
+        // Trusted Exit readiness check: the field-test lock is a real strict lock,
+        // so it must never start without a working way out — same gate as a series.
+        if (!TrustedExit.ready(context)) return TestStart.TrustedExitUnavailable
         val id = UUID.randomUUID().toString()
         return when (val created = engine.create(id, TestMode.plan(r.trustedNow, zone, mode), contact, r.trustedNow)) {
             is LockEngine.CreateResult.Rejected -> TestStart.Rejected(created.reason)
@@ -543,12 +549,20 @@ object Mama {
         data class Started(val state: LockState) : StartResult
         data class Rejected(val reason: LockEngine.CreateError) : StartResult
         data object AlreadyRunning : StartResult
+        /** Never start a direct test/legacy lock with an unready real server. */
+        data object TrustedExitUnavailable : StartResult
     }
 
     @Synchronized
     fun start(context: Context, plan: LockPlan, contact: TrustedContact): StartResult {
         val r = reconcile(context)
         if (r.state != LockState.Free) return StartResult.AlreadyRunning
+        // Legacy/direct entry is still callable from test helpers. A configured
+        // real-server build must not bypass the same Trusted Exit gate used by
+        // series and 15-minute field-test startup.
+        if (app.mama.account.MamaAccount.isConfigured && !TrustedExit.ready(context)) {
+            return StartResult.TrustedExitUnavailable
+        }
         return when (val created = engine.create(UUID.randomUUID().toString(), plan, contact, r.trustedNow)) {
             is LockEngine.CreateResult.Rejected -> StartResult.Rejected(created.reason)
             is LockEngine.CreateResult.Created -> {
