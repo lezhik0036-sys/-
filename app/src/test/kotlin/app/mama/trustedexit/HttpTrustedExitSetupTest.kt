@@ -95,11 +95,35 @@ class HttpTrustedExitSetupTest {
         assertEquals(1, forgetCount)
     }
 
+    @Test
+    fun provision_refuses_malformed_server_owned_ids_without_crashing() {
+        for (field in listOf("contact", "series", "period")) {
+            server.badIdFor = field
+            val result = setup().provision(spec)
+            assertTrue("must fail on $field", result is HttpTrustedExitSetup.Result.Failed)
+            assertNull("no context stored for $field", storedContext)
+            server.badIdFor = null
+            server.order.clear()
+        }
+    }
+
+    @Test
+    fun provision_refuses_context_persistence_failure() {
+        val broken = HttpTrustedExitSetup(
+            transport = server, session = session,
+            context = { throw java.io.IOException("simulated disk full") },
+        )
+        val result = broken.provision(spec)
+        assertEquals(HttpTrustedExitSetup.Result.Failed("context-storage"), result)
+        assertNull(storedContext)
+    }
+
     // --- fake FastAPI setup server -------------------------------------------
 
     private inner class FakeSetupServer : AccountHttpTransport {
         val order = mutableListOf<String>()
         var verified = false
+        var badIdFor: String? = null
         var failActivate = false
         var contactsFirst401 = false
         private var contacts401Served = false
@@ -110,12 +134,12 @@ class HttpTrustedExitSetupTest {
                 path == "/v1/setup/contacts" -> {
                     if (contactsFirst401 && !contacts401Served) { contacts401Served = true; return HttpReply(401, "{}") }
                     order += "contacts"
-                    HttpReply(200, JSONObject().put("contact_id", UUID.randomUUID().toString()).toString())
+                    HttpReply(200, JSONObject().put("contact_id", if (badIdFor == "contact") "not-a-uuid" else UUID.randomUUID().toString()).toString())
                 }
                 path == "/v1/setup/series" -> {
                     order += "series"
                     HttpReply(200, JSONObject()
-                        .put("series_id", UUID.randomUUID().toString()).put("status", "draft").toString())
+                        .put("series_id", if (badIdFor == "series") "invalid" else UUID.randomUUID().toString()).put("status", "draft").toString())
                 }
                 path.endsWith("/contact") -> {
                     order += "contact"
@@ -129,7 +153,7 @@ class HttpTrustedExitSetupTest {
                 path.endsWith("/periods") -> {
                     order += "periods"
                     HttpReply(200, JSONObject()
-                        .put("period_id", UUID.randomUUID().toString()).put("status", "registered").toString())
+                        .put("period_id", if (badIdFor == "period") "" else UUID.randomUUID().toString()).put("status", "registered").toString())
                 }
                 else -> HttpReply(404, "{}")
             }

@@ -83,7 +83,13 @@ class HttpTrustedExitSetup(
 
         // Persist BEFORE reading readiness so a dropped readiness poll still leaves
         // the app pointing at the right series/period for the exit flow.
-        context.set(ExitContext(seriesId = seriesId, periodId = periodId))
+        if (runCatching {
+            context.set(ExitContext(seriesId = seriesId, periodId = periodId))
+        }.isFailure) {
+            // Provisioning may have succeeded server-side but there is no
+            // durable device period binding. Never claim a usable setup.
+            return Result.Failed("context-storage")
+        }
 
         return Result.Provisioned(seriesId, periodId, readiness(seriesId))
     }
@@ -112,7 +118,11 @@ class HttpTrustedExitSetup(
     private fun postString(path: String, body: String, key: String): String? {
         val reply = authed(path, body) ?: return null
         if (reply.status != 200) return null
-        return runCatching { JSONObject(reply.body).getString(key) }.getOrNull()
+        return runCatching {
+            val parsed = JSONObject(reply.body).getString(key)
+            val canonical = java.util.UUID.fromString(parsed).toString()
+            if (canonical != parsed) null else canonical
+        }.getOrNull()
     }
 
     /** POST [body]; true iff the reply is 200. */
