@@ -230,6 +230,20 @@ class MamaAccountClientTest {
         assertTrue(!MamaAccountClient.isBearerFormat("unsafe-token with spaces"))
     }
 
+    @Test fun `encrypted session persistence failure cannot report successful login`() {
+        val store = object : AccountSessionStore {
+            override fun load(): AccountSession? = null
+            override fun save(session: AccountSession) {
+                throw IOException("simulated Android Keystore / disk failure")
+            }
+            override fun clear() {}
+        }
+        val result = MamaAccountClient(
+            FakeServer(), EphemeralDeviceKey(), store
+        ).ensureSession()
+        assertEquals(MamaAccountClient.Result.Unavailable, result)
+    }
+
     @Test fun `forgetSession clears the cache`() {
         val store = MemStore().apply { save(AccountSession("u", "d", "t")) }
         MamaAccountClient(FakeServer(), EphemeralDeviceKey(), store).forgetSession()

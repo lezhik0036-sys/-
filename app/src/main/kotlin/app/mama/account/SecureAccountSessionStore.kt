@@ -29,17 +29,26 @@ class SecureAccountSessionStore(private val context: Context) : AccountSessionSt
     }.getOrNull()
 
     override fun save(session: AccountSession) {
-        runCatching {
-            val aesKey = AndroidKeystoreAesKey.getOrCreate(AES_ALIAS)
-            val plain = JSONObject()
-                .put("user_id", session.userId)
-                .put("device_id", session.deviceId)
-                .put("token", session.token)
-                .toString().toByteArray(Charsets.UTF_8)
-            val blob = Base64.getEncoder().encodeToString(AesGcmWrap.wrap(aesKey, plain))
-            val tmp = File(context.filesDir, "$SESSION_FILE.tmp")
+        // DO NOT swallow Keystore/IO failures: MamaAccountClient must not claim
+        // durable authentication if the encrypted bearer was never persisted.
+        // Callers map errors to Unavailable (fail closed).
+        val aesKey = AndroidKeystoreAesKey.getOrCreate(AES_ALIAS)
+        val plain = JSONObject()
+            .put("user_id", session.userId)
+            .put("device_id", session.deviceId)
+            .put("token", session.token)
+            .toString().toByteArray(Charsets.UTF_8)
+        val blob = Base64.getEncoder().encodeToString(AesGcmWrap.wrap(aesKey, plain))
+        val tmp = File(context.filesDir, "$SESSION_FILE.tmp")
+        try {
             tmp.writeText(blob)
-            if (!tmp.renameTo(file)) { file.writeText(blob); tmp.delete() }
+            if (!tmp.renameTo(file)) {
+                // Never silently fall back to an unverified direct overwrite of
+                // the current encrypted bearer. Keep existing session unchanged.
+                throw java.io.IOException("atomic session persistence failed")
+            }
+        } finally {
+            tmp.delete()
         }
     }
 
