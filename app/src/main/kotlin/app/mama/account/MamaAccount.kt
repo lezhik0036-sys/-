@@ -30,6 +30,16 @@ object MamaAccount {
         cached = null
     }
 
+    /**
+     * A configured backend URL means REAL-SERVER MODE was requested even if
+     * this Android version cannot create the required device key. Unsupported
+     * devices must fail closed, NEVER fall back to local fake SMS in debug.
+     */
+    val realBackendRequested: Boolean
+        get() = realBackendRequested(baseUrl)
+
+    internal fun realBackendRequested(url: String): Boolean = url.isNotBlank()
+
     /** True only when a backend URL is set AND the platform can hold the device key. */
     val isConfigured: Boolean
         get() = configured(baseUrl, Build.VERSION.SDK_INT)
