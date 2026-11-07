@@ -135,6 +135,33 @@ class TestSafetyTest {
         }
     }
 
+    @Test
+    @Config(sdk = [30])
+    fun `Android 11 configured server never allows legacy strict lock through fake exit`() {
+        // API 30 is unsupported for the real device key, but that must be
+        // treated as a closed gate, not as permission to use a debug OTP.
+        MamaAccount.configure(context, "https://staging.mama.example")
+        TrustedExit.readiness = { false }
+        try {
+            assertTrue(MamaAccount.realBackendRequested)
+            assertEquals(
+                Mama.StartResult.TrustedExitUnavailable,
+                Mama.start(
+                    context,
+                    LockPlan(
+                        Instant.now().minus(Duration.ofMinutes(1)),
+                        Instant.now().plus(Duration.ofMinutes(15)),
+                        zone,
+                    ),
+                    contact,
+                ),
+            )
+            assertNull(Mama.session(context))
+        } finally {
+            MamaAccount.configure(context, "")
+        }
+    }
+
     // Production gate: with the TEST flag off, no recorded code is ever revealed — a release build shows no TEST CODE.
     @Test
     fun `a production build never reveals the TEST CODE`() {
