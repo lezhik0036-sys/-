@@ -560,7 +560,7 @@ object Mama {
         // Legacy/direct entry is still callable from test helpers. A configured
         // real-server build must not bypass the same Trusted Exit gate used by
         // series and 15-minute field-test startup.
-        if (app.mama.account.MamaAccount.isConfigured && !TrustedExit.ready(context)) {
+        if (app.mama.account.MamaAccount.realBackendRequested && !TrustedExit.ready(context)) {
             return StartResult.TrustedExitUnavailable
         }
         return when (val created = engine.create(UUID.randomUUID().toString(), plan, contact, r.trustedNow)) {
