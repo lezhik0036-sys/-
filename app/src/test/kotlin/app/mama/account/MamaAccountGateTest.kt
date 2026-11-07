@@ -33,6 +33,18 @@ class MamaAccountGateTest {
         }
     }
 
+    @Test fun `requested real backend never becomes debug fake on old Android`() {
+        // Android 8-12 can be unsupported for real Ed25519 account keys,
+        // but explicit backend selection must still mean fail CLOSED.
+        assertFalse(MamaAccount.realBackendRequested(""))
+        assertFalse(MamaAccount.realBackendRequested("   "))
+        assertTrue(MamaAccount.realBackendRequested("https://staging.mama.example"))
+        for (sdk in 26..32) {
+            assertFalse(MamaAccount.configured("https://staging.mama.example", sdk))
+            assertTrue(MamaAccount.realBackendRequested("https://staging.mama.example"))
+        }
+    }
+
     @Test fun `configured needs both a url and a supported platform`() {
         assertFalse("blank url", MamaAccount.configured("", 34))
         assertFalse("whitespace url", MamaAccount.configured("   ", 34))
