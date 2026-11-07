@@ -29,6 +29,8 @@ object MamaTrustedExit {
     @Volatile private var cached: HttpTrustedExitBackend? = null
 
     fun configure(context: Context, backendBaseUrl: String) {
+        // A backend/account reconfiguration makes any old readiness obsolete.
+        TrustedExitReadinessGate.clear()
         appContext = context.applicationContext
         baseUrl = backendBaseUrl.trim()
         cached = null
@@ -81,7 +83,10 @@ object MamaTrustedExit {
             override fun ensureSession(): AccountSession? =
                 (accountClient.ensureSession() as? MamaAccountClient.Result.Ok)?.session
             override fun forgetSession() {
-                accountClient.forgetSession()
+                // All Trusted Exit 401 paths must revoke cached BRICK preflight
+                // approval as well as the stored bearer. Use the central
+                // account invalidation path, never clear only this client.
+                MamaAccount.forgetSession()
             }
         }
     }
@@ -107,8 +112,12 @@ object MamaTrustedExit {
      * not-ready result records "not ready" — fail-closed. Returns the observation.
      */
     fun refreshReadiness(): ServerReadiness? {
+        // Invalidate old readiness BEFORE network I/O; a series/period change
+        // during the request also increments the generation so its late 200
+        // cannot grant a lock based on the previous context.
+        val ticket = TrustedExitReadinessGate.beginRefresh()
         val r = serverReadiness()
-        TrustedExitReadinessGate.record(r?.ready == true)
+        TrustedExitReadinessGate.recordIfCurrent(ticket, r?.ready == true)
         return r
     }
 
