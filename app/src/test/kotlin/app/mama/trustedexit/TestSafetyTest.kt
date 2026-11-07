@@ -162,6 +162,22 @@ class TestSafetyTest {
         }
     }
 
+    @Test
+    fun `debug local OTP is hidden once real HTTPS backend is requested`() {
+        TestCodeSink.record("fake-existing", "54321")
+        MamaAccount.configure(context, "https://staging.mama.example")
+        try {
+            // Even if a previous debug fake request was cached, switching
+            // to a configured real backend must never show the test code.
+            assertNull(TestCodeSink.codeFor("fake-existing"))
+            TestCodeSink.record("fake-new", "12345")
+            assertNull(TestCodeSink.codeFor("fake-new"))
+        } finally {
+            MamaAccount.configure(context, "")
+            TestCodeSink.clear()
+        }
+    }
+
     // Production gate: with the TEST flag off, no recorded code is ever revealed — a release build shows no TEST CODE.
     @Test
     fun `a production build never reveals the TEST CODE`() {
