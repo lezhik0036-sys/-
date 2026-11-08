@@ -91,23 +91,34 @@ class HttpTrustedExitSetup(
             return Result.Failed("context-storage")
         }
 
-        return Result.Provisioned(seriesId, periodId, readiness(seriesId))
+        return Result.Provisioned(seriesId, periodId, readiness(seriesId, periodId))
     }
 
-    /** Current server readiness for [seriesId] (GET /v1/setup/series/{id}/readiness), or null. */
-    fun readiness(seriesId: String): ServerReadiness? {
+    /**
+     * Readiness for the EXACT provisioned period, not merely for any active
+     * period on the series. A server reporting another period ready must never
+     * make this device's setup appear safe to lock.
+     */
+    fun readiness(seriesId: String, periodId: String): ServerReadiness? {
         val sess = session.ensureSession() ?: return null
-        val reply = runCatching { transport.getJson(seriesPath(seriesId, "/readiness"), sess.token) }
+        val path = runCatching {
+            seriesPath(seriesId, "/periods/" + java.util.UUID.fromString(periodId) + "/readiness")
+        }.getOrNull() ?: return null
+        val reply = runCatching { transport.getJson(path, sess.token) }
             .getOrNull() ?: return null
         if (reply.status != 200) return null
         return runCatching {
             val j = JSONObject(reply.body)
+            val exactMatch =
+                j.getBoolean("period_matches_requested") &&
+                j.getString("series_id") == seriesId &&
+                j.getString("period_id") == periodId
             ServerReadiness(
                 active = j.getBoolean("active"),
                 contactSelected = j.getBoolean("contact_selected"),
                 contactVerified = j.getBoolean("contact_verified"),
                 hasRegisteredPeriod = j.getBoolean("has_registered_period"),
-                ready = j.getBoolean("ready"),
+                ready = j.getBoolean("ready") && exactMatch,
             )
         }.getOrNull()
     }
