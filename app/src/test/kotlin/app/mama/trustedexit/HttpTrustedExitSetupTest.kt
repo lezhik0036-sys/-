@@ -70,6 +70,32 @@ class HttpTrustedExitSetupTest {
     }
 
     @Test
+    fun provision_does_not_claim_ready_for_unrelated_period() {
+        server.verified = true
+        server.periodMatchesRequested = false
+        val result = setup().provision(spec) as HttpTrustedExitSetup.Result.Provisioned
+        assertEquals(false, result.readiness!!.ready)
+        assertEquals(result.seriesId, storedContext!!.seriesId)
+        assertEquals(result.periodId, storedContext!!.periodId)
+    }
+
+    @Test
+    fun provision_rejects_mismatched_period_identity_even_if_server_says_ready() {
+        server.verified = true
+        server.echoWrongPeriod = true
+        val result = setup().provision(spec) as HttpTrustedExitSetup.Result.Provisioned
+        assertEquals(false, result.readiness!!.ready)
+    }
+
+    @Test
+    fun provision_refuses_to_use_legacy_series_wide_readiness() {
+        server.verified = true
+        server.legacyReadinessOnly = true
+        val result = setup().provision(spec) as HttpTrustedExitSetup.Result.Provisioned
+        assertNull(result.readiness)
+    }
+
+    @Test
     fun provision_midSequenceFailure_storesNoContext() {
         server.failActivate = true
         val r = setup().provision(spec)
@@ -123,6 +149,11 @@ class HttpTrustedExitSetupTest {
     private inner class FakeSetupServer : AccountHttpTransport {
         val order = mutableListOf<String>()
         var verified = false
+        var periodMatchesRequested = true
+        var echoWrongPeriod = false
+        var legacyReadinessOnly = false
+        var createdSeriesId: String? = null
+        var createdPeriodId: String? = null
         var badIdFor: String? = null
         var failActivate = false
         var contactsFirst401 = false
@@ -138,8 +169,10 @@ class HttpTrustedExitSetupTest {
                 }
                 path == "/v1/setup/series" -> {
                     order += "series"
+                    val id = if (badIdFor == "series") "invalid" else UUID.randomUUID().toString()
+                    createdSeriesId = id
                     HttpReply(200, JSONObject()
-                        .put("series_id", if (badIdFor == "series") "invalid" else UUID.randomUUID().toString()).put("status", "draft").toString())
+                        .put("series_id", id).put("status", "draft").toString())
                 }
                 path.endsWith("/contact") -> {
                     order += "contact"
@@ -152,8 +185,10 @@ class HttpTrustedExitSetupTest {
                 }
                 path.endsWith("/periods") -> {
                     order += "periods"
+                    val id = if (badIdFor == "period") "" else UUID.randomUUID().toString()
+                    createdPeriodId = id
                     HttpReply(200, JSONObject()
-                        .put("period_id", if (badIdFor == "period") "" else UUID.randomUUID().toString()).put("status", "registered").toString())
+                        .put("period_id", id).put("status", "registered").toString())
                 }
                 else -> HttpReply(404, "{}")
             }
@@ -161,8 +196,13 @@ class HttpTrustedExitSetupTest {
 
         override fun getJson(path: String, bearer: String?): HttpReply {
             if (bearer.isNullOrEmpty()) return HttpReply(401, "{}")
-            if (!path.endsWith("/readiness")) return HttpReply(404, "{}")
+            if (legacyReadinessOnly) return HttpReply(404, "{}")
+            val expected = "/v1/setup/series/$createdSeriesId/periods/$createdPeriodId/readiness"
+            if (path != expected) return HttpReply(404, "{}")
             return HttpReply(200, JSONObject()
+                .put("series_id", createdSeriesId)
+                .put("period_id", if (echoWrongPeriod) UUID.randomUUID().toString() else createdPeriodId)
+                .put("period_matches_requested", periodMatchesRequested)
                 .put("active", true).put("contact_selected", true)
                 .put("contact_verified", verified)
                 .put("has_registered_period", true)
