@@ -61,6 +61,30 @@ jobs:
               raise SystemExit("Pilot backend requires a publicly qualified DNS hostname")
           print("Real-server pilot hostname configured; no fake-backend fallback.")
           PY
+      # A configured URL is not proof that FastAPI is actually running there.
+      # Refuse to publish a misleading real-server APK if TLS, routing or the
+      # MAMA API itself is unavailable. This probe never triggers SMS.
+      - name: Probe real FastAPI HTTPS health before packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --connect-timeout 8 --max-time 20 --retry 2 --retry-delay 1 \
+            --output /tmp/mama-api-health.json "${FASTAPI_URL%/}/health"
+          python3 - <<'PY'
+          import json
+          with open("/tmp/mama-api-health.json", "rb") as handle:
+              body = handle.read(4097)
+          if len(body) > 4096:
+              raise SystemExit("MAMA FastAPI health reply is unexpectedly large")
+          try:
+              health = json.loads(body)
+          except (ValueError, UnicodeDecodeError):
+              raise SystemExit("MAMA FastAPI health reply is not valid JSON")
+          if not isinstance(health, dict) or health.get("status") != "ok" or health.get("service") != "mama-api":
+              raise SystemExit("HTTPS endpoint is not the expected MAMA FastAPI service")
+          print("MAMA FastAPI HTTPS health: PASS (does not imply OTP delivery readiness)")
+          PY
       - name: Build installable non-test Pilot APK
         run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" --console=plain
       - name: Verify NO test codes or simulated credits
