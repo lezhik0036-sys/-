@@ -2,18 +2,22 @@ package app.mama.backend
 
 import app.mama.backend.api.ErrorResponse
 import app.mama.backend.api.Readiness
+import app.mama.backend.api.contactVerificationDispatchRoutes
 import app.mama.backend.api.readinessRoutes
 import app.mama.backend.api.trustedExitRoutes
 import app.mama.backend.auth.GrantVerifier
 import app.mama.backend.auth.ReceiptSigner
 import app.mama.backend.db.JdbcDb
 import app.mama.backend.trustedexit.ContactDestinationResolver
+import app.mama.backend.trustedexit.ContactVerificationDispatchMac
+import app.mama.backend.trustedexit.ContactVerificationDispatchService
 import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
 import app.mama.backend.trustedexit.EvidenceSubmitter
 import app.mama.backend.trustedexit.IngestProof
 import app.mama.backend.trustedexit.OtpHasher
 import app.mama.backend.trustedexit.OtpRepository
 import app.mama.backend.trustedexit.SecureTrustedExitService
+import app.mama.backend.trustedexit.SmsRuProvider
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.gson.gson
 import io.ktor.server.application.Application
@@ -39,6 +43,13 @@ class ServerDeps(
      * unlocks Android.
      */
     val evidence: EvidenceSubmitter = EvidenceSubmitter(IngestProof.fromEnv(null)),
+    /**
+     * The private contact-verification dispatch (FastAPI -> Ktor), **disabled by
+     * default** (null): the route is mounted only when a >= 32-byte dispatch secret
+     * AND a real SMS provider are configured. It delivers a FastAPI-issued one-time
+     * code to the trusted contact's phone and never verifies, returns or logs it.
+     */
+    val contactDispatch: ContactVerificationDispatchService? = null,
 )
 
 /**
@@ -114,6 +125,31 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
     val evidence = EvidenceSubmitter(ingest)
     log.info("evidence ingest HMAC configured: ${ingest.configured}; delivery transport: disabled")
 
+    // Private contact-verification dispatch (FastAPI -> Ktor), DISABLED by default.
+    // Built only when a >= 32-byte dispatch secret AND the real SMS provider are both
+    // configured; it delivers a FastAPI-issued one-time code to the contact's phone,
+    // with a verification-specific message, and never logs the code. The secret and
+    // the SMS key live only in the server environment — never in Git, the APK or logs.
+    val dispatchMac = ContactVerificationDispatchMac.fromEnv(System.getenv("MAMA_CONTACT_DISPATCH_SECRET"))
+    val verificationSms = System.getenv(ENV_SMSRU_API_ID)?.takeIf { it.isNotBlank() }?.let {
+        SmsRuProvider(message = { code ->
+            "MAMA: код подтверждения номера — $code. Введите его, чтобы подтвердить, что этот номер " +
+                "принадлежит вам как доверенному контакту. Никому больше не сообщайте этот код."
+        })
+    }
+    val contactDispatch = if (dispatchMac.configured && verificationSms != null) {
+        ContactVerificationDispatchService(
+            mac = dispatchMac,
+            send = ContactVerificationDispatchService.fromSmsProvider(verificationSms),
+        )
+    } else {
+        null
+    }
+    log.info(
+        "contact-verification dispatch: ${if (contactDispatch != null) "enabled" else "disabled"} " +
+            "(secret=${dispatchMac.configured}, sms=${verificationSms != null})",
+    )
+
     return ServerDeps(
         service,
         Readiness(
@@ -128,6 +164,7 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
         ),
         trustedProxies,
         evidence,
+        contactDispatch,
     )
 }
 
@@ -142,6 +179,7 @@ fun Application.module(deps: ServerDeps) {
     }
     routing {
         trustedExitRoutes(deps.service, deps.trustedProxies)
+        contactVerificationDispatchRoutes(deps.contactDispatch)
         readinessRoutes(deps.readiness)
     }
 }
