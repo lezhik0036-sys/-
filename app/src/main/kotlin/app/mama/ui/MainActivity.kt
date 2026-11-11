@@ -81,6 +81,14 @@ class MainActivity : Activity() {
     internal var manualContact = false
     internal var agreed = false
 
+    /**
+     * A real-server Trusted Exit preparation (provision + contact verification +
+     * readiness refresh) is running off the main thread for the current start.
+     * Guards against a second tap spawning a duplicate provisioning / a second
+     * verification SMS before the first attempt has persisted its ExitContext.
+     */
+    internal var trustedExitPreparing = false
+
     /** "Всё готово": the full terms of the series are shown (they are one tap away otherwise). */
     internal var termsOpen = false
 

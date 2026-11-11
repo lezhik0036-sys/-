@@ -123,6 +123,28 @@ object MamaTrustedExit {
 
     /** The persisted provisioned-context store, for the setup/provisioning step to write. */
     fun contextStore(context: Context): FileExitContextStore = FileExitContextStore(context)
+
+    /**
+     * The idempotent pilot driver the setup UI runs OFF the main thread to turn a
+     * user's choices into REAL server readiness: a fresh attempt provisions the
+     * series/contact/exact period and asks the server to verify the contact (real
+     * SMS, server-side); a retry/cold start with a persisted [ExitContext] never
+     * re-provisions and never re-sends — it only refreshes the exact-period
+     * readiness. Both paths record the result into [TrustedExitReadinessGate], so
+     * the main-thread lock-start gate ([TrustedExit.ready]) sees it. Null when not
+     * configured or the device key is unavailable (fail-closed): the UI then keeps
+     * BRICK out instead of starting a lock with no server way out. A no-SIM Wi-Fi
+     * device walks this exact HTTP flow; no telephony is used.
+     */
+    fun pilotController(): TrustedExitPilotController? {
+        val ctx = appContext ?: return null
+        val setup = setup() ?: return null
+        return TrustedExitPilotController.create(
+            context = FileExitContextStore(ctx),
+            orchestrator = TrustedExitPilotOrchestrator.create(setup, ::refreshReadiness),
+            refreshReadiness = ::refreshReadiness,
+        )
+    }
 }
 
 /**
