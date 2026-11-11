@@ -10,6 +10,7 @@ import java.util.Base64
 import java.util.UUID
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -138,6 +139,37 @@ class HttpTrustedExitBackendTest {
         assertEquals(1, server.sendCount)
         // No malformed server UUID has been saved in the durable map.
         assertNull(keyStore.loadOrCreate("invalid-response-id").requestId)
+    }
+
+    @Test
+    fun unknownRequestStatusDoesNotClaimSMSAcceptedOrActionableCode() {
+        server.statusOverride = "UNEXPECTED_SERVER_STATUS"
+        val result = create("new-status")
+        assertEquals(
+            CreateChallengeResult.Failed("unknown-request-status"),
+            result,
+        )
+        // The idempotency mapping is still durable: a retry cannot create
+        // a second SMS just because the status vocabulary was unfamiliar.
+        assertNotNull(keyStore.loadOrCreate("new-status").requestId)
+        assertEquals(
+            CreateChallengeResult.Failed("unknown-request-status"),
+            create("new-status"),
+        )
+        assertEquals(1, server.sendCount)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun ambiguousResponseReconciliationAlsoRefusesUnknownStatus() {
+        server.ambiguousFirstRequest = true
+        server.statusOverride = "FUTURE_UNKNOWN_STATUS"
+        val first = create("ambiguous-status")
+        assertEquals(CreateChallengeResult.Failed("unknown-request-status"), first)
+        val second = create("ambiguous-status")
+        assertEquals(CreateChallengeResult.Failed("unknown-request-status"), second)
+        assertEquals(1, server.sendCount)
+        assertEquals(1, server.requestCount)
     }
 
     @Test
@@ -274,6 +306,7 @@ class HttpTrustedExitBackendTest {
         var otp = "12345"
         var ambiguousFirstRequest = false
         var invalidRequestId = false
+        var statusOverride: String? = null
         var proofFirst401 = false
         var verifyReturnsPendingThenExit = false
         var readinessReady = false
@@ -320,7 +353,8 @@ class HttpTrustedExitBackendTest {
                     // Idempotency / recovery short-circuit (no re-prove, no re-send).
                     byKey[key]?.let { rid ->
                         return HttpReply(200, JSONObject()
-                            .put("request_id", rid).put("status", clientStatus(rows[rid]!!.status)).toString())
+                            .put("request_id", rid)
+                            .put("status", statusOverride ?: clientStatus(rows[rid]!!.status)).toString())
                     }
                     val proofId = j.optString("proof_id", "")
                     val msg = proofs[proofId] ?: return HttpReply(403, "{}")
@@ -336,7 +370,7 @@ class HttpTrustedExitBackendTest {
                     rows[rid] = Row("dispatched"); byKey[key] = rid
                     HttpReply(200, JSONObject()
                         .put("request_id", if (invalidRequestId) "wrong-request-id" else rid)
-                        .put("status", "code_sent").toString())
+                        .put("status", statusOverride ?: "code_sent").toString())
                 }
                 "/v1/trusted-exit/verify" -> {
                     val rid = j.getString("request_id")
@@ -372,7 +406,7 @@ class HttpTrustedExitBackendTest {
                 val r = rows[rid] ?: return HttpReply(404, "{}")
                 if (r.accepted && r.status != "exited") r.status = "exited" // receipt now admitted
                 return HttpReply(200, JSONObject()
-                    .put("request_id", rid).put("status", clientStatus(r.status))
+                    .put("request_id", rid).put("status", statusOverride ?: clientStatus(r.status))
                     .put("verify_attempts", r.attempts)
                     .put("attempts_remaining", maxOf(0, MAX - r.attempts)).toString())
             }

@@ -228,7 +228,7 @@ class HttpTrustedExitBackend(
             "pending" -> CreateChallengeResult.Created(handle(requestId, kind), DeliveryStatus.REQUEST_CREATED)
             "exit_confirmed" -> CreateChallengeResult.Created(handle(requestId, kind), DeliveryStatus.SMS_ACCEPTED)
             "failed", "cancelled" -> CreateChallengeResult.Failed("request-$status")
-            else -> CreateChallengeResult.Created(handle(requestId, kind), DeliveryStatus.REQUEST_CREATED)
+            else -> CreateChallengeResult.Failed("unknown-request-status")
         }
 
     /** Replay /request with the SAME idempotency key to recover a durable row after a 503. */
@@ -262,7 +262,7 @@ class HttpTrustedExitBackend(
             "exit_confirmed" -> CreateChallengeResult.Created(handle(requestId, kind), DeliveryStatus.SMS_ACCEPTED)
             "pending" -> CreateChallengeResult.Created(handle(requestId, kind), DeliveryStatus.REQUEST_CREATED)
             "failed", "cancelled" -> CreateChallengeResult.Failed("request-${view.status}")
-            else -> CreateChallengeResult.Created(handle(requestId, kind), DeliveryStatus.REQUEST_CREATED)
+            else -> CreateChallengeResult.Failed("unknown-request-status")
         }
     }
 
