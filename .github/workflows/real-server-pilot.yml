@@ -1,0 +1,85 @@
+name: real-server-pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: "HTTPS FastAPI base URL (required; no debug/fake backend)"
+        required: true
+        type: string
+  push:
+    branches:
+      - release/android-real-server-pilot-no-fake
+
+permissions:
+  contents: read
+
+jobs:
+  pilot-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      # Set repository variable MAMA_FASTAPI_BASE_URL for branch builds, or
+      # supply backend_url when manually dispatching from GitHub Actions.
+      FASTAPI_URL: ${{ inputs.backend_url || vars.MAMA_FASTAPI_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Require an explicitly configured HTTPS server
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${FASTAPI_URL:-}" ]; then
+            echo "::error::MAMA_FASTAPI_BASE_URL is not configured. Real Pilot cannot be built without the actual FastAPI HTTPS hostname."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os, urllib.parse
+          value = os.environ["FASTAPI_URL"]
+          u = urllib.parse.urlsplit(value)
+          if (u.scheme != "https" or not u.hostname or u.username or u.password
+              or u.path not in ("", "/") or u.query or u.fragment):
+              raise SystemExit("Invalid HTTPS FastAPI base URL: no credentials, path, query or fragment allowed")
+          print("HTTPS FastAPI URL configured; no fake-backend fallback.")
+          PY
+      - name: Build installable non-test Pilot APK
+        run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" --console=plain
+      - name: Verify NO test codes or simulated credits
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=$(find app/build/generated -path '*pilot*' -name BuildConfig.java | head -n 1)
+          test -n "$f" && test -s "$f"
+          grep -q 'TEST_MODE = false' "$f"
+          grep -q 'PILOT_TEST_CREDITS = false' "$f"
+          grep -Fq 'MAMA_BACKEND_BASE_URL = "https://' "$f"
+          echo "Real Pilot: TEST_MODE=false, PILOT_TEST_CREDITS=false, HTTPS backend embedded."
+      - name: Audit APK signature and permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/pilot/app-pilot.apk
+          test -s "$apk"
+          tools_dir="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)"
+          "${tools_dir}apksigner" verify --verbose "$apk"
+          "${tools_dir}aapt2" dump permissions "$apk" > /tmp/pilot-permissions.txt
+          if grep -Fq 'android.permission.SEND_SMS' /tmp/pilot-permissions.txt; then
+            echo "::error::Real Pilot must send SMS through Ktor, never through Android."
+            exit 1
+          fi
+      - name: Archive exact APK and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp app/build/outputs/apk/pilot/app-pilot.apk out/MAMA-0.8.23-real-server-pilot.apk
+          (cd out && sha256sum MAMA-0.8.23-real-server-pilot.apk | tee MAMA-0.8.23-real-server-pilot.apk.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAMA-0.8.23-real-server-pilot
+          path: out/*
+          retention-days: 14
