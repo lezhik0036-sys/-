@@ -1,3 +1,4 @@
+import java.net.URI
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -11,6 +12,24 @@ plugins {
 // enforced at runtime); it is not a secret and never enables local OTP.
 val mamaBackendBaseUrl: String = (project.findProperty("mamaBackendBaseUrl") as String?)?.trim().orEmpty()
 
+// Real-server PILOT builds must fail at build time without an explicitly
+// configured HTTPS FastAPI host. Regular debug CI remains offline/fake-only.
+val pilotBuildRequested = gradle.startParameter.taskNames.any {
+    it.substringAfterLast(':').contains("Pilot", ignoreCase = true)
+}
+if (pilotBuildRequested) {
+    val uri = runCatching { URI(mamaBackendBaseUrl) }.getOrNull()
+    require(
+        uri != null &&
+            uri.scheme.equals("https", ignoreCase = true) &&
+            !uri.host.isNullOrBlank() &&
+            uri.userInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
+            (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/")
+    ) {
+        "MAMA Pilot requires -PmamaBackendBaseUrl=https://real-fastapi-host (HTTPS, no credentials/path/query/fragment)."
+    }
+}
+
 android {
     namespace = "app.mama"
     compileSdk = 35
@@ -19,8 +38,8 @@ android {
         applicationId = "app.mama"
         minSdk = 26
         targetSdk = 35
-        versionCode = 54
-        versionName = "0.8.22-integration2"
+        versionCode = 56
+        versionName = "0.8.24-pilot-int1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -43,6 +62,18 @@ android {
             buildConfigField("boolean", "TEST_MODE", "false")
             buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
+        // Real-server installable pilot (debug key for internal distribution ONLY).
+        // NO local OTP, no TEST CODE and no simulated credits; backend URL is
+        // mandatory and validated above when assemblePilot is requested.
+        create("pilot") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
+            buildConfigField("boolean", "TEST_MODE", "false")
+            buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
+        }
+
     }
 
     testOptions {
