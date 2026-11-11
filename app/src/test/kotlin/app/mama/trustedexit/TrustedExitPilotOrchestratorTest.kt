@@ -147,16 +147,44 @@ class TrustedExitPilotOrchestratorTest {
     }
 
     @Test fun verification200_pending_isRequested() {
-        val d = client(verifyServer { HttpReply(200, JSONObject().put("status", "pending").toString()) })
+        val d = client(verifyServer { HttpReply(200, JSONObject().put("contact_id", cid).put("status", "pending").toString()) })
             .requestContactVerification(cid)
         assertEquals(HttpTrustedExitSetup.VerificationDispatch.Requested("pending"), d)
     }
 
     @Test fun verification202_unknownDispatch_isRequested() {
         val d = client(verifyServer {
-            HttpReply(202, JSONObject().put("status", "pending").put("dispatch", "unknown").toString())
+            HttpReply(202, JSONObject().put("contact_id", cid).put("status", "pending").put("dispatch", "unknown").toString())
         }).requestContactVerification(cid)
         assertTrue(d is HttpTrustedExitSetup.VerificationDispatch.Requested)
+    }
+
+    @Test fun verification200_missingContactId_isRejected() {
+        val result = client(verifyServer { HttpReply(200, """{"status":"pending"}""") })
+            .requestContactVerification(cid)
+        assertEquals(HttpTrustedExitSetup.VerificationDispatch.Failed("invalid-response"), result)
+    }
+
+    @Test fun verification200_foreignContactId_isRejected() {
+        val foreign = UUID.randomUUID().toString()
+        val result = client(verifyServer {
+            HttpReply(200, JSONObject().put("contact_id", foreign).put("status", "pending").toString())
+        }).requestContactVerification(cid)
+        assertEquals(HttpTrustedExitSetup.VerificationDispatch.Failed("invalid-response"), result)
+    }
+
+    @Test fun verification200_unknownStatus_isRejected() {
+        val result = client(verifyServer {
+            HttpReply(200, JSONObject().put("contact_id", cid).put("status", "ready").toString())
+        }).requestContactVerification(cid)
+        assertEquals(HttpTrustedExitSetup.VerificationDispatch.Failed("invalid-response"), result)
+    }
+
+    @Test fun verification202_invalidStatus_isRejected() {
+        val result = client(verifyServer {
+            HttpReply(202, JSONObject().put("contact_id", cid).put("status", "verified").toString())
+        }).requestContactVerification(cid)
+        assertEquals(HttpTrustedExitSetup.VerificationDispatch.Failed("invalid-response"), result)
     }
 
     @Test fun verification503_isUnavailable() {
@@ -173,7 +201,7 @@ class TrustedExitPilotOrchestratorTest {
         var first = true
         val d = client(verifyServer { _ ->
             if (first) { first = false; HttpReply(401, "{}") }
-            else HttpReply(200, JSONObject().put("status", "pending").toString())
+            else HttpReply(200, JSONObject().put("contact_id", cid).put("status", "pending").toString())
         }).requestContactVerification(cid)
         assertEquals(HttpTrustedExitSetup.VerificationDispatch.Requested("pending"), d)
     }
