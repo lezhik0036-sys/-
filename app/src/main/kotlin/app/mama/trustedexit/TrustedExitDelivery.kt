@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import app.mama.billing.FeatureFlags
+import app.mama.account.MamaAccount
 
 /**
  * The single point the app calls for Trusted Exit, over the server-authoritative
@@ -95,11 +96,15 @@ object TestCodeSink {
 
     /** Records the code delivered for [challengeId] (the simulated SMS body). */
     fun record(challengeId: String, code: String) {
+        // A real-server debug build must never capture a client-visible
+        // simulated OTP, even if a test provider is accidentally invoked.
+        if (MamaAccount.realBackendRequested) return
         last = challengeId to code
     }
 
     /** The code for [challengeId] — only ever in a TEST build; null otherwise. */
-    fun codeFor(challengeId: String?): String? = visibleCode(FeatureFlags.TEST_MODE, challengeId)
+    fun codeFor(challengeId: String?): String? =
+        visibleCode(FeatureFlags.TEST_MODE && !MamaAccount.realBackendRequested, challengeId)
 
     /**
      * The gate that keeps a production build from ever showing a TEST CODE: with

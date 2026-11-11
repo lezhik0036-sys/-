@@ -9,6 +9,7 @@ import app.mama.core.LockState
 import app.mama.core.SeriesKind
 import app.mama.core.SessionMode
 import app.mama.core.TrustedContact
+import app.mama.account.MamaAccount
 import app.mama.platform.Mama
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -100,6 +101,81 @@ class TestSafetyTest {
         assertEquals(Mama.SeriesStart.TrustedExitUnavailable, Mama.startSeries(context, SeriesKind.THREE, window, contact, SessionMode.SLEEP))
         assertNull("no series was scheduled", Mama.series(context))
         assertEquals("the phone was not locked", LockState.Free, Mama.state(context))
+    }
+
+    // The same gate protects the field-test lock: startTest is a real strict lock,
+    // so it must not start without a ready exit (no 15-minute trap without a way out).
+    @Test
+    fun `a test lock does not start when Trusted Exit is not ready`() {
+        TrustedExit.readiness = { false }
+        assertEquals(Mama.TestStart.TrustedExitUnavailable, Mama.startTest(context, contact, zone, SessionMode.SLEEP))
+        assertNull("no session was created", Mama.session(context))
+        assertEquals("the phone was not locked", LockState.Free, Mama.state(context))
+    }
+
+    @Test
+    fun `direct legacy start refuses real-server build without Trusted Exit readiness`() {
+        // A legacy entry point must not bypass the series/test preflight even
+        // when callers provide their own LockPlan.
+        MamaAccount.configure(context, "https://staging.mama.example")
+        TrustedExit.readiness = { false }
+        try {
+            val plan = LockPlan(
+                Instant.now().minus(Duration.ofMinutes(1)),
+                Instant.now().plus(Duration.ofMinutes(15)), zone,
+            )
+            assertEquals(
+                Mama.StartResult.TrustedExitUnavailable,
+                Mama.start(context, plan, contact),
+            )
+            assertNull("no legacy lock was created", Mama.session(context))
+            assertEquals(LockState.Free, Mama.state(context))
+        } finally {
+            MamaAccount.configure(context, "")
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `Android 11 configured server never allows legacy strict lock through fake exit`() {
+        // API 30 is unsupported for the real device key, but that must be
+        // treated as a closed gate, not as permission to use a debug OTP.
+        MamaAccount.configure(context, "https://staging.mama.example")
+        TrustedExit.readiness = { false }
+        try {
+            assertTrue(MamaAccount.realBackendRequested)
+            assertEquals(
+                Mama.StartResult.TrustedExitUnavailable,
+                Mama.start(
+                    context,
+                    LockPlan(
+                        Instant.now().minus(Duration.ofMinutes(1)),
+                        Instant.now().plus(Duration.ofMinutes(15)),
+                        zone,
+                    ),
+                    contact,
+                ),
+            )
+            assertNull(Mama.session(context))
+        } finally {
+            MamaAccount.configure(context, "")
+        }
+    }
+
+    @Test
+    fun `debug local OTP is hidden once real HTTPS backend is requested`() {
+        TestCodeSink.record("fake-existing", "54321")
+        MamaAccount.configure(context, "https://staging.mama.example")
+        try {
+            // Even if a previous debug fake request was cached, switching
+            // to a configured real backend must never show the test code.
+            assertNull(TestCodeSink.codeFor("fake-existing"))
+            TestCodeSink.record("fake-new", "12345")
+            assertNull(TestCodeSink.codeFor("fake-new"))
+        } finally {
+            MamaAccount.configure(context, "")
+            TestCodeSink.clear()
+        }
     }
 
     // Production gate: with the TEST flag off, no recorded code is ever revealed — a release build shows no TEST CODE.
