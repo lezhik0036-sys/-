@@ -35,13 +35,31 @@ class HttpTrustedExitSetup(
     private val context: ExitContextWriter,
 ) {
     sealed interface Result {
-        /** Provisioned; the series + period are stored and the readiness is included. */
+        /** Provisioned; the series + period are stored and the readiness is included.
+         *  [contactId] is the server-owned id to request verification for. */
         data class Provisioned(
-            val seriesId: String, val periodId: String, val readiness: ServerReadiness?,
+            val contactId: String, val seriesId: String, val periodId: String,
+            val readiness: ServerReadiness?,
         ) : Result
 
         /** Could not provision now (offline / transport / server / malformed). Fail-closed. */
         data class Failed(val reason: String) : Result
+    }
+
+    /** Outcome of asking the server to verify a contact (POST /contacts/{id}/verification).
+     *  NEVER verifies the contact itself and NEVER sends a code the app can check:
+     *  the trusted person answers the provider, and the server records 'verified'. */
+    sealed interface VerificationDispatch {
+        /** The server accepted the request (status e.g. "pending"); the contact is NOT
+         *  yet verified — readiness stays false until the provider proves possession. */
+        data class Requested(val status: String) : VerificationDispatch
+
+        /** The verification provider is disabled/unprovisioned (503): no SMS was sent.
+         *  Expected in the pilot until live delivery is authorized. */
+        object Unavailable : VerificationDispatch
+
+        /** Could not request now (not owned / transport / server / malformed). Fail-closed. */
+        data class Failed(val reason: String) : VerificationDispatch
     }
 
     /** Create contact -> draft series -> select -> activate -> register period -> store context. */
@@ -91,7 +109,29 @@ class HttpTrustedExitSetup(
             return Result.Failed("context-storage")
         }
 
-        return Result.Provisioned(seriesId, periodId, readiness(seriesId, periodId))
+        return Result.Provisioned(contactId, seriesId, periodId, readiness(seriesId, periodId))
+    }
+
+    /**
+     * Ask the server to verify that the trusted person controls [contactId]'s number
+     * (POST /v1/setup/contacts/{id}/verification). This NEVER marks the contact verified
+     * and NEVER returns a code the app could check locally — the provider delivers the
+     * challenge and the trusted person proves possession back to the server. A disabled
+     * provider answers 503 (no SMS). One 401 re-auth per call; fail-closed otherwise.
+     * Call OFF the main thread.
+     */
+    fun requestContactVerification(contactId: String): VerificationDispatch {
+        val path = runCatching {
+            PATH_CONTACTS + "/" + java.util.UUID.fromString(contactId) + "/verification"
+        }.getOrNull() ?: return VerificationDispatch.Failed("bad-contact-id")
+        val reply = authed(path, "{}") ?: return VerificationDispatch.Failed("transport")
+        return when (reply.status) {
+            200, 202 -> runCatching {
+                VerificationDispatch.Requested(JSONObject(reply.body).optString("status", "pending"))
+            }.getOrDefault(VerificationDispatch.Requested("pending"))
+            503 -> VerificationDispatch.Unavailable
+            else -> VerificationDispatch.Failed("status-${reply.status}")
+        }
     }
 
     /**
