@@ -102,13 +102,26 @@ class TrustedExitPilotOrchestratorTest {
         assertEquals(TrustedExitPilotOrchestrator.State.Failed("verify-status-404"), s)
     }
 
-    @Test fun droppedReadinessRefresh_fallsBackToProvisioningReadiness() {
+    @Test fun droppedReadinessRefresh_cannotAuthorizeLockFromCachedSnapshot() {
         val s = orchestrator(
             provisioned(readiness(ready = true)),
             HttpTrustedExitSetup.VerificationDispatch.Requested("pending"),
-            null,  // refresh poll dropped
+            null,  // refresh poll dropped; cached approval may now be revoked
         ).run(spec)
-        assertEquals(TrustedExitPilotOrchestrator.State.Ready("s-1", "p-1"), s)
+        assertEquals(
+            TrustedExitPilotOrchestrator.State.Failed("readiness-refresh-unavailable"), s,
+        )
+    }
+
+    @Test fun inconsistentReadyFlag_withoutVerifiedContact_doesNotAuthorizeLock() {
+        val s = orchestrator(
+            provisioned(readiness(ready = false)),
+            HttpTrustedExitSetup.VerificationDispatch.Requested("pending"),
+            readiness(ready = true, verified = false),
+        ).run(spec)
+        assertEquals(
+            TrustedExitPilotOrchestrator.State.AwaitingVerification("s-1", "p-1"), s,
+        )
     }
 
     // --- requestContactVerification HTTP mapping -----------------------------
