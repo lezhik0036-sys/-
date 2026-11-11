@@ -1,3 +1,4 @@
+import java.net.URI
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -17,7 +18,7 @@ val pilotBuildRequested = gradle.startParameter.taskNames.any {
     it.substringAfterLast(':').contains("Pilot", ignoreCase = true)
 }
 if (pilotBuildRequested) {
-    val uri = runCatching { java.net.URI(mamaBackendBaseUrl) }.getOrNull()
+    val uri = runCatching { URI(mamaBackendBaseUrl) }.getOrNull()
     require(
         uri != null &&
             uri.scheme.equals("https", ignoreCase = true) &&
