@@ -52,10 +52,15 @@ class TrustedExitPilotOrchestrator(
             is HttpTrustedExitSetup.Result.Provisioned -> r
         }
         val dispatch = requestVerification(provisioned.contactId)
-        // Authoritative, exact-period readiness recorded off the main thread; fall back
-        // to the provisioning readiness only if the refresh poll dropped.
-        val readiness = refreshReadiness() ?: provisioned.readiness
-        if (readiness != null && readiness.ready) {
+        // A failed network refresh MUST NOT turn a cached/provisioning snapshot
+        // into permission to start BRICK: the contact or period may have been
+        // revoked after provisioning. Only a fresh exact-period server response
+        // can authorize the lock-start UI. An unavailable refresh fails closed.
+        val readiness = refreshReadiness()
+            ?: return State.Failed("readiness-refresh-unavailable")
+        if (readiness.ready && readiness.active && readiness.contactSelected &&
+            readiness.contactVerified && readiness.hasRegisteredPeriod
+        ) {
             return State.Ready(provisioned.seriesId, provisioned.periodId)
         }
         return when (dispatch) {
