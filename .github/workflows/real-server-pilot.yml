@@ -85,6 +85,45 @@ jobs:
               raise SystemExit("HTTPS endpoint is not the expected MAMA FastAPI service")
           print("MAMA FastAPI HTTPS health: PASS (does not imply OTP delivery readiness)")
           PY
+      # /health is also present on the OLD backend. Require the real device
+      # account, setup and OTP routes before a user-installable pilot is archived.
+      # Reading OpenAPI never registers an account or sends an SMS.
+      - name: Verify deployed account and Trusted Exit API contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --connect-timeout 8 --max-time 20 --retry 2 --retry-delay 1 \
+            --output /tmp/mama-api-contract.json "${FASTAPI_URL%/}/openapi.json"
+          python3 - <<'PY'
+          import json
+          with open("/tmp/mama-api-contract.json", "rb") as handle:
+              data = handle.read(524289)
+          if len(data) > 524288:
+              raise SystemExit("FastAPI OpenAPI response exceeds the audit size limit")
+          try:
+              contract = json.loads(data)
+          except (ValueError, UnicodeDecodeError):
+              raise SystemExit("Expected JSON from FastAPI OpenAPI endpoint")
+          paths = contract.get("paths", {}) if isinstance(contract, dict) else {}
+          required = {
+              "/v1/account/challenge": "post",
+              "/v1/account/register": "post",
+              "/v1/account/login": "post",
+              "/v1/setup/contacts": "post",
+              "/v1/setup/series": "post",
+              "/v1/trusted-exit/proof-challenges": "post",
+              "/v1/trusted-exit/request": "post",
+              "/v1/trusted-exit/verify": "post",
+              "/v1/trusted-exit/status/{request_id}": "get",
+          }
+          missing = [f"{method.upper()} {route}" for route, method in required.items()
+                     if method not in paths.get(route, {})]
+          if missing:
+              raise SystemExit("FastAPI live contract missing: " + ", ".join(missing))
+          print("Live MAMA account + Trusted Exit API contract: PASS")
+          print("NOTE: existence of API routes is NOT proof of SMS delivery or contact verification.")
+          PY
       - name: Build installable non-test Pilot APK
         run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" --console=plain
       - name: Verify NO test codes or simulated credits
