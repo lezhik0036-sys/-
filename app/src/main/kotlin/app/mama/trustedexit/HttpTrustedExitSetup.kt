@@ -127,8 +127,20 @@ class HttpTrustedExitSetup(
         val reply = authed(path, "{}") ?: return VerificationDispatch.Failed("transport")
         return when (reply.status) {
             200, 202 -> runCatching {
-                VerificationDispatch.Requested(JSONObject(reply.body).optString("status", "pending"))
-            }.getOrDefault(VerificationDispatch.Requested("pending"))
+                val json = JSONObject(reply.body)
+                val returnedContactId = json.getString("contact_id")
+                val returnedStatus = json.getString("status")
+                // The response must acknowledge exactly the contact we asked to verify.
+                // Missing/foreign contact IDs or unknown server statuses are not success.
+                if (returnedContactId != java.util.UUID.fromString(contactId).toString() ||
+                    returnedStatus !in setOf("pending", "verified") ||
+                    (reply.status == 202 && returnedStatus != "pending")
+                ) {
+                    VerificationDispatch.Failed("invalid-response")
+                } else {
+                    VerificationDispatch.Requested(returnedStatus)
+                }
+            }.getOrDefault(VerificationDispatch.Failed("invalid-response"))
             503 -> VerificationDispatch.Unavailable
             else -> VerificationDispatch.Failed("status-${reply.status}")
         }
