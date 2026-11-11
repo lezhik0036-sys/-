@@ -59,6 +59,22 @@ jobs:
         run: bash .github/scripts/robolectric-tests.sh
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain
+      # Compile the production-behavior Pilot variant on every PR. The
+      # unresolvable .invalid hostname is ONLY a Gradle wiring check; this
+      # APK is NEVER uploaded or released. A usable pilot is built only by
+      # real-server-pilot.yml with the genuine HTTPS FastAPI endpoint.
+      - name: Pilot variant compile and no-fake flags (unpublished dry run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :app:assemblePilot -PmamaBackendBaseUrl=https://example.invalid --console=plain
+          f=$(find app/build/generated -path '*pilot*' -name BuildConfig.java | head -n 1)
+          test -n "$f" && test -s "$f"
+          grep -q 'TEST_MODE = false' "$f"
+          grep -q 'PILOT_TEST_CREDITS = false' "$f"
+          grep -Fq 'MAMA_BACKEND_BASE_URL = "https://example.invalid"' "$f"
+          test -s app/build/outputs/apk/pilot/app-pilot.apk
+          echo "Pilot variant compiled; DRY RUN APK IS NOT PUBLISHED."
       - name: Release build has no test credits
         run: |
           ./gradlew :app:generateReleaseBuildConfig --console=plain
