@@ -38,13 +38,28 @@ jobs:
             exit 1
           fi
           python3 - <<'PY'
-          import os, urllib.parse
+          import ipaddress, os, urllib.parse
           value = os.environ["FASTAPI_URL"]
           u = urllib.parse.urlsplit(value)
-          if (u.scheme != "https" or not u.hostname or u.username or u.password
+          host = (u.hostname or "").rstrip(".").lower()
+          if (u.scheme != "https" or not host or u.username or u.password
               or u.path not in ("", "/") or u.query or u.fragment):
               raise SystemExit("Invalid HTTPS FastAPI base URL: no credentials, path, query or fragment allowed")
-          print("HTTPS FastAPI URL configured; no fake-backend fallback.")
+          # Reject CI placeholders, internal-only targets and IP literals.
+          # An APK pointing at any of these is not a usable real-server pilot.
+          forbidden_suffixes = (".invalid", ".test", ".example", ".localhost", ".local", ".internal")
+          if (host in ("localhost", "example.com", "example.org", "example.net",
+                       "test", "invalid", "internal") or host.endswith(forbidden_suffixes)):
+              raise SystemExit("Pilot backend cannot be a reserved/placeholder hostname")
+          try:
+              ipaddress.ip_address(host)
+          except ValueError:
+              pass
+          else:
+              raise SystemExit("Pilot backend requires a DNS hostname, not an IP literal")
+          if "." not in host:
+              raise SystemExit("Pilot backend requires a publicly qualified DNS hostname")
+          print("Real-server pilot hostname configured; no fake-backend fallback.")
           PY
       - name: Build installable non-test Pilot APK
         run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" --console=plain
