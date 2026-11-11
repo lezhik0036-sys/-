@@ -126,6 +126,20 @@ jobs:
           print("Live MAMA account + Trusted Exit API contract: PASS")
           print("NOTE: existence of API routes is NOT proof of SMS delivery or contact verification.")
           PY
+      # Verify the running API rejects unauthenticated account-data reads.
+      # This is a safe GET: no challenge issuance, SMS, or lock mutation.
+      - name: Verify deployed API rejects anonymous account access
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --proto '=https' --tlsv1.2 \
+            --connect-timeout 8 --max-time 20 \
+            --output /dev/null --write-out '%{http_code}' \
+            "${FASTAPI_URL%/}/v1/users/me")"
+          case "$code" in
+            401|403) echo "Anonymous account access denied: HTTP $code" ;;
+            *) echo "::error::Expected anonymous account access denial (401/403), got HTTP $code"; exit 1 ;;
+          esac
       - name: Build installable non-test Pilot APK
         run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" --console=plain
       - name: Verify NO test codes or simulated credits
