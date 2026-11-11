@@ -47,31 +47,39 @@ class SmsRuProvider(
             put("json", "1")
             if (!from.isNullOrBlank()) put("from", from!!)
         }
-        val reply = runCatching { transport.postForm(endpoint, form) }
-            .getOrElse {
-                log.warn("SMS.RU request failed for ${mask(to)}: ${it.message}")
-                return SmsResult.Failed("sms provider request failed")
-            }
+        // Transport timeout/reset is AMBIGUOUS: SMS.RU might have received
+        // the request even when our ACK was lost. Bubble up to the durable
+        // SENDING/UNKNOWN state in SecureTrustedExitService; do NOT mark failed
+        // and permit a paid second SMS with a rotated code.
+        val reply = transport.postForm(endpoint, form)
         return parse(reply, to)
     }
 
     /** Maps the SMS.RU JSON reply to a provider result. Never logs the code. */
     private fun parse(reply: HttpReply, to: String): SmsResult {
         if (reply.status !in 200..299) {
-            log.warn("SMS.RU HTTP ${reply.status} for ${mask(to)}")
-            return SmsResult.Failed("sms provider http ${reply.status}")
+            // On a 5xx or transport-level failure the provider MAY have sent
+            // before losing its ACK. Keep the durable attempt UNKNOWN.
+            if (reply.status >= 500 || reply.status < 400) {
+                throw IllegalStateException("SMS.RU response ambiguous")
+            }
+            return SmsResult.Failed("sms provider refused request")
         }
         val json = runCatching { JsonParser.parseString(reply.body).asJsonObject }
-            .getOrElse { return SmsResult.Failed("sms provider returned non-JSON") }
+            .getOrElse { throw IllegalStateException("SMS.RU response ambiguous") }
         val topOk = json.get("status")?.asString == "OK"
-        // Per-recipient status lives under sms["<number>"].status, with its sms_id.
-        val perSms = json.getAsJsonObject("sms")?.entrySet()?.firstOrNull()?.value?.asJsonObject
+        // Never use the FIRST sms map entry: a mismatched response could
+        // otherwise claim success for another person's number.
+        val perSms = runCatching { json.getAsJsonObject("sms")?.getAsJsonObject(to) }.getOrNull()
         val smsOk = perSms?.get("status")?.asString == "OK"
-        if (topOk && (perSms == null || smsOk)) {
-            val smsId = perSms?.get("sms_id")?.asString
+        if (topOk && smsOk) {
+            val smsId = perSms.get("sms_id")?.asString
             log.info("SMS.RU accepted a Trusted Exit code for ${mask(to)} (sms_id ${smsId ?: "n/a"})")
             return SmsResult.Accepted(DeliveryStatus.SMS_ACCEPTED, smsId)
         }
+        // An OK envelope with no matching recipient ACK is UNKNOWN, not
+        // proof that this contact was texted, and not proof of definite failure.
+        if (topOk) throw IllegalStateException("SMS.RU recipient acknowledgement missing")
         val detail = perSms?.get("status_text")?.asString
             ?: json.get("status_text")?.asString
             ?: "status_code ${json.get("status_code")?.asString ?: "?"}"
