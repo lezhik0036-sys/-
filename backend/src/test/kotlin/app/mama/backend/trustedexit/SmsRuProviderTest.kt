@@ -46,13 +46,15 @@ class SmsRuProviderTest {
     }
 
     @Test
-    fun `a network error or timeout is Failed, not a crash`() {
+    fun `a network error or timeout is ambiguous and cannot trigger resend`() {
         val throwing = object : HttpTransport {
             override fun postForm(url: String, form: Map<String, String>): HttpReply =
                 throw java.io.IOException("connection reset / timeout")
         }
         val p = SmsRuProvider(apiId = "test-key", transport = throwing)
-        assertTrue(p.send("79990000000", "88888") is SmsResult.Failed)
+        kotlin.test.assertFailsWith<java.io.IOException> {
+            p.send("79990000000", "88888")
+        }
     }
 
     @Test
@@ -77,9 +79,11 @@ class SmsRuProviderTest {
     }
 
     @Test
-    fun `a non-2xx reply is Failed`() {
+    fun `a 5xx reply is ambiguous rather than definitely unsent`() {
         val (_, p) = provider(HttpReply(500, "oops"))
-        assertTrue(p.send("79990000000", "44444") is SmsResult.Failed)
+        kotlin.test.assertFailsWith<IllegalStateException> {
+            p.send("79990000000", "44444")
+        }
     }
 
     @Test
@@ -99,9 +103,30 @@ class SmsRuProviderTest {
     }
 
     @Test
-    fun `a malformed JSON reply is Failed, not a crash`() {
+    fun `a malformed JSON reply is uncertain and cannot allow second SMS`() {
         val (_, p) = provider(HttpReply(200, "not json"))
-        assertTrue(p.send("79990000000", "77777") is SmsResult.Failed)
+        kotlin.test.assertFailsWith<IllegalStateException> {
+            p.send("79990000000", "77777")
+        }
+    }
+
+    @Test
+    fun `top level OK without exact recipient ACK cannot claim success`() {
+        val withoutSms = HttpReply(200, """{"status":"OK","status_code":100}""")
+        val foreignSms = HttpReply(200, """{"status":"OK","status_code":100,"sms":{"79990009999":{"status":"OK","sms_id":"wrong"}}}""")
+        for (reply in listOf(withoutSms, foreignSms)) {
+            val (_, p) = provider(reply)
+            kotlin.test.assertFailsWith<IllegalStateException> {
+                p.send("79990000000", "12345")
+            }
+        }
+    }
+
+    @Test
+    fun `only matching recipient explicit refusal counts as failed`() {
+        val reply = HttpReply(200, """{"status":"OK","sms":{"79990000000":{"status":"ERROR","status_code":207}}}""")
+        val (_, p) = provider(reply)
+        assertTrue(p.send("79990000000", "12345") is SmsResult.Failed)
     }
 
     @Test
