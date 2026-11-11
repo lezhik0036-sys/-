@@ -77,6 +77,10 @@ class SmsRuProvider(
             log.info("SMS.RU accepted a Trusted Exit code for ${mask(to)} (sms_id ${smsId ?: "n/a"})")
             return SmsResult.Accepted(DeliveryStatus.SMS_ACCEPTED, smsId)
         }
+        // A matching explicit rejection is a definite non-send.
+        if (topOk && perSms?.get("status")?.asString == "ERROR") {
+            return SmsResult.Failed("sms provider refused")
+        }
         // An OK envelope with no matching recipient ACK is UNKNOWN, not
         // proof that this contact was texted, and not proof of definite failure.
         if (topOk) throw IllegalStateException("SMS.RU recipient acknowledgement missing")
