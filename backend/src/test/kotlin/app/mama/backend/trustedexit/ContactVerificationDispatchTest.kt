@@ -241,11 +241,12 @@ class ContactVerificationDispatchTest {
     ): String =
         """{"user_id":"$userId","contact_id":"$contactId","phone":"$phone","challenge_id":"$challengeId","code":"$code"}"""
 
-    @Test fun `the in-memory idempotency store keeps the first outcome`() {
-        val store = InMemoryDispatchIdempotencyStore()
-        assertNull(store.get("c"))
-        store.put("c", "SMS_ACCEPTED")
-        store.put("c", "FAILED") // first write wins; a later outcome never overwrites
-        assertEquals("SMS_ACCEPTED", store.get("c"))
+    @Test fun `capacity refuses new sends without evicting previous outcomes`() {
+        val store = InMemoryDispatchIdempotencyStore(max = 1)
+        assertNull(store.reserve("c"))
+        assertEquals("UNKNOWN", store.reserve("c"))
+        store.complete("c", "SMS_ACCEPTED")
+        assertEquals("FAILED", store.reserve("another"))
+        assertEquals("SMS_ACCEPTED", store.reserve("c"))
     }
 }
