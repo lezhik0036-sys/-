@@ -30,6 +30,22 @@ import javax.crypto.spec.SecretKeySpec
  * provider + secret is an owner action, gated behind owner approval for paid SMS.
  */
 
+/**
+ * The user-facing Russian SMS for trusted-contact verification. **FINAL WORDING PENDING
+ * OWNER REVIEW (issue #78).** With a [confirmUrl] the contact is asked to open the link
+ * and enter the [code]; without one (no public confirm host configured yet) the code-only
+ * message is used. The code is NEVER placed in the URL. Single source for the Server
+ * wiring and the deliverability test so the two cannot drift.
+ */
+fun contactVerificationSmsMessage(code: String, confirmUrl: String?): String =
+    if (confirmUrl != null) {
+        "MAMA: код подтверждения — $code. Откройте ссылку и введите код, чтобы подтвердить, " +
+            "что этот номер ваш: $confirmUrl Никому не сообщайте код."
+    } else {
+        "MAMA: код подтверждения номера — $code. Введите его, чтобы подтвердить, что этот номер " +
+            "принадлежит вам как доверенному контакту. Никому больше не сообщайте этот код."
+    }
+
 /** Verifies the FastAPI dispatch MAC over `DOMAIN + rawBody` (constant-time). */
 class ContactVerificationDispatchMac(secret: ByteArray) {
     private val key: SecretKeySpec? =
@@ -86,6 +102,11 @@ data class ContactVerificationDispatchRequest(
     val phone: String,
     val challengeId: String,
     val code: String,
+    /** The confirm-page link to include in the SMS, or null for a code-only SMS. It
+     *  carries only the single-use challenge token (never the code); FastAPI already
+     *  pins it to https + the api.mama-app.ru host, and this worker re-checks it is a
+     *  safe https URL before putting it in a message (defence in depth). */
+    val confirmUrl: String?,
 )
 
 /** How the SMS send turned out, independent of the shared [SmsResult] (keeps the OTP path untouched). */
@@ -123,7 +144,7 @@ sealed interface DispatchOutcome {
  */
 class ContactVerificationDispatchService(
     private val mac: ContactVerificationDispatchMac,
-    private val send: (phone: String, code: String) -> DispatchSend,
+    private val send: (phone: String, code: String, confirmUrl: String?) -> DispatchSend,
     private val idempotency: DispatchIdempotencyStore = InMemoryDispatchIdempotencyStore(),
 ) {
     val configured: Boolean get() = mac.configured
@@ -142,7 +163,7 @@ class ContactVerificationDispatchService(
         // uncertain attempt).
         idempotency.get(req.challengeId)?.let { return DispatchOutcome.Status(it) }
 
-        val status = when (send(req.phone, req.code)) {
+        val status = when (send(req.phone, req.code, req.confirmUrl)) {
             DispatchSend.ACCEPTED -> "SMS_ACCEPTED"
             DispatchSend.REFUSED -> "FAILED"
             DispatchSend.UNCERTAIN -> "UNKNOWN"
@@ -162,12 +183,20 @@ class ContactVerificationDispatchService(
         if (phone.isBlank() || phone.length > 32) return null
         if (challengeId.isBlank() || challengeId.length > 128) return null
         if (!CODE.matches(code)) return null
-        ContactVerificationDispatchRequest(userId, contactId, phone, challengeId, code)
+        // confirm_url is OPTIONAL (absent -> code-only SMS). When present it must be a
+        // safe https link (printable ASCII, no spaces/control, bounded) before it can
+        // go into a message — defence in depth over FastAPI's host allowlist.
+        val confirmUrl = json.get("confirm_url")?.let { if (it.isJsonNull) null else it.asString }
+        if (confirmUrl != null && !SAFE_HTTPS_URL.matches(confirmUrl)) return null
+        ContactVerificationDispatchRequest(userId, contactId, phone, challengeId, code, confirmUrl)
     }.getOrNull()
 
     companion object {
         /** A short, human-enterable numeric one-time code. */
         private val CODE = Regex("^[0-9]{4,8}$")
+
+        /** A safe https link to place in an SMS: https:// + printable ASCII only, bounded. */
+        private val SAFE_HTTPS_URL = Regex("^https://[\\x21-\\x7E]{1,500}$")
 
         private fun isCanonicalUuid(s: String): Boolean =
             runCatching { UUID.fromString(s).toString() == s.lowercase() }.getOrDefault(false)
@@ -180,8 +209,8 @@ class ContactVerificationDispatchService(
          * into `Failed` today, so this mapping reports REFUSED for them until the
          * provider surfaces uncertainty — a deliberately isolated follow-up.
          */
-        fun fromSmsProvider(sms: SmsProvider): (String, String) -> DispatchSend = { phone, code ->
-            when (sms.send(phone, code)) {
+        fun fromSmsProvider(sms: SmsProvider): (String, String, String?) -> DispatchSend = { phone, code, confirmUrl ->
+            when (sms.send(phone, code, confirmUrl)) {
                 is SmsResult.Accepted -> DispatchSend.ACCEPTED
                 is SmsResult.Failed -> DispatchSend.REFUSED
             }

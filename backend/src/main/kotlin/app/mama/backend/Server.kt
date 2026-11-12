@@ -11,6 +11,7 @@ import app.mama.backend.db.JdbcDb
 import app.mama.backend.trustedexit.ContactDestinationResolver
 import app.mama.backend.trustedexit.ContactVerificationDispatchMac
 import app.mama.backend.trustedexit.ContactVerificationDispatchService
+import app.mama.backend.trustedexit.contactVerificationSmsMessage
 import app.mama.backend.trustedexit.ENV_SMSRU_API_ID
 import app.mama.backend.trustedexit.EvidenceSubmitter
 import app.mama.backend.trustedexit.IngestProof
@@ -132,10 +133,9 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
     // the SMS key live only in the server environment — never in Git, the APK or logs.
     val dispatchMac = ContactVerificationDispatchMac.fromEnv(System.getenv("MAMA_CONTACT_DISPATCH_SECRET"))
     val verificationSms = System.getenv(ENV_SMSRU_API_ID)?.takeIf { it.isNotBlank() }?.let {
-        SmsRuProvider(message = { code ->
-            "MAMA: код подтверждения номера — $code. Введите его, чтобы подтвердить, что этот номер " +
-                "принадлежит вам как доверенному контакту. Никому больше не сообщайте этот код."
-        })
+        // The verification SMS text (code + optional confirm link) is single-sourced in
+        // contactVerificationSmsMessage so the wording is reviewed and tested in one place.
+        SmsRuProvider(message = ::contactVerificationSmsMessage)
     }
     val contactDispatch = if (dispatchMac.configured && verificationSms != null) {
         ContactVerificationDispatchService(
