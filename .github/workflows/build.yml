@@ -75,6 +75,18 @@ jobs:
           grep -Fq 'MAMA_BACKEND_BASE_URL = "https://example.invalid"' "$f"
           test -s app/build/outputs/apk/pilot/app-pilot.apk
           echo "Pilot variant compiled; DRY RUN APK IS NOT PUBLISHED."
+      - name: Reject release packaging without approved HTTPS and owner signing inputs
+        run: |
+          if ./gradlew :app:verifyMamaReleaseInputs --console=plain > release-preflight.log 2>&1; then
+            echo "Release unexpectedly accepted a missing backend URL"
+            exit 1
+          fi
+          grep -F 'MAMA release requires -PmamaBackendBaseUrl=' release-preflight.log
+          if ./gradlew :app:verifyMamaReleaseInputs -PmamaBackendBaseUrl=https://api.mama-app.ru --console=plain > release-preflight.log 2>&1; then
+            echo "Release unexpectedly accepted missing signing inputs"
+            exit 1
+          fi
+          grep -F 'MAMA_RELEASE_KEYSTORE must point' release-preflight.log
       - name: Release build has no test credits
         run: |
           ./gradlew :app:generateReleaseBuildConfig --console=plain
