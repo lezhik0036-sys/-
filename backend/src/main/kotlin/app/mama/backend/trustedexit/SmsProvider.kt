@@ -14,8 +14,13 @@ const val ENV_SMS_SENDER = "MAMA_SMS_SENDER"
  * environment and never logs the code. The mock exists only for tests.
  */
 interface SmsProvider {
-    /** Sends the Trusted Exit [code] to [phone]. Returns only the outcome, never the code back. */
-    fun send(phone: String, code: String): SmsResult
+    /**
+     * Sends the Trusted Exit [code] to [phone]. [confirmUrl], when non-null, is the
+     * contact-verification confirm-page link to include in the message (carrying only
+     * the single-use challenge token, never the code); the OTP-exit path passes none
+     * and its message is unchanged. Returns only the outcome, never the code back.
+     */
+    fun send(phone: String, code: String, confirmUrl: String? = null): SmsResult
 
     /** A safe label for readiness and logs. Never a secret. */
     val label: String
@@ -31,8 +36,8 @@ sealed interface SmsResult {
         val smsId: String? = null,
     ) : SmsResult
 
-    /** The provider refused the message; no challenge is created. */
-    data class Failed(val reason: String) : SmsResult
+    /** No confirmed acceptance. Transport failures can leave delivery unknown. */
+    data class Failed(val reason: String, val deliveryUncertain: Boolean = false) : SmsResult
 }
 
 /** Delivery status the backend reports. Never carries the code. */
@@ -63,17 +68,22 @@ class MockSmsProvider(
     @Volatile var lastCode: String? = null
         private set
 
+    /** The last confirm link handed to the mock — for tests only (null for the OTP path). */
+    @Volatile var lastConfirmUrl: String? = null
+        private set
+
     val calls: Int get() = count.get()
 
     override val label: String get() = "mock"
 
     override fun configured(): Boolean = true
 
-    override fun send(phone: String, code: String): SmsResult {
+    override fun send(phone: String, code: String, confirmUrl: String?): SmsResult {
         val n = count.incrementAndGet()
         if (result is SmsResult.Accepted) {
             lastPhone = phone
             lastCode = code
+            lastConfirmUrl = confirmUrl
             return result.copy(smsId = result.smsId ?: "mock-sms-$n")
         }
         return result
