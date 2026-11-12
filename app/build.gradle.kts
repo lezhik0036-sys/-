@@ -30,6 +30,34 @@ if (pilotBuildRequested) {
     }
 }
 
+// Release credentials are provisioned by the owner outside the repository.
+val releaseStore = providers.environmentVariable("MAMA_RELEASE_KEYSTORE")
+val releaseStorePassword = providers.environmentVariable("MAMA_RELEASE_STORE_PASSWORD")
+val releaseAlias = providers.environmentVariable("MAMA_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("MAMA_RELEASE_KEY_PASSWORD")
+val approvedReleaseOrigin = "https://api.mama-app.ru"
+val verifyMamaReleaseInputs = tasks.register("verifyMamaReleaseInputs") {
+    doLast {
+        require(mamaBackendBaseUrl == approvedReleaseOrigin) {
+            "MAMA release requires -PmamaBackendBaseUrl=$approvedReleaseOrigin."
+        }
+        require(releaseStore.orNull?.let { file(it).isFile } == true) {
+            "MAMA_RELEASE_KEYSTORE must point to the owner's upload keystore."
+        }
+        require(listOf(releaseStorePassword, releaseAlias, releaseKeyPassword).all {
+            !it.orNull.isNullOrBlank()
+        }) {
+            "MAMA release requires the upload alias and both signing passwords."
+        }
+    }
+}
+
+tasks.matching {
+    it.name in setOf("assembleRelease", "bundleRelease", "packageRelease", "packageReleaseBundle", "signReleaseBundle")
+}.configureEach {
+    dependsOn(verifyMamaReleaseInputs)
+}
+
 android {
     namespace = "app.mama"
     compileSdk = 35
@@ -47,6 +75,15 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        create("rustoreRelease") {
+            storeFile = releaseStore.orNull?.let { file(it) }
+            storePassword = releaseStorePassword.orNull
+            keyAlias = releaseAlias.orNull
+            keyPassword = releaseKeyPassword.orNull
+        }
+    }
+
     buildTypes {
         debug {
             // Pilot test credits for the internal balance: debug builds only.
@@ -57,6 +94,7 @@ android {
             buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
         release {
+            signingConfig = signingConfigs.getByName("rustoreRelease")
             isMinifyEnabled = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
             buildConfigField("boolean", "TEST_MODE", "false")

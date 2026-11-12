@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     # Ephemeral PostgreSQL for the durable Trusted Exit tests (no real SMS, fake provider).
     services:
       postgres:
@@ -25,7 +25,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -59,22 +61,20 @@ jobs:
         run: bash .github/scripts/robolectric-tests.sh
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain
-      # Compile the production-behavior Pilot variant on every PR. The
-      # unresolvable .invalid hostname is ONLY a Gradle wiring check; this
-      # APK is NEVER uploaded or released. A usable pilot is built only by
-      # real-server-pilot.yml with the genuine HTTPS FastAPI endpoint.
-      - name: Pilot variant compile and no-fake flags (unpublished dry run)
-        shell: bash
+      - name: Reject release packaging without approved HTTPS and owner signing inputs
         run: |
-          set -euo pipefail
-          ./gradlew :app:assemblePilot -PmamaBackendBaseUrl=https://example.invalid --console=plain
-          f=$(find app/build/generated -path '*pilot*' -name BuildConfig.java | head -n 1)
-          test -n "$f" && test -s "$f"
-          grep -q 'TEST_MODE = false' "$f"
-          grep -q 'PILOT_TEST_CREDITS = false' "$f"
-          grep -Fq 'MAMA_BACKEND_BASE_URL = "https://example.invalid"' "$f"
-          test -s app/build/outputs/apk/pilot/app-pilot.apk
-          echo "Pilot variant compiled; DRY RUN APK IS NOT PUBLISHED."
+          if ./gradlew :app:verifyMamaReleaseInputs --console=plain > release-preflight.log 2>&1; then
+            echo "Release unexpectedly accepted a missing backend URL"
+            exit 1
+          fi
+          grep -F 'MAMA release requires -PmamaBackendBaseUrl=' release-preflight.log
+          if ./gradlew :app:verifyMamaReleaseInputs -PmamaBackendBaseUrl=https://api.mama-app.ru --console=plain > release-preflight.log 2>&1; then
+            echo "Release unexpectedly accepted missing signing inputs"
+            exit 1
+          fi
+          grep -F 'MAMA_RELEASE_KEYSTORE must point' release-preflight.log
+          ./gradlew :app:bundleRelease --dry-run --console=plain | tee release-task-graph.log
+          grep -F ':app:verifyMamaReleaseInputs' release-task-graph.log
       - name: Release build has no test credits
         run: |
           ./gradlew :app:generateReleaseBuildConfig --console=plain
@@ -129,32 +129,17 @@ jobs:
             exit 1
           fi
           echo "MAMA backend-only SMS policy: PASS (APK has no SEND_SMS permission)"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MAMA-v${{ steps.apk.outputs.version }}
-          path: out/*
-      # The same file as a test-build pre-release, downloadable straight on the phone.
-      - name: Publish the test APK
-        if: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'claude/') }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          version="${{ steps.apk.outputs.version }}"
-          tag="test-v$version"
-          sum=$(cut -d ' ' -f 1 "out/MAMA-v$version.apk.sha256")
-          gh release delete "$tag" --yes --cleanup-tag || true
-          gh release create "$tag" "out/MAMA-v$version.apk" "out/MAMA-v$version.apk.sha256" --prerelease --target "$GITHUB_SHA" \
-            --title "MAMA $version (debug test build)" \
-            --notes "Debug test build of MAMA for field tests, not for production. versionName $version, versionCode ${{ steps.apk.outputs.code }}, commit $GITHUB_SHA. SHA-256 of MAMA-v$version.apk: $sum. Real payments are off."
 
   # The APK must actually open on Android, not just compile.
   launch:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -167,29 +152,14 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Build debug APK and launch test APK
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
-      - name: Launch on emulator (Android 14)
+      - name: Launch on emulator (Android 13)
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 33
           target: google_apis
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           script: |
             .github/scripts/launch-check.sh
-            .github/scripts/screenshots.sh
             ./gradlew :app:connectedDebugAndroidTest --console=plain
-      # Screenshots of every screen for visual review: a "ui-screenshots"
-      # pre-release, replaced on every push to a claude/* branch.
-      - name: Publish UI screenshots
-        if: ${{ !cancelled() && startsWith(github.ref_name, 'claude/') }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ls shots/*.png > /dev/null 2>&1 || { echo 'no screenshots'; exit 0; }
-          pip install --quiet pillow
-          python3 .github/scripts/shots_to_jpg.py
-          gh release delete ui-screenshots --yes --cleanup-tag || true
-          # Compact JPGs for a quick look, and the same screens at full size (1080 × 2400 PNG) for close review.
-          gh release create ui-screenshots shots_jpg/*.jpg shots/*.png --prerelease --target "$GITHUB_SHA" \
-            --title "UI screenshots (CI)" --notes "Screens of MAMA $GITHUB_SHA rendered on an Android 14 emulator (Pixel 6), preview mode with sample data."
