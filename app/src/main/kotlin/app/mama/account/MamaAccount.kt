@@ -23,11 +23,14 @@ object MamaAccount {
     @Volatile private var appContext: Context? = null
     @Volatile private var baseUrl: String = ""
     @Volatile private var cached: MamaAccountClient? = null
+    private var family: FamilyClient? = null
 
+    @Synchronized
     fun configure(context: Context, backendBaseUrl: String) {
         appContext = context.applicationContext
         baseUrl = backendBaseUrl.trim()
         cached = null
+        family = null
     }
 
     /**
@@ -59,11 +62,17 @@ object MamaAccount {
         val ctx = appContext ?: return null
         if (!isConfigured) return null
         val deviceKey = KeystoreDeviceKeyProvider.loadOrCreate(ctx) ?: return null
-        return MamaAccountClient(
-            UrlConnectionAccountTransport(baseUrl),
-            deviceKey,
-            SecureAccountSessionStore(ctx),
-        ).also { cached = it }
+        val transport = UrlConnectionAccountTransport(baseUrl)
+        return MamaAccountClient(transport, deviceKey, SecureAccountSessionStore(ctx)).also {
+            cached = it
+            family = FamilyClient(it, deviceKey, transport)
+        }
+    }
+
+    @Synchronized
+    fun familyClient(): FamilyClient? {
+        client() ?: return null
+        return family
     }
 
     /** Obtain a session (cached, else login, else register). Call OFF the main thread. */

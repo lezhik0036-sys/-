@@ -43,6 +43,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Mama">
 
+        <activity android:name=".ui.FamilyActivity" android:exported="false" />
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
