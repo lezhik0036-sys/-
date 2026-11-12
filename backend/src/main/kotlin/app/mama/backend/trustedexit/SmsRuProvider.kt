@@ -24,7 +24,7 @@ class SmsRuProvider(
     private val from: String? = System.getenv(ENV_SMS_SENDER),
     private val endpoint: String = "https://sms.ru/sms/send",
     private val transport: HttpTransport = JdkHttpTransport(),
-    private val message: (String) -> String = { code ->
+    private val message: (String, String?) -> String = { code, _ ->
         "MAMA: код доверенного выхода $code. Никому не пересылайте его, кроме человека, которому вы помогаете выйти из режима."
     },
 ) : SmsProvider {
@@ -33,7 +33,7 @@ class SmsRuProvider(
 
     override fun configured(): Boolean = !apiId.isNullOrBlank()
 
-    override fun send(phone: String, code: String): SmsResult {
+    override fun send(phone: String, code: String, confirmUrl: String?): SmsResult {
         if (apiId.isNullOrBlank()) {
             // Fail-closed: without a configured key nothing is sent and no code is created.
             log.error("SMS.RU api_id is not configured ($ENV_SMSRU_API_ID); refusing to send")
@@ -43,7 +43,7 @@ class SmsRuProvider(
         val form = buildMap {
             put("api_id", apiId)
             put("to", to)
-            put("msg", message(code))
+            put("msg", message(code, confirmUrl))
             put("json", "1")
             if (!from.isNullOrBlank()) put("from", from!!)
         }

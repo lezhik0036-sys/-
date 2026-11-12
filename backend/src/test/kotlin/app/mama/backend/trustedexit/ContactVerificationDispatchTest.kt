@@ -33,16 +33,17 @@ class ContactVerificationDispatchTest {
         return m.doFinal(body).joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
-    private class RecordingSend(private val result: DispatchSend) : (String, String) -> DispatchSend {
+    private class RecordingSend(private val result: DispatchSend) : (String, String, String?) -> DispatchSend {
         var calls = 0
         var lastPhone: String? = null
         var lastCode: String? = null
-        override fun invoke(phone: String, code: String): DispatchSend {
-            calls++; lastPhone = phone; lastCode = code; return result
+        var lastConfirmUrl: String? = null
+        override fun invoke(phone: String, code: String, confirmUrl: String?): DispatchSend {
+            calls++; lastPhone = phone; lastCode = code; lastConfirmUrl = confirmUrl; return result
         }
     }
 
-    private fun service(send: (String, String) -> DispatchSend) =
+    private fun service(send: (String, String, String?) -> DispatchSend) =
         ContactVerificationDispatchService(ContactVerificationDispatchMac(secret), send)
 
     // --- MAC cross-compatibility + authentication --------------------------------
@@ -78,6 +79,39 @@ class ContactVerificationDispatchTest {
         assertEquals(1, send.calls)
         assertEquals("+79991234567", send.lastPhone)
         assertEquals("123456", send.lastCode)
+    }
+
+    @Test fun `a dispatch with confirm_url passes the link to the sender, code not in it`() {
+        val send = RecordingSend(DispatchSend.ACCEPTED)
+        val link = "https://api.mama-app.ru/v1/contact-verification/page?cid=chal-test-0001"
+        // The sorted-compact body the FastAPI adapter emits when a confirm_url is present
+        // (confirm_url sorts between code and contact_id); additive to the code-only body.
+        val withUrl =
+            """{"challenge_id":"chal-test-0001","code":"123456","confirm_url":"$link","contact_id":"22222222-2222-4222-8222-222222222222","phone":"+79991234567","user_id":"11111111-1111-4111-8111-111111111111"}"""
+        val raw = withUrl.toByteArray(Charsets.UTF_8)
+        val out = service(send).dispatch(raw, sign(raw))
+        assertEquals(DispatchOutcome.Status("SMS_ACCEPTED"), out)
+        assertEquals(link, send.lastConfirmUrl) // the link reaches the SMS sender
+        assertEquals("123456", send.lastCode)   // the code is delivered separately
+        assertFalse(link.contains("123456"))    // and never inside the link
+    }
+
+    @Test fun `a code-only body still carries no confirm_url (byte-identical legacy path)`() {
+        val send = RecordingSend(DispatchSend.ACCEPTED)
+        service(send).dispatch(goldenBody.toByteArray(Charsets.UTF_8), goldenMac)
+        assertNull(send.lastConfirmUrl)
+    }
+
+    @Test fun `a non-https or malformed confirm_url is rejected and never sent`() {
+        val send = RecordingSend(DispatchSend.ACCEPTED)
+        val svc = service(send)
+        for (badUrl in listOf("http://evil.example/x", "ftp://x", "not a url", "https://has space/x")) {
+            val json =
+                """{"challenge_id":"c1","code":"123456","confirm_url":"$badUrl","contact_id":"22222222-2222-4222-8222-222222222222","phone":"+79991234567","user_id":"11111111-1111-4111-8111-111111111111"}"""
+            val raw = json.toByteArray(Charsets.UTF_8)
+            assertTrue(svc.dispatch(raw, sign(raw)) is DispatchOutcome.BadRequest, badUrl)
+        }
+        assertEquals(0, send.calls)
     }
 
     @Test fun `provider refusal maps to FAILED`() {
