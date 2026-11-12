@@ -1,5 +1,7 @@
 package app.mama.ui
 
+import android.content.Intent
+import android.widget.Button
 import android.view.Gravity
 import android.view.View
 import android.view.ViewTreeObserver
@@ -530,6 +532,12 @@ internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
     val d = design
     val b = body(30)
     b.addView(d.title("Настройки"))
+    if (app.mama.account.MamaAccount.realBackendRequested) {
+        b.addView(Button(this).apply {
+            text = "Семья"
+            setOnClickListener { startActivity(Intent(this@settingsScreen, FamilyActivity::class.java)) }
+        }, d.gap(12))
+    }
     if (FeatureFlags.WALLET_ENABLED) {
         val wallet = Mama.wallet(this)
         b.addView(balanceCard(wallet), d.gap(18))

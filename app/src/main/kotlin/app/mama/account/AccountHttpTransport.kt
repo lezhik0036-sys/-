@@ -28,6 +28,10 @@ interface AccountHttpTransport {
     @Throws(IOException::class)
     fun getJson(path: String, bearer: String?): HttpReply =
         throw UnsupportedOperationException("getJson not supported by this transport")
+
+    @Throws(IOException::class)
+    fun deleteJson(path: String, bearer: String?): HttpReply =
+        throw UnsupportedOperationException("deleteJson not supported by this transport")
 }
 
 /**
@@ -74,13 +78,17 @@ class UrlConnectionAccountTransport(
     }
 
     @Throws(IOException::class)
-    override fun getJson(path: String, bearer: String?): HttpReply {
+    override fun getJson(path: String, bearer: String?): HttpReply = readJson("GET", path, bearer)
+
+    override fun deleteJson(path: String, bearer: String?): HttpReply = readJson("DELETE", path, bearer)
+
+    private fun readJson(method: String, path: String, bearer: String?): HttpReply {
         val url = URL(base + path)
         if (!url.protocol.equals("https", ignoreCase = true)) {
             throw IOException("MAMA backend must be HTTPS")
         }
         val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
+            requestMethod = method
             connectTimeout = connectTimeoutMs
             readTimeout = readTimeoutMs
             instanceFollowRedirects = false
