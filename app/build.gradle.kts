@@ -84,6 +84,11 @@ android {
         }
     }
 
+    sourceSets {
+        getByName("release").java.srcDir("src/userFacing/kotlin")
+        maybeCreate("pilot").java.srcDir("src/userFacing/kotlin")
+    }
+
     buildTypes {
         debug {
             // Pilot test credits for the internal balance: debug builds only.
@@ -122,6 +127,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+androidComponents {
+    beforeVariants { variant ->
+        if (variant.buildType != "debug") variant.minSdk = 33
     }
 }
 

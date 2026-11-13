@@ -2,14 +2,10 @@ package app.mama
 
 import android.app.Application
 import app.mama.account.MamaAccount
-import app.mama.billing.FeatureFlags
+import app.mama.trustedexit.TrustedExitVariant
 import app.mama.platform.Mama
 import app.mama.platform.Notifications
-import app.mama.trustedexit.DebugCodeSmsService
-import app.mama.trustedexit.DeviceChallengeVault
-import app.mama.trustedexit.FakeTrustedExitBackend
 import app.mama.trustedexit.MamaTrustedExit
-import app.mama.trustedexit.ReleaseTrustedExitDisabled
 import app.mama.trustedexit.TrustedExit
 import app.mama.trustedexit.TrustedExitReadinessGate
 
@@ -35,11 +31,7 @@ class MamaApp : Application() {
         // platform cannot hold our authenticated device credential.
         TrustedExit.backend = when {
             MamaAccount.realBackendRequested -> MamaTrustedExit.deferredBackend()
-            FeatureFlags.TEST_MODE -> FakeTrustedExitBackend(
-                vault = DeviceChallengeVault(this),
-                sms = DebugCodeSmsService,
-            )
-            else -> ReleaseTrustedExitDisabled
+            else -> TrustedExitVariant.localBackend(this)
         }
         // With the real server backend, the BRICK lock-start preflight must require
         // a RECENT server-confirmed readiness (active series + provider-VERIFIED
