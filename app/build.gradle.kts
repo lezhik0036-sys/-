@@ -130,18 +130,13 @@ android {
     }
 }
 
-androidComponents {
-    beforeVariants { variant ->
-        if (variant.buildType != "debug") variant.minSdk = 33
-    }
-}
-
 kotlin {
     compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
 dependencies {
     implementation(project(":core"))
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

@@ -81,7 +81,7 @@ class FamilyActivity : Activity() {
             }
         }
         if (!MamaAccount.isConfigured) {
-            status.text = "Семейная привязка требует Android 13 или новее и настроенный сервер MAMA."
+            status.text = "Семейная привязка требует Android 8 или новее и настроенный сервер MAMA."
             actions.forEach { it.isEnabled = false }
         }
     }
