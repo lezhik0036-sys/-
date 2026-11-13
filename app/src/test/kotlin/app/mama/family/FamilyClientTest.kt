@@ -53,7 +53,7 @@ class FamilyClientTest {
         override fun forgetSession() { forgets++ }
     }
 
-    /** In-process stand-in for /v1/family/* that verifies the real device-key proof. */
+    /** In-process stand-in for the /v1/family API that verifies the real device-key proof. */
     private inner class FakeFamilyServer(private val pubB64: String) : AccountHttpTransport {
         var linkStatus = 200
         var linkBody = JSONObject().put("status", "linked")

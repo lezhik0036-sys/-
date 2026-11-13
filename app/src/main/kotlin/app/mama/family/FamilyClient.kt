@@ -9,7 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The authenticated MAMA Family client (`/v1/family/*`). All authority is
+ * The authenticated MAMA Family client (the `/v1/family` API). All authority is
  * server-issued: this client never sets a parent/child role flag, never grants a
  * BRICK bypass, and never fabricates a link — it only carries the device-key proof
  * and the server's answers. Pairing is backend-authoritative (mama-fastapi #41):
