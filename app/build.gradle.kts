@@ -64,7 +64,7 @@ android {
 
     defaultConfig {
         applicationId = "app.mama"
-        minSdk = 26
+        minSdk = 33
         targetSdk = 35
         versionCode = 56
         versionName = "0.8.24-pilot-int1"
@@ -82,6 +82,11 @@ android {
             keyAlias = releaseAlias.orNull
             keyPassword = releaseKeyPassword.orNull
         }
+    }
+
+    sourceSets {
+        getByName("release").java.srcDir("src/userFacing/kotlin")
+        maybeCreate("pilot").java.srcDir("src/userFacing/kotlin")
     }
 
     buildTypes {

@@ -75,6 +75,19 @@ jobs:
           grep -F 'MAMA_RELEASE_KEYSTORE must point' release-preflight.log
           ./gradlew :app:bundleRelease --dry-run --console=plain | tee release-task-graph.log
           grep -F ':app:verifyMamaReleaseInputs' release-task-graph.log
+      - name: Inspect the actual release APK and Ktor jar
+        shell: bash
+        run: |
+          set -euo pipefail
+          export MAMA_RELEASE_KEYSTORE="$RUNNER_TEMP/artifact-audit.jks"
+          export MAMA_RELEASE_STORE_PASSWORD=ci-only-artifact-audit
+          export MAMA_RELEASE_KEY_PASSWORD="$MAMA_RELEASE_STORE_PASSWORD"
+          export MAMA_RELEASE_KEY_ALIAS=artifact-audit
+          keytool -genkeypair -keystore "$MAMA_RELEASE_KEYSTORE" -alias "$MAMA_RELEASE_KEY_ALIAS" \
+            -storepass "$MAMA_RELEASE_STORE_PASSWORD" -keypass "$MAMA_RELEASE_KEY_PASSWORD" \
+            -keyalg RSA -keysize 2048 -validity 1 -dname 'CN=CI artifact audit only'
+          ./gradlew :app:assembleRelease :backend:jar -PmamaBackendBaseUrl=https://api.mama-app.ru --console=plain
+          python3 .github/scripts/check-release-artifacts.py app/build/outputs/apk/release/app-release.apk backend/build/libs/*.jar
       - name: Release build has no test credits
         run: |
           ./gradlew :app:generateReleaseBuildConfig --console=plain
