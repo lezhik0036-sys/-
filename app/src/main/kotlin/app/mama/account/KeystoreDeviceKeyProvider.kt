@@ -61,6 +61,8 @@ object KeystoreDeviceKeyProvider {
                 writeAtomically(context, file, body)
                 key
             }
+        }.onFailure { error ->
+            android.util.Log.w("MamaDeviceKey", "Device identity unavailable: ${error.javaClass.simpleName}")
         }.getOrNull()
     }
 
