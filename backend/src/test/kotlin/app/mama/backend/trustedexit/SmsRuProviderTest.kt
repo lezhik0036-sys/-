@@ -25,7 +25,9 @@ class SmsRuProviderTest {
         }
     }
 
-    private fun provider(reply: HttpReply, apiId: String? = "test-key", from: String? = null) =
+    // Returns the provider typed as the SmsProvider interface so send(phone, code) uses
+    // the interface's default confirmUrl=null at the call sites below.
+    private fun provider(reply: HttpReply, apiId: String? = "test-key", from: String? = null): Pair<FakeTransport, SmsProvider> =
         FakeTransport(reply).let { it to SmsRuProvider(apiId = apiId, from = from, transport = it) }
 
     private val accepted = HttpReply(200, """{"status":"OK","status_code":100,"sms":{"79990000000":{"status":"OK","status_code":100,"sms_id":"1"}},"balance":100}""")
@@ -51,7 +53,7 @@ class SmsRuProviderTest {
             override fun postForm(url: String, form: Map<String, String>): HttpReply =
                 throw java.io.IOException("connection reset / timeout")
         }
-        val p = SmsRuProvider(apiId = "test-key", transport = throwing)
+        val p: SmsProvider = SmsRuProvider(apiId = "test-key", transport = throwing)
         assertTrue(p.send("79990000000", "88888") is SmsResult.Failed)
     }
 
@@ -103,6 +105,33 @@ class SmsRuProviderTest {
         val (_, p) = provider(HttpReply(200, "not json"))
         assertTrue(p.send("79990000000", "77777") is SmsResult.Failed)
     }
+
+    @Test
+    fun `the verification message carries the code and link, keeps the code out of the url, and fits a bounded number of SMS segments`() {
+        // A realistic confirm link: origin + page path + a 32-char urlsafe challenge token
+        // (chosen with no digit run equal to the code, so the "code not in url" check is real).
+        val link = "https://api.mama-app.ru/v1/contact-verification/page?cid=abcdefghijkLMNOPQRSTuvwxyz-_ABCDE"
+        val t = FakeTransport(accepted)
+        val p: SmsProvider = SmsRuProvider(
+            apiId = "test-key", transport = t, message = ::contactVerificationSmsMessage,
+        )
+        p.send("79990000000", "123456", link)
+        val msg = t.lastForm!!["msg"]!!
+        assertTrue(msg.contains("123456"))          // the code is in the body
+        assertTrue(msg.contains(link))              // and so is the link
+        assertFalse(link.contains("123456"))        // but the code is never inside the url
+        // Cyrillic text => UCS-2 (70 chars single, 67 per concatenated segment). Keep the
+        // message to a small, affordable number of segments at this token length.
+        assertTrue(segments(msg) <= 4, "verification SMS too long: ${msg.length} UCS-2 units")
+        // The code-only fallback (no link) stays a short message too.
+        p.send("79990000000", "654321", null)
+        assertTrue(segments(t.lastForm!!["msg"]!!) <= 3)
+        assertFalse(t.lastForm!!["msg"]!!.contains("http"))
+    }
+
+    // UCS-2 SMS segment count for a (Cyrillic) message: 1 if <= 70 UTF-16 units, else
+    // ceil(len / 67) for concatenated parts (6-byte UDH per part).
+    private fun segments(msg: String): Int = if (msg.length <= 70) 1 else (msg.length + 66) / 67
 
     @Test
     fun `from is included only when configured`() {

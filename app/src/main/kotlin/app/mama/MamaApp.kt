@@ -2,14 +2,11 @@ package app.mama
 
 import android.app.Application
 import app.mama.account.MamaAccount
-import app.mama.billing.FeatureFlags
+import app.mama.trustedexit.TrustedExitVariant
+import app.mama.family.MamaFamily
 import app.mama.platform.Mama
 import app.mama.platform.Notifications
-import app.mama.trustedexit.DebugCodeSmsService
-import app.mama.trustedexit.DeviceChallengeVault
-import app.mama.trustedexit.FakeTrustedExitBackend
 import app.mama.trustedexit.MamaTrustedExit
-import app.mama.trustedexit.ReleaseTrustedExitDisabled
 import app.mama.trustedexit.TrustedExit
 import app.mama.trustedexit.TrustedExitReadinessGate
 
@@ -23,6 +20,10 @@ class MamaApp : Application() {
         // The session is fetched lazily, off the main thread, by the Trusted Exit flow.
         MamaAccount.configure(this, BuildConfig.MAMA_BACKEND_BASE_URL)
         MamaTrustedExit.configure(this, BuildConfig.MAMA_BACKEND_BASE_URL)
+        // The REAL Family client (parent master account + no-SIM child pairing),
+        // fail-closed until a backend URL is configured; built lazily off the main
+        // thread. No local pairing path exists.
+        MamaFamily.configure(this, BuildConfig.MAMA_BACKEND_BASE_URL)
         // Prefer the REAL, server-authoritative HTTPS client whenever a backend URL
         // is configured — in debug AND release — so a field-test build talks to the
         // real FastAPI/Ktor server, never a local imitation of codes. The deferred
@@ -30,16 +31,9 @@ class MamaApp : Application() {
         // session + provisioned series exist. No backend URL:
         //   * debug/TEST_MODE -> the strictly-isolated local fake (no real server);
         //   * release          -> fail CLOSED (no local OTP is ever accepted).
-        // A configured backend on Android <33 must FAIL CLOSED. It must not
-        // accidentally enter the debug fake-code path merely because the
-        // platform cannot hold our authenticated device credential.
         TrustedExit.backend = when {
             MamaAccount.realBackendRequested -> MamaTrustedExit.deferredBackend()
-            FeatureFlags.TEST_MODE -> FakeTrustedExitBackend(
-                vault = DeviceChallengeVault(this),
-                sms = DebugCodeSmsService,
-            )
-            else -> ReleaseTrustedExitDisabled
+            else -> TrustedExitVariant.localBackend(this)
         }
         // With the real server backend, the BRICK lock-start preflight must require
         // a RECENT server-confirmed readiness (active series + provider-VERIFIED

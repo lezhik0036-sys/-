@@ -249,6 +249,18 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         setPadding(d.dp(10), 0, d.dp(10), 0)
     }
     screen.place(screen.text(path, 30f), 696, 92, 900, 152, exact = true)
+    // A quiet way to the Family screen (parent master account / no-SIM child pairing),
+    // mirrored to the top-left of "Мой путь" so a parent-only device can reach it
+    // before any series. Server-authoritative and fail-closed (see familyScreen).
+    val familyLink = d.linkButton("Семья", V2.Moss) { openFamily() }.apply {
+        tag = FAMILY_ENTRY
+        background = d.pressable(d.shape(Color.argb(0xD9, 0xFD, 0xF9, 0xF1), 22), 22)
+        minHeight = 0
+        minimumHeight = 0
+        maxLines = 1
+        setPadding(d.dp(10), 0, d.dp(10), 0)
+    }
+    screen.place(screen.text(familyLink, 30f), 41, 92, 245, 152, exact = true)
     return screen to true
 }
 
