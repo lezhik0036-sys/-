@@ -28,6 +28,16 @@ interface AccountHttpTransport {
     @Throws(IOException::class)
     fun getJson(path: String, bearer: String?): HttpReply =
         throw UnsupportedOperationException("getJson not supported by this transport")
+
+    /**
+     * DELETE [path] with an optional bearer, same reply/throw contract as [postJson].
+     * Used by the family link-revocation endpoints. A transport that does not need it
+     * keeps the default throw; the caller maps an exception to "unavailable" /
+     * fail-closed, never a successful revoke.
+     */
+    @Throws(IOException::class)
+    fun deleteJson(path: String, bearer: String?): HttpReply =
+        throw UnsupportedOperationException("deleteJson not supported by this transport")
 }
 
 /**
@@ -74,13 +84,19 @@ class UrlConnectionAccountTransport(
     }
 
     @Throws(IOException::class)
-    override fun getJson(path: String, bearer: String?): HttpReply {
+    override fun getJson(path: String, bearer: String?): HttpReply = method("GET", path, bearer)
+
+    @Throws(IOException::class)
+    override fun deleteJson(path: String, bearer: String?): HttpReply = method("DELETE", path, bearer)
+
+    @Throws(IOException::class)
+    private fun method(verb: String, path: String, bearer: String?): HttpReply {
         val url = URL(base + path)
         if (!url.protocol.equals("https", ignoreCase = true)) {
             throw IOException("MAMA backend must be HTTPS")
         }
         val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
+            requestMethod = verb
             connectTimeout = connectTimeoutMs
             readTimeout = readTimeoutMs
             instanceFollowRedirects = false
