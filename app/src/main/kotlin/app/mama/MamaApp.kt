@@ -3,6 +3,7 @@ package app.mama
 import android.app.Application
 import app.mama.account.MamaAccount
 import app.mama.billing.FeatureFlags
+import app.mama.family.MamaFamily
 import app.mama.platform.Mama
 import app.mama.platform.Notifications
 import app.mama.trustedexit.DebugCodeSmsService
@@ -23,6 +24,10 @@ class MamaApp : Application() {
         // The session is fetched lazily, off the main thread, by the Trusted Exit flow.
         MamaAccount.configure(this, BuildConfig.MAMA_BACKEND_BASE_URL)
         MamaTrustedExit.configure(this, BuildConfig.MAMA_BACKEND_BASE_URL)
+        // The REAL Family client (parent master account + no-SIM child pairing),
+        // fail-closed until a backend URL is configured; built lazily off the main
+        // thread. No local pairing path exists.
+        MamaFamily.configure(this, BuildConfig.MAMA_BACKEND_BASE_URL)
         // Prefer the REAL, server-authoritative HTTPS client whenever a backend URL
         // is configured — in debug AND release — so a field-test build talks to the
         // real FastAPI/Ktor server, never a local imitation of codes. The deferred
