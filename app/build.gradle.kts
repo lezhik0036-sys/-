@@ -64,7 +64,7 @@ android {
 
     defaultConfig {
         applicationId = "app.mama"
-        minSdk = 33
+        minSdk = 26
         targetSdk = 35
         versionCode = 56
         versionName = "0.8.24-pilot-int1"
@@ -127,6 +127,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+androidComponents {
+    beforeVariants { variant ->
+        if (variant.buildType != "debug") variant.minSdk = 33
     }
 }
 
