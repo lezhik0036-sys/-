@@ -98,6 +98,12 @@ class MainActivity : Activity() {
     /** "Мой путь" (the statistics) was opened from the welcome, success or recovery screen, which have no tab bar. */
     internal var pathOpen = false
 
+    /** The Family screen (parent master account + no-SIM child pairing) is open. Server-authoritative, fail-closed. */
+    internal var familyOpen = false
+
+    /** Transient UI state of the Family screen (never a role/privilege flag; all authority is the server's). */
+    internal val family = FamilyUi()
+
     /**
      * The short onboarding shown once before the first use, between the
      * welcome and the setup: its page (1–3), or 0 when it is not shown. Only
@@ -304,6 +310,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         when {
             preview != null -> super.onBackPressed()
+            familyOpen -> closeFamily()
             pathOpen -> closePath()
             onboardingPage > 0 -> onboardingBack()
             flexPlanning -> { flexPlanning = false; render() }
@@ -371,6 +378,9 @@ class MainActivity : Activity() {
         onDashboard = false
         onMotivation = null
         val (view, key) = when {
+            // The Family screen is a modal page reachable from the welcome and from
+            // settings; Back closes it. Server-authoritative, fail-closed.
+            familyOpen -> familyScreen() to "family"
             // "Мой путь" from a screen without the tab bar: the same statistics, with a way back.
             pathOpen -> statisticsScreen(standalone = true) to "path"
             series != null && series.status == SeriesStatus.BROKEN && restartFlow ->

@@ -197,6 +197,18 @@ class FamilyClientTest {
         assertFalse("a non-UUID id never hits the server", client.revokeChildDevice("nope"))
     }
 
+    @Test fun `thisDeviceId reflects the session device and is null without one`() {
+        val key = EphemeralDeviceKey()
+        val linked = FamilyClient(FakeFamilyServer(key.publicKeyB64()), FakeSession(), key)
+        assertEquals(deviceId, linked.thisDeviceId())
+
+        val noSession = object : FamilySessionSource {
+            override fun ensureSession(): AccountSession? = null
+            override fun forgetSession() {}
+        }
+        assertEquals(null, FamilyClient(FakeFamilyServer("x"), noSession, key).thisDeviceId())
+    }
+
     @Test fun `child parent-link recovery maps 200 to Revoked and 401 to RecentAuthRequired`() {
         val key = EphemeralDeviceKey()
         val server = FakeFamilyServer(key.publicKeyB64())

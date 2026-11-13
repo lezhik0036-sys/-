@@ -141,6 +141,14 @@ class FamilyClient(
 
     // --- CHILD recovery: remove the parent link (server requires a RECENT auth) ---
 
+    /**
+     * This device's own server-side id, from the current authenticated session, or
+     * null when there is no session. Used by the child-recovery UI to detach THIS
+     * device from its parent ([revokeParentLinkAsChild]); it is read from the
+     * server-issued session, never a local role or guess.
+     */
+    fun thisDeviceId(): String? = session.ensureSession()?.deviceId
+
     sealed interface ParentRevokeResult {
         object Revoked : ParentRevokeResult
         /** The server requires a fresh re-login for this sensitive change (401). */
