@@ -38,7 +38,11 @@ object KeystoreDeviceKeyProvider {
                 val privateBytes = AesGcmWrap.unwrap(aesKey, wrapped)
                 try {
                     if (Build.VERSION.SDK_INT >= 33) {
-                        SoftwareEd25519DeviceKey.restore(privateBytes, rawPublic)
+                        try {
+                            SoftwareEd25519DeviceKey.restore(privateBytes, rawPublic)
+                        } catch (_: java.security.NoSuchAlgorithmException) {
+                            LegacyEd25519DeviceKey.restore(privateBytes, rawPublic)
+                        }
                     } else {
                         LegacyEd25519DeviceKey.restore(privateBytes, rawPublic)
                     }
@@ -47,7 +51,11 @@ object KeystoreDeviceKeyProvider {
                 }
             } else {
                 val (key, material) = if (Build.VERSION.SDK_INT >= 33) {
-                    SoftwareEd25519DeviceKey.generate()
+                    try {
+                        SoftwareEd25519DeviceKey.generate()
+                    } catch (_: java.security.NoSuchAlgorithmException) {
+                        LegacyEd25519DeviceKey.generate()
+                    }
                 } else {
                     LegacyEd25519DeviceKey.generate()
                 }
