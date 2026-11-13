@@ -11,7 +11,7 @@ import android.os.Build
  *
  * Fail-closed: [isConfigured] is false — and [ensureSession] returns
  * [MamaAccountClient.Result.Unavailable] — whenever no backend URL is configured
- * or the platform cannot hold the Ed25519 device key (API < 33). There is no
+ * or the platform cannot hold the Ed25519 device key. There is no
  * local fallback: without a real FastAPI-issued session the app simply has no
  * session.
  *

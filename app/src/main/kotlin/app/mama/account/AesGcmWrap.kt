@@ -1,6 +1,5 @@
 package app.mama.account
 
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -19,10 +18,10 @@ object AesGcmWrap {
     private const val TAG_BITS = 128
 
     fun wrap(key: SecretKey, plaintext: ByteArray): ByteArray {
-        val iv = ByteArray(IV_BYTES).also { SecureRandom().nextBytes(it) }
-        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv))
-        }
+        // Android Keystore requires provider-generated IVs for randomized encryption.
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key) }
+        val iv = cipher.iv
+        check(iv.size == IV_BYTES) { "Unexpected GCM IV length" }
         return iv + cipher.doFinal(plaintext)
     }
 

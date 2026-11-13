@@ -222,7 +222,7 @@ class SecureServiceDbTest {
             val n = AtomicInteger(0)
             override val label = "throwing"
             override fun configured() = true
-            override fun send(phone: String, code: String): SmsResult { n.incrementAndGet(); throw java.io.IOException("timeout") }
+            override fun send(phone: String, code: String, confirmUrl: String?): SmsResult { n.incrementAndGet(); throw java.io.IOException("timeout") }
         }
         val svc = SecureTrustedExitService(GrantVerifier(pub), GrantVerifier.forVerify(pub), OtpRepository(db, hasher), hasher, throwing, ContactDestinationResolver { "+70000000000" })
         val b = bearer()

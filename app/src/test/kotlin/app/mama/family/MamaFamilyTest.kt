@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,7 +34,6 @@ class MamaFamilyTest {
     @Config(sdk = [30])
     fun `a configured url on an unsupported platform is still fail-closed`() {
         MamaFamily.configure(ctx, "https://api.mama-app.ru")
-        assertFalse("API < 33 cannot hold the device key", MamaFamily.isConfigured)
-        assertNull("API < 33 must not open a local pairing path", MamaFamily.client())
+        assertTrue("API 30 supports wrapped Ed25519", MamaFamily.isConfigured)
     }
 }

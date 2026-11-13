@@ -15,7 +15,7 @@ import app.mama.account.UrlConnectionAccountTransport
  * on first use (Keystore + network) and MUST run off the main thread.
  *
  * Fail-closed: with no backend URL, or on a platform that cannot hold the Ed25519
- * device key (API < 33), [client] is null and the Family UI shows "unavailable" —
+ * device key, [client] is null and the Family UI shows "unavailable" —
  * there is NO local pairing path and no fabricated link; all authority is the
  * server's. Uses the SAME account session + device key as the rest of the app, so a
  * no-SIM Wi-Fi device pairs identically (the whole credential is the device key).

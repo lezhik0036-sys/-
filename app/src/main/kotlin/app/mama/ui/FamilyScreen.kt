@@ -20,7 +20,7 @@ import app.mama.ui.design.Typo
  * relationship when it accepts a device-key proof and a one-time invitation.
  *
  * Fail-closed: when there is no configured backend, or the device cannot hold the
- * Ed25519 device key (API < 33), [MamaFamily.isConfigured] is false and the screen
+ * Ed25519 device key, [MamaFamily.isConfigured] is false and the screen
  * shows an honest "unavailable" state with NO pairing action — there is no local
  * pairing path. Every server call runs OFF the main thread (network + Keystore
  * signing) and only the result is applied on the UI thread.
