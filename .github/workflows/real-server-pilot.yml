@@ -1,0 +1,220 @@
+name: real-server-pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: "HTTPS FastAPI base URL (required; no debug/fake backend)"
+        required: true
+        type: string
+  push:
+    branches:
+      - release/android-real-server-pilot-no-fake
+
+permissions:
+  contents: read
+
+jobs:
+  pilot-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      # Set repository variable MAMA_FASTAPI_BASE_URL for branch builds, or
+      # supply backend_url when manually dispatching from GitHub Actions.
+      FASTAPI_URL: ${{ inputs.backend_url || vars.MAMA_FASTAPI_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Require an explicitly configured HTTPS server
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${FASTAPI_URL:-}" ]; then
+            echo "::error::MAMA_FASTAPI_BASE_URL is not configured. Real Pilot cannot be built without the actual FastAPI HTTPS hostname."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import ipaddress, os, urllib.parse
+          value = os.environ["FASTAPI_URL"]
+          u = urllib.parse.urlsplit(value)
+          host = (u.hostname or "").rstrip(".").lower()
+          if (u.scheme != "https" or not host or u.username or u.password
+              or u.path not in ("", "/") or u.query or u.fragment):
+              raise SystemExit("Invalid HTTPS FastAPI base URL: no credentials, path, query or fragment allowed")
+          # Reject CI placeholders, internal-only targets and IP literals.
+          # An APK pointing at any of these is not a usable real-server pilot.
+          forbidden_suffixes = (".invalid", ".test", ".example", ".localhost", ".local", ".internal")
+          if (host in ("localhost", "example.com", "example.org", "example.net",
+                       "test", "invalid", "internal") or host.endswith(forbidden_suffixes)):
+              raise SystemExit("Pilot backend cannot be a reserved/placeholder hostname")
+          try:
+              ipaddress.ip_address(host)
+          except ValueError:
+              pass
+          else:
+              raise SystemExit("Pilot backend requires a DNS hostname, not an IP literal")
+          if "." not in host:
+              raise SystemExit("Pilot backend requires a publicly qualified DNS hostname")
+          print("Real-server pilot hostname configured; no fake-backend fallback.")
+          PY
+      # A configured URL is not proof that FastAPI is actually running there.
+      # Refuse to publish a misleading real-server APK if TLS, routing or the
+      # MAMA API itself is unavailable. This probe never triggers SMS.
+      - name: Probe real FastAPI HTTPS health before packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --connect-timeout 8 --max-time 20 --retry 2 --retry-delay 1 \
+            --output /tmp/mama-api-health.json "${FASTAPI_URL%/}/health"
+          python3 - <<'PY'
+          import json
+          with open("/tmp/mama-api-health.json", "rb") as handle:
+              body = handle.read(4097)
+          if len(body) > 4096:
+              raise SystemExit("MAMA FastAPI health reply is unexpectedly large")
+          try:
+              health = json.loads(body)
+          except (ValueError, UnicodeDecodeError):
+              raise SystemExit("MAMA FastAPI health reply is not valid JSON")
+          if not isinstance(health, dict) or health.get("status") != "ok" or health.get("service") != "mama-api":
+              raise SystemExit("HTTPS endpoint is not the expected MAMA FastAPI service")
+          print("MAMA FastAPI HTTPS health: PASS (does not imply OTP delivery readiness)")
+          PY
+      # /health is also present on the OLD backend. Require the real device
+      # account, setup and OTP routes before a user-installable pilot is archived.
+      # Reading OpenAPI never registers an account or sends an SMS.
+      - name: Verify deployed account and Trusted Exit API contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --connect-timeout 8 --max-time 20 --retry 2 --retry-delay 1 \
+            --output /tmp/mama-api-contract.json "${FASTAPI_URL%/}/openapi.json"
+          python3 - <<'PY'
+          import json
+          with open("/tmp/mama-api-contract.json", "rb") as handle:
+              data = handle.read(524289)
+          if len(data) > 524288:
+              raise SystemExit("FastAPI OpenAPI response exceeds the audit size limit")
+          try:
+              contract = json.loads(data)
+          except (ValueError, UnicodeDecodeError):
+              raise SystemExit("Expected JSON from FastAPI OpenAPI endpoint")
+          paths = contract.get("paths", {}) if isinstance(contract, dict) else {}
+          required = {
+              "/v1/account/challenge": "post",
+              "/v1/account/register": "post",
+              "/v1/account/login": "post",
+              "/v1/setup/contacts": "post",
+              "/v1/setup/contacts/{contact_id}/verification": "post",
+              "/v1/setup/series": "post",
+              "/v1/setup/series/{series_id}/periods/{period_id}/readiness": "get",
+              "/v1/trusted-exit/proof-challenges": "post",
+              "/v1/trusted-exit/request": "post",
+              "/v1/trusted-exit/verify": "post",
+              "/v1/trusted-exit/status/{request_id}": "get",
+          }
+          missing = [f"{method.upper()} {route}" for route, method in required.items()
+                     if method not in paths.get(route, {})]
+          if missing:
+              raise SystemExit("FastAPI live contract missing: " + ", ".join(missing))
+          print("Live MAMA account + Trusted Exit API contract: PASS")
+          print("NOTE: existence of API routes is NOT proof of SMS delivery or contact verification.")
+          PY
+      # Verify the running API rejects unauthenticated account-data reads.
+      # This is a safe GET: no challenge issuance, SMS, or lock mutation.
+      - name: Verify deployed API rejects anonymous account access
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --proto '=https' --tlsv1.2 \
+            --connect-timeout 8 --max-time 20 \
+            --output /dev/null --write-out '%{http_code}' \
+            "${FASTAPI_URL%/}/v1/users/me")"
+          case "$code" in
+            401|403) echo "Anonymous account access denied: HTTP $code" ;;
+            *) echo "::error::Expected anonymous account access denial (401/403), got HTTP $code"; exit 1 ;;
+          esac
+      - name: Require the stable pilot signing key (no debug-signed user APK)
+        shell: bash
+        env:
+          MAMA_PILOT_KEYSTORE_B64: ${{ secrets.MAMA_PILOT_KEYSTORE_B64 }}
+          PILOT_STORE_PASSWORD: ${{ secrets.MAMA_PILOT_STORE_PASSWORD }}
+          PILOT_KEY_ALIAS: ${{ secrets.MAMA_PILOT_KEY_ALIAS }}
+          PILOT_KEY_PASSWORD: ${{ secrets.MAMA_PILOT_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # This workflow produces the user-facing fleet APK, so it MUST be signed with
+          # the owner's stable keystore — never the per-machine debug key (testers could
+          # not update-install over it). Missing secrets are a hard error, not a fallback.
+          missing=""
+          [ -z "${MAMA_PILOT_KEYSTORE_B64:-}" ] && missing="$missing MAMA_PILOT_KEYSTORE_B64"
+          [ -z "${PILOT_STORE_PASSWORD:-}" ] && missing="$missing MAMA_PILOT_STORE_PASSWORD"
+          [ -z "${PILOT_KEY_ALIAS:-}" ] && missing="$missing MAMA_PILOT_KEY_ALIAS"
+          [ -z "${PILOT_KEY_PASSWORD:-}" ] && missing="$missing MAMA_PILOT_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::The user-facing pilot APK must use the stable pilot keystore, not a debug key. Set the Actions secret(s):$missing (see docs/PILOT_SIGNING.md; scripts/make-pilot-keystore.sh creates the keystore and sets them)."
+            exit 1
+          fi
+          printf '%s' "$MAMA_PILOT_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/mama-pilot.jks"
+          test -s "$RUNNER_TEMP/mama-pilot.jks" || { echo "::error::pilot keystore secret did not decode"; exit 1; }
+          {
+            echo "MAMA_PILOT_KEYSTORE=$RUNNER_TEMP/mama-pilot.jks"
+            echo "MAMA_PILOT_STORE_PASSWORD=$PILOT_STORE_PASSWORD"
+            echo "MAMA_PILOT_KEY_ALIAS=$PILOT_KEY_ALIAS"
+            echo "MAMA_PILOT_KEY_PASSWORD=$PILOT_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Stable pilot keystore provisioned; the pilot APK will use the fixed signing identity."
+      - name: Build installable non-test Pilot APK
+        run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" -PmamaRequireStableSigning=true --console=plain
+      - name: Report the pilot APK signing identity (SHA-256 cert digest)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/pilot/app-pilot.apk
+          tools_dir="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)"
+          "${tools_dir}apksigner" verify --print-certs "$apk" | grep -i 'SHA-256' || true
+          if [ -z "${MAMA_PILOT_KEYSTORE:-}" ]; then
+            echo "::error::pilot APK was not signed with the stable keystore"; exit 1
+          fi
+          echo "Signed with the STABLE pilot keystore (updatable fleet)."
+      - name: Verify NO test codes or simulated credits
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=$(find app/build/generated -path '*pilot*' -name BuildConfig.java | head -n 1)
+          test -n "$f" && test -s "$f"
+          grep -q 'TEST_MODE = false' "$f"
+          grep -q 'PILOT_TEST_CREDITS = false' "$f"
+          grep -Fq 'MAMA_BACKEND_BASE_URL = "https://' "$f"
+          echo "Real Pilot: TEST_MODE=false, PILOT_TEST_CREDITS=false, HTTPS backend embedded."
+      - name: Audit APK signature and permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/pilot/app-pilot.apk
+          test -s "$apk"
+          tools_dir="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)"
+          "${tools_dir}apksigner" verify --verbose "$apk"
+          "${tools_dir}aapt2" dump permissions "$apk" > /tmp/pilot-permissions.txt
+          if grep -Fq 'android.permission.SEND_SMS' /tmp/pilot-permissions.txt; then
+            echo "::error::Real Pilot must send SMS through Ktor, never through Android."
+            exit 1
+          fi
+      - name: Archive exact APK and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp app/build/outputs/apk/pilot/app-pilot.apk out/MAMA-0.8.23-real-server-pilot.apk
+          (cd out && sha256sum MAMA-0.8.23-real-server-pilot.apk | tee MAMA-0.8.23-real-server-pilot.apk.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAMA-0.8.23-real-server-pilot
+          path: out/*
+          retention-days: 14

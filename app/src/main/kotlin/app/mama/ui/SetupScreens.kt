@@ -15,6 +15,8 @@ import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.Toast
+import app.mama.account.MamaAccount
 import app.mama.billing.Checkout
 import app.mama.billing.FeatureFlags
 import app.mama.billing.Product
@@ -22,6 +24,8 @@ import app.mama.core.CommitmentConfig
 import app.mama.core.DailyWindow
 import app.mama.core.FlexPackage
 import app.mama.core.GrantSource
+import app.mama.core.LaunchTime
+import app.mama.core.LockPlan
 import app.mama.core.StandardRules
 import app.mama.core.TestMode
 import app.mama.core.TrustedContact
@@ -29,6 +33,9 @@ import app.mama.motivation.MotivationCatalog
 import app.mama.motivation.Placement
 import app.mama.platform.Mama
 import app.mama.platform.Promise
+import app.mama.trustedexit.MamaTrustedExit
+import app.mama.trustedexit.TrustedExitPilotOrchestrator
+import app.mama.trustedexit.exitSetupSpec
 import app.mama.ui.MainActivity.Choice
 import app.mama.ui.MainActivity.Step
 import app.mama.ui.design.ArtLayout
@@ -242,6 +249,18 @@ internal fun MainActivity.welcomeScreen(): Pair<View, Boolean> {
         setPadding(d.dp(10), 0, d.dp(10), 0)
     }
     screen.place(screen.text(path, 30f), 696, 92, 900, 152, exact = true)
+    // A quiet way to the Family screen (parent master account / no-SIM child pairing),
+    // mirrored to the top-left of "Мой путь" so a parent-only device can reach it
+    // before any series. Server-authoritative and fail-closed (see familyScreen).
+    val familyLink = d.linkButton("Семья", V2.Moss) { openFamily() }.apply {
+        tag = FAMILY_ENTRY
+        background = d.pressable(d.shape(Color.argb(0xD9, 0xFD, 0xF9, 0xF1), 22), 22)
+        minHeight = 0
+        minimumHeight = 0
+        maxLines = 1
+        setPadding(d.dp(10), 0, d.dp(10), 0)
+    }
+    screen.place(screen.text(familyLink, 30f), 41, 92, 245, 152, exact = true)
     return screen to true
 }
 
@@ -743,8 +762,108 @@ internal fun MainActivity.reviewScreen(): Pair<View, Boolean> {
     return v1Frame(Scenery.DAY, stepBar(Step.REVIEW), b, footer)
 }
 
+/**
+ * The final "start" from the review screen. On a configured REAL-SERVER build the
+ * device must not lock until the server-owned Trusted Exit is actually ready, so
+ * (for a lock-bearing TEST/series start) this first drives provisioning + real
+ * contact verification + the exact-period readiness refresh OFF the main thread
+ * ([prepareServerExitThenStart]); only [TrustedExitPilotOrchestrator.State.Ready]
+ * proceeds to the real start. FLEX (a paid package, outside the pilot's scope) and
+ * unconfigured builds (local test / fake readiness) keep the direct path. No fake
+ * code or simulated SMS is ever used, and a no-SIM Wi-Fi device walks the same
+ * HTTP flow — nothing here needs telephony.
+ */
 internal fun MainActivity.startChosen() {
     val contact = readyContact() ?: return
+    if (choice != Choice.FLEX && MamaAccount.realBackendRequested) {
+        prepareServerExitThenStart(contact)
+        return
+    }
+    startChosenLocal(contact)
+}
+
+/**
+ * Prepare the server-owned Trusted Exit for [contact] off the main thread, then —
+ * only when the server confirms readiness — perform the real start. Any other
+ * outcome keeps BRICK out and tells the user what is still missing. Guarded so a
+ * second tap cannot spawn a duplicate provisioning or a second verification SMS.
+ */
+private fun MainActivity.prepareServerExitThenStart(contact: TrustedContact) {
+    if (trustedExitPreparing) return
+    val controller = MamaTrustedExit.pilotController()
+    if (controller == null) {
+        // Real-server mode was requested, but there is no usable server client
+        // (e.g. the device cannot hold the authenticated key on API < 33). Fail
+        // closed: never fall back to a local code path.
+        alert(
+            "Доверенный выход недоступен",
+            "Это устройство не может безопасно хранить ключ доступа к серверу, поэтому надёжный выход недоступен — блокировка не запущена.",
+        )
+        return
+    }
+    val spec = exitSpec(contact)
+    trustedExitPreparing = true
+    Toast.makeText(this, "Готовим надёжный выход через сервер…", Toast.LENGTH_SHORT).show()
+    Thread {
+        val state = runCatching { controller.prepare(spec) }.getOrElse {
+            TrustedExitPilotOrchestrator.State.Failed(it.message ?: "prepare-error")
+        }
+        runOnUiThread {
+            trustedExitPreparing = false
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            when (state) {
+                is TrustedExitPilotOrchestrator.State.Ready -> startChosenLocal(contact)
+                is TrustedExitPilotOrchestrator.State.AwaitingVerification -> alert(
+                    "Почти готово",
+                    "Доверенному контакту отправлен код, чтобы подтвердить номер. Как только он подтвердит — вернись и запусти снова: блокировка начнётся только после этого.",
+                )
+                is TrustedExitPilotOrchestrator.State.VerificationUnavailable -> alert(
+                    "Подтверждение пока недоступно",
+                    "Сервер сейчас не может отправить код подтверждения доверенному контакту. Попробуй позже — блокировка не запущена.",
+                )
+                is TrustedExitPilotOrchestrator.State.Failed -> alert(
+                    "Доверенный выход недоступен",
+                    "Не удалось подготовить надёжный выход через сервер, поэтому блокировка не запущена. Проверь интернет и попробуй ещё раз.",
+                )
+            }
+        }
+    }.start()
+}
+
+/**
+ * The server provisioning spec for the chosen start: the trusted contact plus the
+ * concrete first-lock period (the same window the local start would use), so the
+ * server registers the exact period its readiness is later checked against.
+ */
+private fun MainActivity.exitSpec(contact: TrustedContact): app.mama.trustedexit.ExitSetupSpec {
+    val now = Mama.trustedNow(this)
+    val plan: LockPlan
+    val days: Int
+    when (choice) {
+        Choice.TEST -> {
+            plan = TestMode.plan(now, zone, mode)
+            days = 1
+        }
+        else -> {
+            plan = when (val t = launchTime()) {
+                is LaunchTime.AutoNow -> LockPlan(now, now + t.length, zone, mode)
+                is LaunchTime.Fixed -> t.window.nextFullPlan(now, mode)
+            }
+            days = choice.series?.periods ?: 1
+        }
+    }
+    return exitSetupSpec(
+        contactName = contact.name,
+        contactPhone = contact.phone,
+        zone = zone,
+        durationDays = days,
+        beginsAt = plan.start,
+        endsAt = plan.end,
+        brickMode = true,
+    )
+}
+
+internal fun MainActivity.startChosenLocal(contact: TrustedContact) {
     when (choice) {
         Choice.TEST -> when (val r = Mama.startTest(this, contact, zone, mode)) {
             is Mama.TestStart.Started -> {
@@ -752,6 +871,7 @@ internal fun MainActivity.startChosen() {
                 closeDraft()
             }
             Mama.TestStart.Busy -> alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
+            Mama.TestStart.TrustedExitUnavailable -> alert("Trusted Exit недоступен", "Тестовая блокировка не запущена: сейчас нет подтверждённого способа выхода.")
             is Mama.TestStart.Rejected -> alert("Не получилось", Texts.createError(r.reason))
         }
         Choice.FLEX -> {
@@ -769,7 +889,7 @@ internal fun MainActivity.startChosen() {
             }
             Mama.SeriesStart.Busy -> return alert("Не получилось", "Сейчас уже идёт серия, FLEX-период или блокировка.")
             is Mama.SeriesStart.Waiting -> return offerStartDuringCooldown(choice.series!!, r.days, contact)
-            is Mama.SeriesStart.NotEnoughBalance -> return notEnoughBalance { commitmentKop = null; startChosen() }
+            is Mama.SeriesStart.NotEnoughBalance -> return notEnoughBalance { commitmentKop = null; startChosenLocal(contact) }
             Mama.SeriesStart.TrustedExitUnavailable -> return alert("Trusted Exit недоступен", "Серия не запущена.")
             Mama.SeriesStart.Rejected -> return alert("Не получилось", "Серию сейчас нельзя начать.")
         }

@@ -1,8 +1,89 @@
+import java.net.URI
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// Private FastAPI base URL for the real account + Trusted Exit client. Empty by
+// default (CI and any un-overridden build) => the client is disabled/fail-closed.
+// A field test supplies it with `-PmamaBackendBaseUrl=https://<host>` (HTTPS is
+// enforced at runtime); it is not a secret and never enables local OTP.
+val mamaBackendBaseUrl: String = (project.findProperty("mamaBackendBaseUrl") as String?)?.trim().orEmpty()
+
+// Real-server PILOT builds must fail at build time without an explicitly
+// configured HTTPS FastAPI host. Regular debug CI remains offline/fake-only.
+val pilotBuildRequested = gradle.startParameter.taskNames.any {
+    it.substringAfterLast(':').contains("Pilot", ignoreCase = true)
+}
+if (pilotBuildRequested) {
+    val uri = runCatching { URI(mamaBackendBaseUrl) }.getOrNull()
+    require(
+        uri != null &&
+            uri.scheme.equals("https", ignoreCase = true) &&
+            !uri.host.isNullOrBlank() &&
+            uri.userInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
+            (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/")
+    ) {
+        "MAMA Pilot requires -PmamaBackendBaseUrl=https://real-fastapi-host (HTTPS, no credentials/path/query/fragment)."
+    }
+}
+
+// Release credentials are provisioned by the owner outside the repository.
+val releaseStore = providers.environmentVariable("MAMA_RELEASE_KEYSTORE")
+val releaseStorePassword = providers.environmentVariable("MAMA_RELEASE_STORE_PASSWORD")
+val releaseAlias = providers.environmentVariable("MAMA_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("MAMA_RELEASE_KEY_PASSWORD")
+
+// Stable PILOT signing key for mass field testing (separate from the RuStore release
+// key). Provisioned by the owner outside the repo (CI: GitHub Actions secrets; local:
+// env). When ALL four are present the pilot build signs with this fixed identity so
+// testers can update-install across pilot builds; when absent the pilot build falls
+// back to the per-machine debug key (fine for a one-off first install). The keystore
+// and its passwords are never committed. See docs/PILOT_SIGNING.md.
+val pilotStore = providers.environmentVariable("MAMA_PILOT_KEYSTORE")
+val pilotStorePassword = providers.environmentVariable("MAMA_PILOT_STORE_PASSWORD")
+val pilotAlias = providers.environmentVariable("MAMA_PILOT_KEY_ALIAS")
+val pilotKeyPassword = providers.environmentVariable("MAMA_PILOT_KEY_PASSWORD")
+val pilotKeystoreConfigured =
+    pilotStore.orNull?.let { file(it).isFile } == true &&
+        listOf(pilotStorePassword, pilotAlias, pilotKeyPassword).all { !it.orNull.isNullOrBlank() }
+// The user-facing fleet build passes -PmamaRequireStableSigning=true. With it, a pilot
+// build MUST sign with the owner's stable keystore and may NOT fall back to the
+// per-machine debug key: we refuse rather than hand testers a non-updatable,
+// debug-signed APK. Local developer pilot builds omit the flag and keep the fallback.
+val requireStableSigning =
+    ((project.findProperty("mamaRequireStableSigning") as String?)?.trim())
+        .equals("true", ignoreCase = true)
+if (pilotBuildRequested && requireStableSigning && !pilotKeystoreConfigured) {
+    throw GradleException(
+        "MAMA Pilot: -PmamaRequireStableSigning=true but the stable pilot keystore is not " +
+            "configured. Set MAMA_PILOT_KEYSTORE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD " +
+            "(see docs/PILOT_SIGNING.md). Refusing to produce a debug-signed user APK.",
+    )
+}
+val approvedReleaseOrigin = "https://api.mama-app.ru"
+val verifyMamaReleaseInputs = tasks.register("verifyMamaReleaseInputs") {
+    doLast {
+        require(mamaBackendBaseUrl == approvedReleaseOrigin) {
+            "MAMA release requires -PmamaBackendBaseUrl=$approvedReleaseOrigin."
+        }
+        require(releaseStore.orNull?.let { file(it).isFile } == true) {
+            "MAMA_RELEASE_KEYSTORE must point to the owner's upload keystore."
+        }
+        require(listOf(releaseStorePassword, releaseAlias, releaseKeyPassword).all {
+            !it.orNull.isNullOrBlank()
+        }) {
+            "MAMA release requires the upload alias and both signing passwords."
+        }
+    }
+}
+
+tasks.matching {
+    it.name in setOf("assembleRelease", "bundleRelease", "packageRelease", "packageReleaseBundle", "signReleaseBundle")
+}.configureEach {
+    dependsOn(verifyMamaReleaseInputs)
 }
 
 android {
@@ -13,13 +94,37 @@ android {
         applicationId = "app.mama"
         minSdk = 26
         targetSdk = 35
-        versionCode = 51
-        versionName = "0.8.20-test20"
+        versionCode = 56
+        versionName = "0.8.24-pilot-int1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures {
         buildConfig = true
+    }
+
+    signingConfigs {
+        create("rustoreRelease") {
+            storeFile = releaseStore.orNull?.let { file(it) }
+            storePassword = releaseStorePassword.orNull
+            keyAlias = releaseAlias.orNull
+            keyPassword = releaseKeyPassword.orNull
+        }
+        // Created only when the owner's stable pilot keystore is provided, so an
+        // empty/invalid config can never be attached to a build.
+        if (pilotKeystoreConfigured) {
+            create("pilotRelease") {
+                storeFile = file(pilotStore.get())
+                storePassword = pilotStorePassword.get()
+                keyAlias = pilotAlias.get()
+                keyPassword = pilotKeyPassword.get()
+            }
+        }
+    }
+
+    sourceSets {
+        getByName("release").java.srcDir("src/userFacing/kotlin")
+        maybeCreate("pilot").java.srcDir("src/userFacing/kotlin")
     }
 
     buildTypes {
@@ -29,12 +134,30 @@ android {
             // TEST/DEBUG safety: cap every lock to 15 min, show the Trusted Exit TEST CODE,
             // run the readiness check. Never true in a release/production build.
             buildConfigField("boolean", "TEST_MODE", "true")
+            buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
         release {
+            signingConfig = signingConfigs.getByName("rustoreRelease")
             isMinifyEnabled = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
             buildConfigField("boolean", "TEST_MODE", "false")
+            buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
+        // Real-server installable pilot for mass field testing. NO local OTP, no TEST
+        // CODE and no simulated credits; backend URL is mandatory and validated above
+        // when assemblePilot is requested. Signed with the owner's STABLE pilot
+        // keystore when provided (updatable fleet), else the per-machine debug key.
+        create("pilot") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName(
+                if (pilotKeystoreConfigured) "pilotRelease" else "debug"
+            )
+            isDebuggable = false
+            buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
+            buildConfigField("boolean", "TEST_MODE", "false")
+            buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
+        }
+
     }
 
     testOptions {
@@ -54,6 +177,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
