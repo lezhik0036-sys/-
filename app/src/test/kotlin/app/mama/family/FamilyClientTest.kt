@@ -60,6 +60,10 @@ class FamilyClientTest {
             .put("child_device_id", "33333333-3333-4333-8333-333333333333").toString()
         var devicesBody = JSONObject().put("devices", JSONArray()).toString()
         var deleteStatus = 200
+        // CHILD consent (gate 1): records the proof + named parent. 200 unless overridden.
+        var consentStatus = 200
+        var lastConsentParentId: String? = null
+        var lastConsentToken: String? = null
         private var lastNonce: String? = null
         private var lastCid: String? = null
         var challengeCalls = 0
@@ -85,6 +89,22 @@ class FamilyClientTest {
                     } else {
                         HttpReply(200, JSONObject().put("invitation_token", "pair-TOKEN-abc123")
                             .put("expires_at", "2099-01-01T00:00:00+00:00").toString())
+                    }
+                }
+                FamilyClient.PATH_CONSENTS -> {
+                    // Verify the device-key proof EXACTLY like the invitation path, then
+                    // require a named parent + invitation token (gate 1).
+                    val cid = j.getString("challenge_id")
+                    val nonce = j.getString("nonce")
+                    val dev = j.getString("device_id")
+                    val sig = j.getString("signature_b64")
+                    val message = FamilyClient.proofMessage(userId, cid, dev, nonce)
+                    if (cid != lastCid || nonce != lastNonce || !verify(pubB64, sig, message)) {
+                        HttpReply(403, JSONObject().put("detail", "consent not available").toString())
+                    } else {
+                        lastConsentParentId = j.optString("parent_user_id", null)
+                        lastConsentToken = j.optString("invitation_token", null)
+                        HttpReply(consentStatus, JSONObject().put("status", "consent_recorded").toString())
                     }
                 }
                 FamilyClient.PATH_LINKS -> HttpReply(linkStatus, linkBody)
@@ -145,7 +165,7 @@ class FamilyClientTest {
         assertEquals("no-session", (client.createInvitation() as FamilyClient.InviteResult.Failed).reason)
     }
 
-    @Test fun `consumeInvitation maps linked, consent-unavailable and failure`() {
+    @Test fun `consumeInvitation maps linked, both 503 gates and failure`() {
         val key = EphemeralDeviceKey()
         val server = FakeFamilyServer(key.publicKeyB64())
         val client = FamilyClient(server, FakeSession(), key)
@@ -155,11 +175,79 @@ class FamilyClientTest {
         assertTrue(linked is FamilyClient.LinkResult.Linked)
         assertEquals("33333333-3333-4333-8333-333333333333", (linked as FamilyClient.LinkResult.Linked).childDeviceId)
 
+        // Gate 1 (503): the server is still awaiting the child device's consent.
         server.linkStatus = 503
-        assertTrue(client.consumeInvitation("pair-TOKEN-abc123") is FamilyClient.LinkResult.ConsentUnavailable)
+        server.linkBody = JSONObject().put("detail", "awaiting child-device consent").toString()
+        assertTrue(
+            "awaiting consent -> gate 1",
+            client.consumeInvitation("pair-TOKEN-abc123") is FamilyClient.LinkResult.AwaitingChildConsent,
+        )
+
+        // Gate 2 (503): consent is in, but no operator guardian-authority grant yet.
+        server.linkBody = JSONObject().put("detail", "guardian authority not granted").toString()
+        assertTrue(
+            "no authority -> gate 2",
+            client.consumeInvitation("pair-TOKEN-abc123") is FamilyClient.LinkResult.AwaitingGuardianAuthority,
+        )
 
         server.linkStatus = 404
         assertTrue(client.consumeInvitation("pair-TOKEN-abc123") is FamilyClient.LinkResult.Failed)
+    }
+
+    @Test fun `recordConsent signs a fresh proof and sends the named parent + token`() {
+        val key = EphemeralDeviceKey()
+        val server = FakeFamilyServer(key.publicKeyB64())
+        val client = FamilyClient(server, FakeSession(), key)
+        val parent = "88888888-8888-4888-8888-888888888888"
+
+        val r = client.recordConsent("pair-TOKEN-abc123", parent)
+        assertTrue("got $r", r is FamilyClient.ConsentResult.Recorded)
+        assertEquals(parent, server.lastConsentParentId)
+        assertEquals("pair-TOKEN-abc123", server.lastConsentToken)
+    }
+
+    @Test fun `recordConsent rejects a non-UUID parent id without calling the server`() {
+        val key = EphemeralDeviceKey()
+        val server = FakeFamilyServer(key.publicKeyB64())
+        val client = FamilyClient(server, FakeSession(), key)
+        val r = client.recordConsent("pair-TOKEN-abc123", "not-a-uuid")
+        assertEquals("bad-parent-id", (r as FamilyClient.ConsentResult.Failed).reason)
+        assertEquals("no challenge was requested", 0, server.challengeCalls)
+    }
+
+    @Test fun `recordConsent rejects an empty token without calling the server`() {
+        val client = FamilyClient(FakeFamilyServer("x"), FakeSession(), EphemeralDeviceKey())
+        val r = client.recordConsent("", "88888888-8888-4888-8888-888888888888")
+        assertEquals("bad-token", (r as FamilyClient.ConsentResult.Failed).reason)
+    }
+
+    @Test fun `recordConsent surfaces a server refusal as Failed, never success`() {
+        val key = EphemeralDeviceKey()
+        val server = FakeFamilyServer(key.publicKeyB64())
+        server.consentStatus = 403
+        val client = FamilyClient(server, FakeSession(), key)
+        val r = client.recordConsent("pair-TOKEN-abc123", "88888888-8888-4888-8888-888888888888")
+        assertEquals("refused", (r as FamilyClient.ConsentResult.Failed).reason)
+    }
+
+    @Test fun `a wrong device key is refused by the consent proof and yields Failed`() {
+        val signer = EphemeralDeviceKey()
+        val otherPub = EphemeralDeviceKey().publicKeyB64() // server expects a DIFFERENT key
+        val client = FamilyClient(FakeFamilyServer(otherPub), FakeSession(), signer)
+        val r = client.recordConsent("pair-TOKEN-abc123", "88888888-8888-4888-8888-888888888888")
+        assertTrue(r is FamilyClient.ConsentResult.Failed)
+    }
+
+    @Test fun `thisUserId reflects the session user and is null without one`() {
+        val key = EphemeralDeviceKey()
+        val linked = FamilyClient(FakeFamilyServer(key.publicKeyB64()), FakeSession(), key)
+        assertEquals(userId, linked.thisUserId())
+
+        val noSession = object : FamilySessionSource {
+            override fun ensureSession(): AccountSession? = null
+            override fun forgetSession() {}
+        }
+        assertEquals(null, FamilyClient(FakeFamilyServer("x"), noSession, key).thisUserId())
     }
 
     @Test fun `consumeInvitation rejects an empty token without calling the server`() {

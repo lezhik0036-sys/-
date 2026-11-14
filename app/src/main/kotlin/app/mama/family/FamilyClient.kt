@@ -21,15 +21,20 @@ import org.json.JSONObject
  *      3. POST /v1/family/device-invitations {device_id, challenge_id, nonce,
  *         signature_b64}                                               -> invitation token
  *    The token is a single-use pairing locator the child shows to the parent.
+ *      4. POST /v1/family/consents {device_id, challenge_id, nonce, signature_b64,
+ *         invitation_token, parent_user_id}  -> the child DEVICE consents to a NAMED
+ *         parent (gate 1 / Option A), proven by a fresh device-key signature.
  *  - PARENT device:
- *      POST   /v1/family/links {invitation_token}   -> link (503 until the server's
- *             guardian-consent provider is provisioned; the app shows that honestly)
+ *      POST   /v1/family/links {invitation_token}   -> link. 503 until BOTH gates hold:
+ *             gate 1 (the child device consented to THIS parent) and gate 2 (an operator
+ *             granted guardian authority). The body's detail says which is missing, so the
+ *             app guides the right next step honestly; it never forges a link.
  *      GET    /v1/family/devices                    -> this parent's linked child devices
  *      DELETE /v1/family/devices/{child_device_id}  -> revoke a link
  *  - CHILD recovery (lost tablet): DELETE /v1/family/my-devices/{id}/parent, which the
  *    server gates on a RECENT re-authentication; a stale bearer is refused (not a bypass).
  *
- * Fail-closed: a transport failure, a non-2xx (except the explicit 503 consent case),
+ * Fail-closed: a transport failure, a non-2xx (except the explicit 503 gate cases),
  * or a malformed reply returns a failure and never a forged link. One 401 re-auth per
  * call. Call OFF the main thread (network + Keystore signing).
  */
@@ -48,29 +53,18 @@ class FamilyClient(
 
     fun createInvitation(): InviteResult {
         val sess = session.ensureSession() ?: return InviteResult.Failed("no-session")
-        val deviceId = sess.deviceId
-        val userId = sess.userId
-
-        val challenge = authed("POST", PATH_CHALLENGES, JSONObject().put("device_id", deviceId).toString())
-            ?: return InviteResult.Failed("transport")
-        if (challenge.status != 200) return InviteResult.Failed("challenge-${challenge.status}")
-        val (challengeId, nonce) = runCatching {
-            val j = JSONObject(challenge.body)
-            j.getString("challenge_id") to j.getString("nonce")
-        }.getOrElse { return InviteResult.Failed("challenge-malformed") }
-        if (!isCanonicalUuid(challengeId) || nonce.isBlank()) return InviteResult.Failed("challenge-malformed")
-
-        val signatureB64 = runCatching {
-            B64.encodeToString(deviceKey.sign(proofMessage(userId, challengeId, deviceId, nonce)))
-        }.getOrElse { return InviteResult.Failed("sign") }
+        val proof = when (val p = freshDeviceKeyProof(sess.userId, sess.deviceId)) {
+            is ProofResult.Ok -> p
+            is ProofResult.Failed -> return InviteResult.Failed(p.reason)
+        }
 
         val invite = authed(
             "POST", PATH_INVITATIONS,
             JSONObject()
-                .put("device_id", deviceId)
-                .put("challenge_id", challengeId)
-                .put("nonce", nonce)
-                .put("signature_b64", signatureB64)
+                .put("device_id", sess.deviceId)
+                .put("challenge_id", proof.challengeId)
+                .put("nonce", proof.nonce)
+                .put("signature_b64", proof.signatureB64)
                 .toString(),
         ) ?: return InviteResult.Failed("transport")
         if (invite.status != 200) return InviteResult.Failed("invite-${invite.status}")
@@ -83,12 +77,61 @@ class FamilyClient(
         }.getOrElse { InviteResult.Failed("invite-malformed") }
     }
 
+    // --- CHILD (gate 1): the child DEVICE explicitly consents to a NAMED parent ---
+
+    sealed interface ConsentResult {
+        /** The child device recorded its consent to the named parent for this invitation. */
+        object Recorded : ConsentResult
+        /** No consent recorded (no session / bad parent id / proof refused / transport). */
+        data class Failed(val reason: String) : ConsentResult
+    }
+
+    /**
+     * Record this child device's explicit consent that [parentUserId] may link it,
+     * for the single-use [invitationToken] (gate 1 / Option A). The consent evidence
+     * is a FRESH device-key signature verified server-side — never a local flag. This
+     * grants NO parent access by itself: the parent's /links still needs the separate
+     * server-side guardian-authority grant (gate 2). The parent account id is read
+     * from the parent's own Family screen and entered here; naming a specific parent
+     * is what makes the consent parent-specific. Call OFF the main thread.
+     */
+    fun recordConsent(invitationToken: String, parentUserId: String): ConsentResult {
+        if (invitationToken.length !in 1..256) return ConsentResult.Failed("bad-token")
+        if (!isCanonicalUuid(parentUserId)) return ConsentResult.Failed("bad-parent-id")
+        val sess = session.ensureSession() ?: return ConsentResult.Failed("no-session")
+        val proof = when (val p = freshDeviceKeyProof(sess.userId, sess.deviceId)) {
+            is ProofResult.Ok -> p
+            is ProofResult.Failed -> return ConsentResult.Failed(p.reason)
+        }
+        val reply = authed(
+            "POST", PATH_CONSENTS,
+            JSONObject()
+                .put("device_id", sess.deviceId)
+                .put("challenge_id", proof.challengeId)
+                .put("nonce", proof.nonce)
+                .put("signature_b64", proof.signatureB64)
+                .put("invitation_token", invitationToken)
+                .put("parent_user_id", parentUserId)
+                .toString(),
+        ) ?: return ConsentResult.Failed("transport")
+        return when (reply.status) {
+            200 -> ConsentResult.Recorded
+            // Generic server refusal: bad/expired proof, not this child's invitation,
+            // or an unknown parent. Never surfaced as success.
+            403 -> ConsentResult.Failed("refused")
+            else -> ConsentResult.Failed("consent-${reply.status}")
+        }
+    }
+
     // --- PARENT: consume an invitation to link a child device ---
 
     sealed interface LinkResult {
         data class Linked(val childDeviceId: String) : LinkResult
-        /** The server's guardian-consent provider is not provisioned (503): no link made. */
-        object ConsentUnavailable : LinkResult
+        /** Gate 1 (503): the child device has not yet consented to THIS parent. The
+         *  next step is on the CHILD device, not a server-provisioning wait. */
+        object AwaitingChildConsent : LinkResult
+        /** Gate 2 (503): no operator has granted this parent guardian authority yet. */
+        object AwaitingGuardianAuthority : LinkResult
         data class Failed(val reason: String) : LinkResult
     }
 
@@ -101,7 +144,14 @@ class FamilyClient(
                 val childId = JSONObject(reply.body).getString("child_device_id")
                 if (isCanonicalUuid(childId)) LinkResult.Linked(childId) else LinkResult.Failed("link-malformed")
             }.getOrElse { LinkResult.Failed("link-malformed") }
-            503 -> LinkResult.ConsentUnavailable
+            // The two-gate server answers 503 for either unmet gate; the body's detail
+            // distinguishes them so the app can guide the right next step. "guardian
+            // authority" -> gate 2 (operator); anything else -> gate 1 (child consent).
+            503 -> {
+                val detail = runCatching { JSONObject(reply.body).optString("detail", "") }.getOrElse { "" }
+                if (detail.contains("authority", ignoreCase = true)) LinkResult.AwaitingGuardianAuthority
+                else LinkResult.AwaitingChildConsent
+            }
             else -> LinkResult.Failed("link-${reply.status}")
         }
     }
@@ -149,6 +199,16 @@ class FamilyClient(
      */
     fun thisDeviceId(): String? = session.ensureSession()?.deviceId
 
+    /**
+     * This account's server-side user id, from the current authenticated session, or
+     * null when there is no session. The PARENT reads this out so the CHILD device can
+     * name it when recording consent ([recordConsent]); it is the server-issued account
+     * id, never a local role or guess. It is a pairing identifier, not a secret — on its
+     * own it grants nothing, since linking still needs the child's consent and the
+     * operator's guardian-authority grant.
+     */
+    fun thisUserId(): String? = session.ensureSession()?.userId
+
     sealed interface ParentRevokeResult {
         object Revoked : ParentRevokeResult
         /** The server requires a fresh re-login for this sensitive change (401). */
@@ -192,9 +252,40 @@ class FamilyClient(
         }
     }.getOrNull()
 
+    // --- shared device-key proof: fresh challenge -> signed canonical message ---
+
+    private sealed interface ProofResult {
+        data class Ok(val challengeId: String, val nonce: String, val signatureB64: String) : ProofResult
+        data class Failed(val reason: String) : ProofResult
+    }
+
+    /**
+     * Obtain a fresh server challenge for [deviceId] and sign its canonical message
+     * with the registered device key. Used by BOTH the invitation (child proves key
+     * possession) and the consent (child signs again to name a parent); each call gets
+     * its own single-use challenge, as the server requires. Fail-closed: a transport
+     * error, non-200, malformed challenge, or a signing failure yields a reason and
+     * never a forged proof.
+     */
+    private fun freshDeviceKeyProof(userId: String, deviceId: String): ProofResult {
+        val challenge = authed("POST", PATH_CHALLENGES, JSONObject().put("device_id", deviceId).toString())
+            ?: return ProofResult.Failed("transport")
+        if (challenge.status != 200) return ProofResult.Failed("challenge-${challenge.status}")
+        val (challengeId, nonce) = runCatching {
+            val j = JSONObject(challenge.body)
+            j.getString("challenge_id") to j.getString("nonce")
+        }.getOrElse { return ProofResult.Failed("challenge-malformed") }
+        if (!isCanonicalUuid(challengeId) || nonce.isBlank()) return ProofResult.Failed("challenge-malformed")
+        val signatureB64 = runCatching {
+            B64.encodeToString(deviceKey.sign(proofMessage(userId, challengeId, deviceId, nonce)))
+        }.getOrElse { return ProofResult.Failed("sign") }
+        return ProofResult.Ok(challengeId, nonce, signatureB64)
+    }
+
     companion object {
         const val PATH_CHALLENGES = "/v1/family/device-key-challenges"
         const val PATH_INVITATIONS = "/v1/family/device-invitations"
+        const val PATH_CONSENTS = "/v1/family/consents"
         const val PATH_LINKS = "/v1/family/links"
         const val PATH_DEVICES = "/v1/family/devices"
         const val PATH_MY_DEVICES = "/v1/family/my-devices"
