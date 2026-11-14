@@ -35,6 +35,20 @@ val releaseStore = providers.environmentVariable("MAMA_RELEASE_KEYSTORE")
 val releaseStorePassword = providers.environmentVariable("MAMA_RELEASE_STORE_PASSWORD")
 val releaseAlias = providers.environmentVariable("MAMA_RELEASE_KEY_ALIAS")
 val releaseKeyPassword = providers.environmentVariable("MAMA_RELEASE_KEY_PASSWORD")
+
+// Stable PILOT signing key for mass field testing (separate from the RuStore release
+// key). Provisioned by the owner outside the repo (CI: GitHub Actions secrets; local:
+// env). When ALL four are present the pilot build signs with this fixed identity so
+// testers can update-install across pilot builds; when absent the pilot build falls
+// back to the per-machine debug key (fine for a one-off first install). The keystore
+// and its passwords are never committed. See docs/PILOT_SIGNING.md.
+val pilotStore = providers.environmentVariable("MAMA_PILOT_KEYSTORE")
+val pilotStorePassword = providers.environmentVariable("MAMA_PILOT_STORE_PASSWORD")
+val pilotAlias = providers.environmentVariable("MAMA_PILOT_KEY_ALIAS")
+val pilotKeyPassword = providers.environmentVariable("MAMA_PILOT_KEY_PASSWORD")
+val pilotKeystoreConfigured =
+    pilotStore.orNull?.let { file(it).isFile } == true &&
+        listOf(pilotStorePassword, pilotAlias, pilotKeyPassword).all { !it.orNull.isNullOrBlank() }
 val approvedReleaseOrigin = "https://api.mama-app.ru"
 val verifyMamaReleaseInputs = tasks.register("verifyMamaReleaseInputs") {
     doLast {
@@ -82,6 +96,16 @@ android {
             keyAlias = releaseAlias.orNull
             keyPassword = releaseKeyPassword.orNull
         }
+        // Created only when the owner's stable pilot keystore is provided, so an
+        // empty/invalid config can never be attached to a build.
+        if (pilotKeystoreConfigured) {
+            create("pilotRelease") {
+                storeFile = file(pilotStore.get())
+                storePassword = pilotStorePassword.get()
+                keyAlias = pilotAlias.get()
+                keyPassword = pilotKeyPassword.get()
+            }
+        }
     }
 
     sourceSets {
@@ -105,12 +129,15 @@ android {
             buildConfigField("boolean", "TEST_MODE", "false")
             buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
-        // Real-server installable pilot (debug key for internal distribution ONLY).
-        // NO local OTP, no TEST CODE and no simulated credits; backend URL is
-        // mandatory and validated above when assemblePilot is requested.
+        // Real-server installable pilot for mass field testing. NO local OTP, no TEST
+        // CODE and no simulated credits; backend URL is mandatory and validated above
+        // when assemblePilot is requested. Signed with the owner's STABLE pilot
+        // keystore when provided (updatable fleet), else the per-machine debug key.
         create("pilot") {
             initWith(getByName("release"))
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(
+                if (pilotKeystoreConfigured) "pilotRelease" else "debug"
+            )
             isDebuggable = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
             buildConfigField("boolean", "TEST_MODE", "false")

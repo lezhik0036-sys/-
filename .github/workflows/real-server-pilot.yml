@@ -140,8 +140,42 @@ jobs:
             401|403) echo "Anonymous account access denied: HTTP $code" ;;
             *) echo "::error::Expected anonymous account access denial (401/403), got HTTP $code"; exit 1 ;;
           esac
+      - name: Provision the stable pilot signing key (optional, from Actions secrets)
+        shell: bash
+        env:
+          MAMA_PILOT_KEYSTORE_B64: ${{ secrets.MAMA_PILOT_KEYSTORE_B64 }}
+          PILOT_STORE_PASSWORD: ${{ secrets.MAMA_PILOT_STORE_PASSWORD }}
+          PILOT_KEY_ALIAS: ${{ secrets.MAMA_PILOT_KEY_ALIAS }}
+          PILOT_KEY_PASSWORD: ${{ secrets.MAMA_PILOT_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAMA_PILOT_KEYSTORE_B64:-}" ]; then
+            echo "No MAMA_PILOT_KEYSTORE_B64 secret: pilot APK will be debug-signed (first round only)."
+            exit 0
+          fi
+          printf '%s' "$MAMA_PILOT_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/mama-pilot.jks"
+          test -s "$RUNNER_TEMP/mama-pilot.jks" || { echo "::error::pilot keystore secret did not decode"; exit 1; }
+          {
+            echo "MAMA_PILOT_KEYSTORE=$RUNNER_TEMP/mama-pilot.jks"
+            echo "MAMA_PILOT_STORE_PASSWORD=$PILOT_STORE_PASSWORD"
+            echo "MAMA_PILOT_KEY_ALIAS=$PILOT_KEY_ALIAS"
+            echo "MAMA_PILOT_KEY_PASSWORD=$PILOT_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Stable pilot keystore provisioned; the pilot APK will use the fixed signing identity."
       - name: Build installable non-test Pilot APK
         run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" --console=plain
+      - name: Report the pilot APK signing identity (SHA-256 cert digest)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/pilot/app-pilot.apk
+          tools_dir="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)"
+          "${tools_dir}apksigner" verify --print-certs "$apk" | grep -i 'SHA-256' || true
+          if [ -n "${MAMA_PILOT_KEYSTORE:-}" ]; then
+            echo "Signed with the STABLE pilot keystore (updatable fleet)."
+          else
+            echo "Signed with the per-machine DEBUG key (first-round install only; not updatable)."
+          fi
       - name: Verify NO test codes or simulated credits
         shell: bash
         run: |
