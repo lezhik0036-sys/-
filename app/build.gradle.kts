@@ -49,6 +49,20 @@ val pilotKeyPassword = providers.environmentVariable("MAMA_PILOT_KEY_PASSWORD")
 val pilotKeystoreConfigured =
     pilotStore.orNull?.let { file(it).isFile } == true &&
         listOf(pilotStorePassword, pilotAlias, pilotKeyPassword).all { !it.orNull.isNullOrBlank() }
+// The user-facing fleet build passes -PmamaRequireStableSigning=true. With it, a pilot
+// build MUST sign with the owner's stable keystore and may NOT fall back to the
+// per-machine debug key: we refuse rather than hand testers a non-updatable,
+// debug-signed APK. Local developer pilot builds omit the flag and keep the fallback.
+val requireStableSigning =
+    ((project.findProperty("mamaRequireStableSigning") as String?)?.trim())
+        .equals("true", ignoreCase = true)
+if (pilotBuildRequested && requireStableSigning && !pilotKeystoreConfigured) {
+    throw GradleException(
+        "MAMA Pilot: -PmamaRequireStableSigning=true but the stable pilot keystore is not " +
+            "configured. Set MAMA_PILOT_KEYSTORE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD " +
+            "(see docs/PILOT_SIGNING.md). Refusing to produce a debug-signed user APK.",
+    )
+}
 val approvedReleaseOrigin = "https://api.mama-app.ru"
 val verifyMamaReleaseInputs = tasks.register("verifyMamaReleaseInputs") {
     doLast {

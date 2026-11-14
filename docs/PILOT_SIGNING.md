@@ -3,14 +3,31 @@
 The pilot APK (`:app:assemblePilot`, real server, no fakes) is signed with a **stable
 pilot keystore** so testers can **update-install** across pilot builds. It is separate
 from the RuStore release key and is the **owner's secret** — created once, kept safe,
-never committed. If all four env vars below are absent, the pilot build falls back to
-the per-machine debug key (fine for a one-off first install, but not updatable).
+never committed.
+
+**The user-facing fleet APK is never debug-signed.** The `real-server-pilot` workflow
+builds with `-PmamaRequireStableSigning=true` and fails up front if the four
+`MAMA_PILOT_*` Actions secrets are not set — so a non-updatable, debug-signed APK is
+never handed to testers. (A developer running `:app:assemblePilot` locally *without*
+that flag still falls back to the per-machine debug key; that is a local build, not the
+distributable one.)
 
 Build wiring (already in `app/build.gradle.kts`): a `pilotRelease` signing config is
-created **only** when all four `MAMA_PILOT_*` are present, and the `pilot` build type
-uses it then; otherwise it uses the debug key.
+created **only** when all four `MAMA_PILOT_*` are present; with
+`-PmamaRequireStableSigning=true` the build refuses to run unless that config exists.
 
 ## 1. Create the keystore once (owner, offline)
+
+Fastest path — the helper script does the keytool call, generates a strong password,
+writes a protected local backup (`mama-pilot.secrets.txt`), prints the cert SHA-256, and
+can set the four Actions secrets for you:
+
+```
+scripts/make-pilot-keystore.sh                # create keystore + local backup
+scripts/make-pilot-keystore.sh --set-secrets  # also set the 4 Actions secrets via gh
+```
+
+Or do it by hand:
 
 ```
 keytool -genkeypair -v \
@@ -38,8 +55,9 @@ export MAMA_PILOT_KEY_PASSWORD=...          # the key password (same as store fo
 ## 3. Use it in CI (the `real-server-pilot` workflow)
 
 Add these **GitHub Actions repository secrets** (Settings → Secrets and variables →
-Actions). The workflow decodes the keystore to a temp file and signs with it; with the
-secret unset it logs that the APK is debug-signed.
+Actions), or let `scripts/make-pilot-keystore.sh --set-secrets` set them. The workflow
+decodes the keystore to a temp file and signs with it; **with any of them unset the
+workflow fails** (it will not emit a debug-signed user APK).
 
 | Secret | Value |
 |---|---|

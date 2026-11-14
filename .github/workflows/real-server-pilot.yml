@@ -140,7 +140,7 @@ jobs:
             401|403) echo "Anonymous account access denied: HTTP $code" ;;
             *) echo "::error::Expected anonymous account access denial (401/403), got HTTP $code"; exit 1 ;;
           esac
-      - name: Provision the stable pilot signing key (optional, from Actions secrets)
+      - name: Require the stable pilot signing key (no debug-signed user APK)
         shell: bash
         env:
           MAMA_PILOT_KEYSTORE_B64: ${{ secrets.MAMA_PILOT_KEYSTORE_B64 }}
@@ -149,9 +149,17 @@ jobs:
           PILOT_KEY_PASSWORD: ${{ secrets.MAMA_PILOT_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${MAMA_PILOT_KEYSTORE_B64:-}" ]; then
-            echo "No MAMA_PILOT_KEYSTORE_B64 secret: pilot APK will be debug-signed (first round only)."
-            exit 0
+          # This workflow produces the user-facing fleet APK, so it MUST be signed with
+          # the owner's stable keystore — never the per-machine debug key (testers could
+          # not update-install over it). Missing secrets are a hard error, not a fallback.
+          missing=""
+          [ -z "${MAMA_PILOT_KEYSTORE_B64:-}" ] && missing="$missing MAMA_PILOT_KEYSTORE_B64"
+          [ -z "${PILOT_STORE_PASSWORD:-}" ] && missing="$missing MAMA_PILOT_STORE_PASSWORD"
+          [ -z "${PILOT_KEY_ALIAS:-}" ] && missing="$missing MAMA_PILOT_KEY_ALIAS"
+          [ -z "${PILOT_KEY_PASSWORD:-}" ] && missing="$missing MAMA_PILOT_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::The user-facing pilot APK must use the stable pilot keystore, not a debug key. Set the Actions secret(s):$missing (see docs/PILOT_SIGNING.md; scripts/make-pilot-keystore.sh creates the keystore and sets them)."
+            exit 1
           fi
           printf '%s' "$MAMA_PILOT_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/mama-pilot.jks"
           test -s "$RUNNER_TEMP/mama-pilot.jks" || { echo "::error::pilot keystore secret did not decode"; exit 1; }
@@ -163,7 +171,7 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Stable pilot keystore provisioned; the pilot APK will use the fixed signing identity."
       - name: Build installable non-test Pilot APK
-        run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" --console=plain
+        run: ./gradlew :app:assemblePilot "-PmamaBackendBaseUrl=$FASTAPI_URL" -PmamaRequireStableSigning=true --console=plain
       - name: Report the pilot APK signing identity (SHA-256 cert digest)
         shell: bash
         run: |
@@ -171,11 +179,10 @@ jobs:
           apk=app/build/outputs/apk/pilot/app-pilot.apk
           tools_dir="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)"
           "${tools_dir}apksigner" verify --print-certs "$apk" | grep -i 'SHA-256' || true
-          if [ -n "${MAMA_PILOT_KEYSTORE:-}" ]; then
-            echo "Signed with the STABLE pilot keystore (updatable fleet)."
-          else
-            echo "Signed with the per-machine DEBUG key (first-round install only; not updatable)."
+          if [ -z "${MAMA_PILOT_KEYSTORE:-}" ]; then
+            echo "::error::pilot APK was not signed with the stable keystore"; exit 1
           fi
+          echo "Signed with the STABLE pilot keystore (updatable fleet)."
       - name: Verify NO test codes or simulated credits
         shell: bash
         run: |
