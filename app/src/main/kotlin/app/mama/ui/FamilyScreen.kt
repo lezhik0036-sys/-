@@ -36,6 +36,9 @@ internal const val FAMILY_UNAVAILABLE = "family_unavailable"
 internal const val FAMILY_PARENT_LINK = "family_parent_link"
 internal const val FAMILY_CHILD_CREATE = "family_child_create"
 internal const val FAMILY_CHILD_CODE = "family_child_code"
+internal const val FAMILY_CHILD_CONSENT = "family_child_consent"
+internal const val FAMILY_CHILD_CONSENT_CONFIRM = "family_child_consent_confirm"
+internal const val FAMILY_PARENT_ID = "family_parent_id"
 
 /**
  * Transient UI state of the Family screen. It is NOT a role or privilege flag: it
@@ -51,6 +54,10 @@ internal class FamilyUi {
     var good = false
     /** CHILD: the single-use invitation code to read to the parent, once created. */
     var invitation: String? = null
+    /** CHILD: true once this device has consented to the named parent for [invitation]. */
+    var consentGiven = false
+    /** PARENT: this parent's own account id, revealed on request to read to the child. */
+    var parentId: String? = null
     /** PARENT: the linked child devices, loaded lazily; null until first loaded. */
     var devices: List<FamilyClient.LinkedDevice>? = null
 }
@@ -60,6 +67,8 @@ internal fun MainActivity.openFamily() {
     family.busy = false
     family.message = null
     family.invitation = null
+    family.consentGiven = false
+    family.parentId = null
     family.devices = null
     familyOpen = true
     render()
@@ -113,6 +122,11 @@ internal fun MainActivity.familyScreen(): Pair<View, Boolean> {
             .apply { isEnabled = !family.busy },
         d.gap(10),
     )
+    parent.addView(
+        d.linkButton("Показать мой идентификатор родителя") { familyShowParentId() },
+        d.gap(6),
+    )
+    family.parentId?.let { parent.addView(parentIdCard(it), d.gap(12)) }
     family.devices?.let { parent.addView(devicesList(it), d.gap(14)) }
     b.addView(parent, d.gap(12))
 
@@ -129,7 +143,10 @@ internal fun MainActivity.familyScreen(): Pair<View, Boolean> {
             .apply { tag = FAMILY_CHILD_CREATE; isEnabled = !family.busy },
         d.gap(14),
     )
-    family.invitation?.let { child.addView(childCodeCard(it), d.gap(14)) }
+    family.invitation?.let {
+        child.addView(childCodeCard(it), d.gap(14))
+        child.addView(childConsentCard(), d.gap(14))
+    }
     child.addView(
         d.linkButton("Отвязать это устройство от родителя") { confirmDetachThisDevice() },
         d.gap(10),
@@ -206,6 +223,65 @@ private fun MainActivity.childCodeCard(code: String): View = design.card(padding
     )
 }
 
+/**
+ * CHILD gate 1: the child device explicitly confirms WHICH parent it consents to.
+ * The child enters the parent's account id (shown on the parent's device under
+ * «Показать мой идентификатор родителя») and confirms. This records a server-side,
+ * parent-specific consent proven by a fresh device-key signature — it is NOT a local
+ * role flag and grants nothing by itself; the link still needs the operator's
+ * guardian-authority grant (gate 2).
+ */
+private fun MainActivity.childConsentCard(): View = design.card(paddingDp = 16, fill = Palette.CardQuiet).apply {
+    tag = FAMILY_CHILD_CONSENT
+    addView(design.text("Подтвердите родителя", Typo.LABEL, Palette.InkMuted))
+    addView(
+        design.text(
+            "Разрешите привязку конкретному родителю. Попросите родителя открыть раздел «Родитель» и продиктовать свой идентификатор, затем введите его здесь. Без этого подтверждения сервер не выполнит привязку.",
+            Typo.BODY, Palette.InkMuted,
+        ),
+        design.gap(8),
+    )
+    val parentField = design.textField("Идентификатор родителя", InputType.TYPE_CLASS_TEXT)
+    addView(parentField, design.gap(12))
+    if (family.consentGiven) {
+        addView(
+            design.text("Этот родитель подтверждён для текущего кода.", Typo.CAPTION, Palette.OliveInk),
+            design.gap(8),
+        )
+    }
+    addView(
+        design.primaryButton("Подтвердить этого родителя") {
+            val parentId = parentField.text.toString().trim()
+            if (parentId.isEmpty()) {
+                family.message = "Введите идентификатор родителя (он показан на устройстве родителя)."
+                family.good = false
+                render()
+            } else {
+                familyRecordConsent(parentId)
+            }
+        }.apply { tag = FAMILY_CHILD_CONSENT_CONFIRM; isEnabled = !family.busy },
+        design.gap(10),
+    )
+}
+
+/** The parent's own account id, revealed for the parent to read out to the child. */
+private fun MainActivity.parentIdCard(parentId: String): View = design.card(paddingDp = 16, fill = Palette.CardQuiet).apply {
+    tag = FAMILY_PARENT_ID
+    addView(design.text("Ваш идентификатор родителя", Typo.LABEL, Palette.InkMuted))
+    addView(design.text(parentId, Typo.VALUE, Palette.Ink).apply { setTextIsSelectable(true) }, design.gap(6))
+    addView(
+        design.secondaryButton("Скопировать идентификатор", Icon.CHECK) {
+            copyToClipboard("MAMA parent id", parentId)
+            Toast.makeText(this@parentIdCard, "Идентификатор скопирован", Toast.LENGTH_SHORT).show()
+        },
+        design.gap(12),
+    )
+    addView(
+        design.text("Продиктуйте его ребёнку — на детском устройстве он подтверждает именно вас. Это не секрет: сам по себе он не даёт доступа.", Typo.CAPTION, Palette.InkMuted),
+        design.gap(10),
+    )
+}
+
 // ---------------- server calls (off the main thread; result applied on the UI thread) ----------------
 
 /**
@@ -241,7 +317,8 @@ private fun MainActivity.familyCreateInvitation() = runFamily({ it.createInvitat
     when (r) {
         is FamilyClient.InviteResult.Created -> {
             invitation = r.invitationToken
-            message = "Код создан. Продиктуйте его родителю — он действует один раз."
+            consentGiven = false // a fresh code needs a fresh parent confirmation
+            message = "Код создан. Продиктуйте его родителю, затем подтвердите родителя ниже — он действует один раз."
             good = true
         }
         else -> {
@@ -258,14 +335,55 @@ private fun MainActivity.familyConsume(code: String) = runFamily({ it.consumeInv
             good = true
             devices = null // force a reload to reflect the new link
         }
-        FamilyClient.LinkResult.ConsentUnavailable -> {
-            message = "Согласие опекуна пока не настроено на сервере — привязка не выполнена. На этом этапе это ожидаемо."
+        FamilyClient.LinkResult.AwaitingChildConsent -> {
+            // Gate 1: the next action is on the CHILD device, not a server wait.
+            message = "Детское устройство ещё не подтвердило именно вас. На детском устройстве откройте «Семья», введите ваш идентификатор родителя и нажмите «Подтвердить этого родителя», затем повторите привязку."
+            good = false
+        }
+        FamilyClient.LinkResult.AwaitingGuardianAuthority -> {
+            // Gate 2: operator-recorded guardian authority is not yet granted.
+            message = "Согласие ребёнка получено. Подтверждение полномочий опекуна ещё не выдано на сервере — привязка завершится после подтверждения оператором. На этом этапе это ожидаемо."
             good = false
         }
         else -> {
             message = "Не удалось привязать. Проверьте код и соединение."
             good = false
         }
+    }
+}
+
+private fun MainActivity.familyRecordConsent(parentId: String) {
+    val token = family.invitation
+    if (token == null) {
+        family.message = "Сначала создайте код привязки."
+        family.good = false
+        render()
+        return
+    }
+    runFamily({ it.recordConsent(token, parentId) }) { r ->
+        when (r) {
+            FamilyClient.ConsentResult.Recorded -> {
+                consentGiven = true
+                message = "Вы подтвердили этого родителя для текущего кода. Передайте код родителю — он завершит привязку."
+                good = true
+            }
+            else -> {
+                consentGiven = false
+                message = "Не удалось подтвердить родителя. Проверьте идентификатор родителя и соединение."
+                good = false
+            }
+        }
+    }
+}
+
+private fun MainActivity.familyShowParentId() = runFamily({ it.thisUserId() }) { id ->
+    if (id != null) {
+        parentId = id
+        message = null
+        good = true
+    } else {
+        message = "Не удалось получить идентификатор. Проверьте вход в аккаунт."
+        good = false
     }
 }
 
