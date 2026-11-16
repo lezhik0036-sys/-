@@ -9,6 +9,8 @@ import app.mama.backend.auth.GrantVerifier
 import app.mama.backend.auth.ReceiptSigner
 import app.mama.backend.db.JdbcDb
 import app.mama.backend.trustedexit.ContactDestinationResolver
+import app.mama.backend.trustedexit.FastApiDestinationResolver
+import app.mama.backend.trustedexit.KtorInternalRequestSigner
 import app.mama.backend.trustedexit.ContactVerificationDispatchMac
 import app.mama.backend.trustedexit.ContactVerificationDispatchService
 import app.mama.backend.trustedexit.contactVerificationSmsMessage
@@ -64,9 +66,9 @@ class ServerDeps(
  *
  * If anything required is missing the server still starts (so /health works and
  * ops can see it), but /ready is 503 and the endpoints fail closed with 503.
- * The SMS destination is resolved server-side only; the stub resolver returns
- * null (fail-closed) until the FastAPI pinned internal call is implemented, so
- * this increment never actually sends.
+ * The SMS destination is resolved server-side only — from FastAPI's authenticated
+ * internal endpoint (FastApiDestinationResolver) when MAMA_FASTAPI_INTERNAL_URL and the
+ * shared transport key are set; otherwise a null resolver keeps it fail-closed (no send).
  */
 fun main() {
     val log = LoggerFactory.getLogger("app.mama.backend")
@@ -99,6 +101,24 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
         ?.let { ReceiptSigner(it) }?.takeIf { it.configured }
     log.info("verified-OTP receipt signing: ${if (receiptSigner != null) "enabled" else "disabled"}")
 
+    // Confirmed-number lookup (Ktor -> FastAPI): resolve the SMS destination from the
+    // server of record over the transport-MAC envelope. The grant carries no phone, so
+    // Ktor asks FastAPI where to send the OTP. OFF (null, fail-closed) until BOTH the
+    // FastAPI internal URL and the shared transport key are configured; the key is the
+    // SAME value FastAPI reads as MAMA_INTERNAL_TRANSPORT_KEY (its UTF-8 bytes), distinct
+    // from the OTP ingest HMAC and both Ed25519 keys, and never logged.
+    val transportSigner = KtorInternalRequestSigner(
+        System.getenv("MAMA_INTERNAL_TRANSPORT_KEY").orEmpty().toByteArray(Charsets.UTF_8),
+    )
+    val fastApiInternalUrl = System.getenv("MAMA_FASTAPI_INTERNAL_URL").orEmpty()
+    val destinationConfigured = fastApiInternalUrl.isNotBlank() && transportSigner.configured
+    val destinationResolver: ContactDestinationResolver = if (destinationConfigured) {
+        FastApiDestinationResolver(fastApiInternalUrl, transportSigner)
+    } else {
+        ContactDestinationResolver { _, _ -> null }
+    }
+    log.info("destination lookup (FastAPI): ${if (destinationConfigured) "enabled" else "disabled"}")
+
     val configured = verifier.configured && hasher.configured && db != null && sms != null
     val service = if (configured) {
         SecureTrustedExitService(
@@ -107,8 +127,7 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
             repo = OtpRepository(db!!, hasher),
             hasher = hasher,
             sms = sms!!,
-            // Fail-closed until the FastAPI pinned internal resolution is wired (Deliverable B).
-            destinations = ContactDestinationResolver { null },
+            destinations = destinationResolver,
             receiptSigner = receiptSigner,
         )
     } else {
@@ -156,10 +175,11 @@ fun buildDepsFromEnv(log: org.slf4j.Logger): ServerDeps {
             grant = verifier.configured,
             db = db != null,
             sms = sms != null,
-            // Both are OFF while the actual verified-contact resolver and
-            // private FastAPI mTLS evidence delivery are not installed.
-            // Never promote /ready to 200 based on an SMS API key alone.
-            destination = false,
+            // destination = whether the FastAPI confirmed-number lookup is wired (URL +
+            // shared transport key). authoritativeReceiptDelivery stays off until the
+            // mTLS evidence PUSH transport is installed. Never promote /ready to 200 on an
+            // SMS API key alone.
+            destination = destinationConfigured,
             authoritativeReceiptDelivery = false,
         ),
         trustedProxies,

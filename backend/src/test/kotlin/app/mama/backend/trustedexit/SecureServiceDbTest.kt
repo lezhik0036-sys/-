@@ -68,7 +68,7 @@ class SecureServiceDbTest {
         repo = OtpRepository(db, hasher),
         hasher = hasher,
         sms = sms,
-        destinations = ContactDestinationResolver { "+70000000000" },
+        destinations = ContactDestinationResolver { _, _ -> "+70000000000" },
         limits = limits,
     )
 
@@ -80,7 +80,7 @@ class SecureServiceDbTest {
         repo = OtpRepository(db, hasher),
         hasher = hasher,
         sms = sms,
-        destinations = ContactDestinationResolver { "+70000000000" },
+        destinations = ContactDestinationResolver { _, _ -> "+70000000000" },
         receiptSigner = ReceiptSigner(Base64.getEncoder().encodeToString(receiptKp.private.encoded)),
     )
 
@@ -224,7 +224,7 @@ class SecureServiceDbTest {
             override fun configured() = true
             override fun send(phone: String, code: String, confirmUrl: String?): SmsResult { n.incrementAndGet(); throw java.io.IOException("timeout") }
         }
-        val svc = SecureTrustedExitService(GrantVerifier(pub), GrantVerifier.forVerify(pub), OtpRepository(db, hasher), hasher, throwing, ContactDestinationResolver { "+70000000000" })
+        val svc = SecureTrustedExitService(GrantVerifier(pub), GrantVerifier.forVerify(pub), OtpRepository(db, hasher), hasher, throwing, ContactDestinationResolver { _, _ -> "+70000000000" })
         val b = bearer()
         val r = svc.request(b, "1.2.3.4") as RequestOutcome.Created
         assertEquals("UNKNOWN", r.delivery)
@@ -268,7 +268,7 @@ class SecureServiceDbTest {
     }
 
     @Test fun `destination that cannot be resolved fails closed with no SMS`() {
-        val svc = SecureTrustedExitService(GrantVerifier(pub), GrantVerifier.forVerify(pub), OtpRepository(db, hasher), hasher, sms, ContactDestinationResolver { null })
+        val svc = SecureTrustedExitService(GrantVerifier(pub), GrantVerifier.forVerify(pub), OtpRepository(db, hasher), hasher, sms, ContactDestinationResolver { _, _ -> null })
         assertEquals(RequestOutcome.DestinationUnavailable, svc.request(bearer(), "1.2.3.4"))
         assertEquals(0, sms.calls)
     }

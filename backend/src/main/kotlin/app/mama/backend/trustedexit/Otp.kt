@@ -43,8 +43,13 @@ enum class OtpStatus { PENDING_SEND, SENDING, SENT, SEND_FAILED, CONSUMED, LOCKE
 
 /** How the backend resolves the SMS destination — from a trusted server source, NEVER the client. */
 fun interface ContactDestinationResolver {
-    /** Resolves the destination phone for the grant's contact_id, or null if it cannot (fail-closed). */
-    fun resolve(grant: app.mama.backend.auth.Grant): String?
+    /**
+     * Resolves the destination phone for the grant's contact_id, or null if it cannot
+     * (fail-closed). [bearerToken] is the raw FastAPI-signed sms-request grant (no "Bearer "
+     * prefix); the real resolver forwards it to the authenticated FastAPI destination
+     * endpoint, which RE-VERIFIES the grant and returns the server-owned verified number.
+     */
+    fun resolve(grant: app.mama.backend.auth.Grant, bearerToken: String): String?
 }
 
 /** Durable rate-limit windows/budgets (seconds + max count), enforced before any send. */

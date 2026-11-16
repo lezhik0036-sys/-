@@ -64,7 +64,7 @@ class SecureTrustedExitService(
             return RequestOutcome.RateLimited
         }
 
-        val destination = destinations.resolve(grant)
+        val destination = destinations.resolve(grant, bearer.orEmpty().removePrefix("Bearer ").trim())
         if (destination.isNullOrBlank()) {
             repo.abortIfUnsent(challenge.id)
             return RequestOutcome.DestinationUnavailable
