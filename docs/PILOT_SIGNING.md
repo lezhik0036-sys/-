@@ -5,16 +5,15 @@ pilot keystore** so testers can **update-install** across pilot builds. It is se
 from the RuStore release key and is the **owner's secret** — created once, kept safe,
 never committed.
 
-**The user-facing fleet APK is never debug-signed.** The `real-server-pilot` workflow
-builds with `-PmamaRequireStableSigning=true` and fails up front if the four
-`MAMA_PILOT_*` Actions secrets are not set — so a non-updatable, debug-signed APK is
-never handed to testers. (A developer running `:app:assemblePilot` locally *without*
-that flag still falls back to the per-machine debug key; that is a local build, not the
-distributable one.)
+**The pilot APK can never be debug-signed.** Any `:app:assemblePilot` build is **refused
+at configuration** unless all four `MAMA_PILOT_*` are set — there is no flag, CI, or
+local-dev path that produces a debug-signed pilot APK. The `real-server-pilot` workflow
+additionally fails up front if the four `MAMA_PILOT_*` Actions secrets are missing, and
+CI proves the refusal (a pilot build with no keystore is expected to fail).
 
 Build wiring (already in `app/build.gradle.kts`): a `pilotRelease` signing config is
-created **only** when all four `MAMA_PILOT_*` are present; with
-`-PmamaRequireStableSigning=true` the build refuses to run unless that config exists.
+created **only** when all four `MAMA_PILOT_*` are present, and a pilot build without it
+throws a `GradleException` instead of falling back to the per-machine debug key.
 
 ## 1. Create the keystore once (owner, offline)
 

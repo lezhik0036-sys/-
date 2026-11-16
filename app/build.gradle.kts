@@ -49,18 +49,16 @@ val pilotKeyPassword = providers.environmentVariable("MAMA_PILOT_KEY_PASSWORD")
 val pilotKeystoreConfigured =
     pilotStore.orNull?.let { file(it).isFile } == true &&
         listOf(pilotStorePassword, pilotAlias, pilotKeyPassword).all { !it.orNull.isNullOrBlank() }
-// The user-facing fleet build passes -PmamaRequireStableSigning=true. With it, a pilot
-// build MUST sign with the owner's stable keystore and may NOT fall back to the
-// per-machine debug key: we refuse rather than hand testers a non-updatable,
-// debug-signed APK. Local developer pilot builds omit the flag and keep the fallback.
-val requireStableSigning =
-    ((project.findProperty("mamaRequireStableSigning") as String?)?.trim())
-        .equals("true", ignoreCase = true)
-if (pilotBuildRequested && requireStableSigning && !pilotKeystoreConfigured) {
+// A pilot build is the user-facing fleet APK, so it MUST sign with the owner's stable
+// keystore and may NEVER fall back to the per-machine debug key (testers could not
+// update-install over a debug-signed, per-machine identity). Whenever a pilot build is
+// requested we REFUSE UNCONDITIONALLY if the keystore is not configured — there is no
+// flag, CI, or local-dev path that can produce a debug-signed pilot APK (audit #9).
+if (pilotBuildRequested && !pilotKeystoreConfigured) {
     throw GradleException(
-        "MAMA Pilot: -PmamaRequireStableSigning=true but the stable pilot keystore is not " +
-            "configured. Set MAMA_PILOT_KEYSTORE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD " +
-            "(see docs/PILOT_SIGNING.md). Refusing to produce a debug-signed user APK.",
+        "MAMA Pilot build requested but the stable pilot keystore is not configured. Set " +
+            "MAMA_PILOT_KEYSTORE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD (see " +
+            "docs/PILOT_SIGNING.md). A user-facing pilot APK is never debug-signed.",
     )
 }
 val approvedReleaseOrigin = "https://api.mama-app.ru"
@@ -145,8 +143,10 @@ android {
         }
         // Real-server installable pilot for mass field testing. NO local OTP, no TEST
         // CODE and no simulated credits; backend URL is mandatory and validated above
-        // when assemblePilot is requested. Signed with the owner's STABLE pilot
-        // keystore when provided (updatable fleet), else the per-machine debug key.
+        // when assemblePilot is requested. ALWAYS signed with the owner's STABLE pilot
+        // keystore: a pilot build without it is refused at configuration (audit #9), so
+        // the "debug" arm below is only a configuration placeholder for NON-pilot tasks
+        // (e.g. assembleDebug) and can never sign an actual pilot APK.
         create("pilot") {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName(
