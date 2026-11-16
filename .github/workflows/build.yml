@@ -98,6 +98,19 @@ jobs:
           d=$(find app/build/generated -path '*debug*' -name BuildConfig.java | head -n 1)
           test -n "$d" && test -s "$d" || { echo "::error::debug BuildConfig missing"; exit 1; }
           grep -q "TEST_MODE = true" "$d" || { echo "::error::smoke-test APK is not in debug test mode"; exit 1; }
+      - name: Pilot build refuses to run without the stable keystore (no debug-signed user APK)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This job has no MAMA_PILOT_* keystore, so a pilot build MUST be refused at
+          # configuration (audit #9) rather than fall back to a debug-signed, non-updatable
+          # user APK. The build is expected to FAIL with the keystore-required message.
+          if ./gradlew :app:assemblePilot -PmamaBackendBaseUrl=https://api.mama-app.ru --console=plain > pilot-refusal.log 2>&1; then
+            echo "::error::assemblePilot succeeded without the stable pilot keystore (should be refused)"
+            exit 1
+          fi
+          grep -F 'stable pilot keystore is not configured' pilot-refusal.log
+          echo "Pilot build correctly refused without the stable keystore (audit #9)."
       - name: Name the APK after its version
         id: apk
         run: |
