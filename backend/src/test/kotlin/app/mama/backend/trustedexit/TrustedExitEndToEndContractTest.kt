@@ -88,7 +88,7 @@ class TrustedExitEndToEndContractTest {
             hasher = hasher,
             sms = sms,
             // A trusted, server-side resolved destination (never from the client).
-            destinations = ContactDestinationResolver { "+70000000000" },
+            destinations = ContactDestinationResolver { _, _ -> "+70000000000" },
             receiptSigner = ReceiptSigner(receiptPrivB64),
         )
     }

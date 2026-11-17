@@ -46,6 +46,7 @@ class KtorInternalRequestSigner(secret: ByteArray) {
         const val MAX_BODY_BYTES = 4096
         const val PATH_EVIDENCE = "/internal/trusted-exit/evidence"
         const val PATH_EVIDENCE_STATUS = "/internal/trusted-exit/evidence-status"
+        const val PATH_DESTINATION = "/internal/trusted-exit/destination"
         val DOMAIN = "MAMA/ktor-fastapi-request/v1\n".toByteArray(Charsets.US_ASCII)
         private val NONCE = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
@@ -53,7 +54,7 @@ class KtorInternalRequestSigner(secret: ByteArray) {
         internal fun canonicalBytes(
             body: ByteArray, path: String, timestamp: Long, nonce: String,
         ): ByteArray? {
-            if (path != PATH_EVIDENCE && path != PATH_EVIDENCE_STATUS) return null
+            if (path != PATH_EVIDENCE && path != PATH_EVIDENCE_STATUS && path != PATH_DESTINATION) return null
             if (timestamp < 0L || timestamp > 253402300799L) return null
             if (body.size > MAX_BODY_BYTES) return null
             if (!NONCE.matches(nonce)) return null
