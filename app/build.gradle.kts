@@ -39,9 +39,10 @@ val releaseKeyPassword = providers.environmentVariable("MAMA_RELEASE_KEY_PASSWOR
 // Stable PILOT signing key for mass field testing (separate from the RuStore release
 // key). Provisioned by the owner outside the repo (CI: GitHub Actions secrets; local:
 // env). When ALL four are present the pilot build signs with this fixed identity so
-// testers can update-install across pilot builds; when absent the pilot build falls
-// back to the per-machine debug key (fine for a one-off first install). The keystore
-// and its passwords are never committed. See docs/PILOT_SIGNING.md.
+// testers can update-install across pilot builds; when absent the pilot variant has NO
+// signing config (an unsigned, non-installable APK) and an explicit pilot build is
+// refused at configuration — it is NEVER debug-signed. The keystore and its passwords
+// are never committed. See docs/PILOT_SIGNING.md.
 val pilotStore = providers.environmentVariable("MAMA_PILOT_KEYSTORE")
 val pilotStorePassword = providers.environmentVariable("MAMA_PILOT_STORE_PASSWORD")
 val pilotAlias = providers.environmentVariable("MAMA_PILOT_KEY_ALIAS")
@@ -144,14 +145,20 @@ android {
         // Real-server installable pilot for mass field testing. NO local OTP, no TEST
         // CODE and no simulated credits; backend URL is mandatory and validated above
         // when assemblePilot is requested. ALWAYS signed with the owner's STABLE pilot
-        // keystore: a pilot build without it is refused at configuration (audit #9), so
-        // the "debug" arm below is only a configuration placeholder for NON-pilot tasks
-        // (e.g. assembleDebug) and can never sign an actual pilot APK.
+        // keystore, or not signed at all — never a debug key (audit #9, re-audit).
         create("pilot") {
             initWith(getByName("release"))
-            signingConfig = signingConfigs.getByName(
-                if (pilotKeystoreConfigured) "pilotRelease" else "debug"
-            )
+            // NEVER a debug key. With the stable keystore configured the pilot APK signs
+            // with the owner's fixed fleet identity; without it the signing config is
+            // null, so any task path that still reaches the pilot variant (e.g. the
+            // aggregate `build`/`assemble`, which do not carry "Pilot" in the requested
+            // task name and so bypass the configuration-time refusal) produces an
+            // UNSIGNED, non-installable APK — never a debug-signed, updatable one. The
+            // explicit `assemblePilot` refusal above stays as the primary guard; removing
+            // the old `else "debug"` fallback removes the debug-signing path entirely
+            // (audit #9, re-audit).
+            signingConfig =
+                if (pilotKeystoreConfigured) signingConfigs.getByName("pilotRelease") else null
             isDebuggable = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
             buildConfigField("boolean", "TEST_MODE", "false")

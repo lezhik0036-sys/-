@@ -12,8 +12,13 @@ additionally fails up front if the four `MAMA_PILOT_*` Actions secrets are missi
 CI proves the refusal (a pilot build with no keystore is expected to fail).
 
 Build wiring (already in `app/build.gradle.kts`): a `pilotRelease` signing config is
-created **only** when all four `MAMA_PILOT_*` are present, and a pilot build without it
-throws a `GradleException` instead of falling back to the per-machine debug key.
+created **only** when all four `MAMA_PILOT_*` are present. Without it the `pilot` build
+type has **no signing config at all** (`signingConfig = null`) — there is no `else
+"debug"` fallback — so even a task path that bypasses the explicit `assemblePilot`
+refusal (the aggregate `build`/`assemble`, whose requested task name has no "Pilot")
+produces an **unsigned, non-installable** APK, never a debug-signed one. CI proves both:
+`assemblePilot` is refused, and `:app:signingReport` shows the `pilot` variant never maps
+to the debug key.
 
 ## 1. Create the keystore once (owner, offline)
 
@@ -22,9 +27,17 @@ writes a protected local backup (`mama-pilot.secrets.txt`), prints the cert SHA-
 can set the four Actions secrets for you:
 
 ```
-scripts/make-pilot-keystore.sh                # create keystore + local backup
+scripts/make-pilot-keystore.sh                # create-if-absent OR reuse existing; local backup
 scripts/make-pilot-keystore.sh --set-secrets  # also set the 4 Actions secrets via gh
+scripts/make-pilot-keystore.sh --print-fingerprint   # print the cert SHA-256 of the existing key
 ```
+
+The script is **idempotent and never overwrites an existing keystore**: if
+`mama-pilot.jks` already exists it **reuses the owner's key** (supply its password via
+`MAMA_PILOT_STORE_PASSWORD` or the prompt), re-derives the signing-cert SHA-256, and can
+re-set the Actions secrets from that existing key — so the fleet identity created once is
+preserved across runs. The printed `SIGNING_CERT_SHA256_NOCOLON` is the value to pass as
+`EXPECTED_CERT_SHA256` to `deploy/release-kit/apk-check.sh` when verifying a built APK.
 
 Or do it by hand:
 

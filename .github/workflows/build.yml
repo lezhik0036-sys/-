@@ -111,6 +111,32 @@ jobs:
           fi
           grep -F 'stable pilot keystore is not configured' pilot-refusal.log
           echo "Pilot build correctly refused without the stable keystore (audit #9)."
+      - name: Pilot variant never maps to the debug signing key (no debug fallback)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # signingReport lists each variant's signing config WITHOUT building an APK and
+          # without the "Pilot" task name that triggers the assemblePilot refusal. With no
+          # MAMA_PILOT_* keystore the shipping `pilot` variant must have NO signing config
+          # (Config: null) — proving the removed `else "debug"` fallback can never
+          # debug-sign a pilot APK via ANY task path, including the aggregate build/assemble
+          # that bypasses the explicit refusal (audit #9, re-audit).
+          ./gradlew :app:signingReport --console=plain > signing-report.log 2>&1 || { cat signing-report.log; exit 1; }
+          python3 - <<'PY'
+          import re, sys
+          text = open("signing-report.log").read()
+          blocks = re.split(r'(?m)^Variant:\s*', text)
+          bad = []
+          for b in blocks:
+              name = b.split('\n', 1)[0].strip().lower()
+              if name == "pilot":  # the shipping APK variant, not pilotUnitTest/pilotAndroidTest
+                  if "debug.keystore" in b or re.search(r'(?mi)^\s*Config:\s*debug\s*$', b):
+                      bad.append(b.strip())
+          if bad:
+              print("::error::the pilot APK variant maps to the debug signing key")
+              print(text); sys.exit(1)
+          print("OK: pilot variant has no debug signing config (unsigned without the stable keystore).")
+          PY
       - name: Name the APK after its version
         id: apk
         run: |
