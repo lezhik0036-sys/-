@@ -1,7 +1,5 @@
 package app.mama.backend.trustedexit
 
-import java.util.concurrent.atomic.AtomicInteger
-
 /** The environment variable holding the SMS.RU `api_id`. Server-side only. */
 const val ENV_SMSRU_API_ID = "MAMA_SMSRU_API_ID"
 
@@ -14,8 +12,13 @@ const val ENV_SMS_SENDER = "MAMA_SMS_SENDER"
  * environment and never logs the code. The mock exists only for tests.
  */
 interface SmsProvider {
-    /** Sends the Trusted Exit [code] to [phone]. Returns only the outcome, never the code back. */
-    fun send(phone: String, code: String): SmsResult
+    /**
+     * Sends the Trusted Exit [code] to [phone]. [confirmUrl], when non-null, is the
+     * contact-verification confirm-page link to include in the message (carrying only
+     * the single-use challenge token, never the code); the OTP-exit path passes none
+     * and its message is unchanged. Returns only the outcome, never the code back.
+     */
+    fun send(phone: String, code: String, confirmUrl: String? = null): SmsResult
 
     /** A safe label for readiness and logs. Never a secret. */
     val label: String
@@ -31,8 +34,8 @@ sealed interface SmsResult {
         val smsId: String? = null,
     ) : SmsResult
 
-    /** The provider refused the message; no challenge is created. */
-    data class Failed(val reason: String) : SmsResult
+    /** No confirmed acceptance. Transport failures can leave delivery unknown. */
+    data class Failed(val reason: String, val deliveryUncertain: Boolean = false) : SmsResult
 }
 
 /** Delivery status the backend reports. Never carries the code. */
@@ -44,38 +47,3 @@ enum class DeliveryStatus {
     SMS_UNDELIVERED,
 }
 
-/**
- * Development/test provider: it does not send anything. It records the last
- * (phone, code) in-process so tests can read the code the way only a test
- * harness can — the API itself never exposes it. A failure can be forced for
- * the provider-failure path. Used only by tests (direct injection), never
- * selected for a running server.
- */
-class MockSmsProvider(
-    private val result: SmsResult = SmsResult.Accepted(),
-) : SmsProvider {
-    private val count = AtomicInteger(0)
-
-    @Volatile var lastPhone: String? = null
-        private set
-
-    /** The last code handed to the mock — for tests only; a real provider exposes nothing. */
-    @Volatile var lastCode: String? = null
-        private set
-
-    val calls: Int get() = count.get()
-
-    override val label: String get() = "mock"
-
-    override fun configured(): Boolean = true
-
-    override fun send(phone: String, code: String): SmsResult {
-        val n = count.incrementAndGet()
-        if (result is SmsResult.Accepted) {
-            lastPhone = phone
-            lastCode = code
-            return result.copy(smsId = result.smsId ?: "mock-sms-$n")
-        }
-        return result
-    }
-}

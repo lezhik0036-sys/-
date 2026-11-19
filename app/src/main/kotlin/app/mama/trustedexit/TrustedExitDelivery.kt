@@ -3,7 +3,6 @@ package app.mama.trustedexit
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.util.Log
 import app.mama.billing.FeatureFlags
 
 /**
@@ -28,7 +27,7 @@ object TrustedExit {
      * in production.
      */
     @Volatile
-    var backend: TrustedExitBackend = FakeTrustedExitBackend()
+    var backend: TrustedExitBackend = TrustedExitVariant.initialBackend()
 
     /**
      * Fail-closed for production: no release series may start until an audited,
@@ -62,12 +61,7 @@ object TrustedExit {
      * untouched. This is the concrete "test backend доступен и способен
      * создать/проверить challenge" check behind the readiness gate.
      */
-    fun backendCanRoundTrip(): Boolean = runCatching {
-        val probe = FakeTrustedExitBackend(codeSource = { "1".repeat(it) })
-        val created = probe.createChallenge(CreateChallengeRequest("readiness", "END_SESSION", "readiness"))
-            as? CreateChallengeResult.Created ?: return false
-        probe.verify(created.handle.challengeId, "11111") == VerifyResult.Valid
-    }.getOrDefault(false)
+    fun backendCanRoundTrip(): Boolean = TrustedExitVariant.probe()
 
     fun createChallenge(context: Context, request: CreateChallengeRequest): CreateChallengeResult {
         if (!online(context)) return CreateChallengeResult.Offline
@@ -79,66 +73,6 @@ object TrustedExit {
         if (!online(context)) return VerifyResult.Offline
         return runCatching { backend.verify(challengeId, enteredCode) }
             .getOrElse { VerifyResult.Unknown }
-    }
-}
-
-/**
- * TEST/DEBUG only. Without a real SMS provider a test device would never learn
- * the code and could stay locked, so in a test build the code is shown on the
- * lock screen. [DebugCodeSmsService] captures the code the (simulated) delivery
- * would have sent; the lock screen reads it through [codeFor], gated by
- * [FeatureFlags.TEST_MODE]. Nothing here is wired in a release build.
- */
-object TestCodeSink {
-    @Volatile
-    private var last: Pair<String, String>? = null
-
-    /** Records the code delivered for [challengeId] (the simulated SMS body). */
-    fun record(challengeId: String, code: String) {
-        last = challengeId to code
-    }
-
-    /** The code for [challengeId] — only ever in a TEST build; null otherwise. */
-    fun codeFor(challengeId: String?): String? = visibleCode(FeatureFlags.TEST_MODE, challengeId)
-
-    /**
-     * The gate that keeps a production build from ever showing a TEST CODE: with
-     * [testMode] false it returns null no matter what was recorded. Pure, so the
-     * production guarantee is unit-testable without a release build.
-     */
-    internal fun visibleCode(testMode: Boolean, challengeId: String?): String? {
-        if (!testMode || challengeId == null) return null
-        return last?.takeIf { it.first == challengeId }?.second
-    }
-
-    fun clear() {
-        last = null
-    }
-}
-
-/**
- * TEST/DEBUG SMS provider: it does not send anything; it stashes the code into
- * [TestCodeSink] so the lock screen can show the TEST CODE. [app.mama.MamaApp]
- * wires it only when [FeatureFlags.TEST_MODE] is true, so a release build never
- * captures or exposes a code.
- */
-object DebugCodeSmsService : TrustedExitSmsService {
-    override fun sendCode(requestId: String, contactPhone: String, message: String): DeliveryStatus {
-        TestCodeSink.record(requestId, message)
-        return DeliveryStatus.SMS_ACCEPTED
-    }
-}
-
-/** The SMS provider seam. In production this runs on the backend, never on the device. */
-interface TrustedExitSmsService {
-    fun sendCode(requestId: String, contactPhone: String, message: String): DeliveryStatus
-}
-
-/** Debug provider: pretends the SMS was accepted. Never sends anything real, never logs the code. */
-object SimulatedSmsService : TrustedExitSmsService {
-    override fun sendCode(requestId: String, contactPhone: String, message: String): DeliveryStatus {
-        Log.i("MAMA", "[debug] simulated Trusted Exit SMS accepted for $requestId (not really sent)")
-        return DeliveryStatus.SMS_ACCEPTED
     }
 }
 

@@ -59,6 +59,13 @@ data class ReadinessResponse(
 data class ErrorResponse(val error: String)
 
 /**
+ * `POST /contact-verification/dispatch` response (server-to-server only). `status`
+ * is SMS_ACCEPTED | FAILED | UNKNOWN, mapping to the FastAPI provider taxonomy
+ * (sent / provably-not-sent / uncertain). Never carries the code or any secret.
+ */
+data class DispatchResponse(val status: String)
+
+/**
  * Strict production readiness: provider config alone cannot mean real
  * Trusted Exit is available. A verified-contact destination resolver AND the
  * authenticated Ktor→FastAPI signed receipt channel are both mandatory,

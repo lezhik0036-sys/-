@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     # Ephemeral PostgreSQL for the durable Trusted Exit tests (no real SMS, fake provider).
     services:
       postgres:
@@ -25,7 +25,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -59,6 +61,33 @@ jobs:
         run: bash .github/scripts/robolectric-tests.sh
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain
+      - name: Reject release packaging without approved HTTPS and owner signing inputs
+        run: |
+          if ./gradlew :app:verifyMamaReleaseInputs --console=plain > release-preflight.log 2>&1; then
+            echo "Release unexpectedly accepted a missing backend URL"
+            exit 1
+          fi
+          grep -F 'MAMA release requires -PmamaBackendBaseUrl=' release-preflight.log
+          if ./gradlew :app:verifyMamaReleaseInputs -PmamaBackendBaseUrl=https://api.mama-app.ru --console=plain > release-preflight.log 2>&1; then
+            echo "Release unexpectedly accepted missing signing inputs"
+            exit 1
+          fi
+          grep -F 'MAMA_RELEASE_KEYSTORE must point' release-preflight.log
+          ./gradlew :app:bundleRelease --dry-run --console=plain | tee release-task-graph.log
+          grep -F ':app:verifyMamaReleaseInputs' release-task-graph.log
+      - name: Inspect the actual release APK and Ktor jar
+        shell: bash
+        run: |
+          set -euo pipefail
+          export MAMA_RELEASE_KEYSTORE="$RUNNER_TEMP/artifact-audit.jks"
+          export MAMA_RELEASE_STORE_PASSWORD=ci-only-artifact-audit
+          export MAMA_RELEASE_KEY_PASSWORD="$MAMA_RELEASE_STORE_PASSWORD"
+          export MAMA_RELEASE_KEY_ALIAS=artifact-audit
+          keytool -genkeypair -keystore "$MAMA_RELEASE_KEYSTORE" -alias "$MAMA_RELEASE_KEY_ALIAS" \
+            -storepass "$MAMA_RELEASE_STORE_PASSWORD" -keypass "$MAMA_RELEASE_KEY_PASSWORD" \
+            -keyalg RSA -keysize 2048 -validity 1 -dname 'CN=CI artifact audit only'
+          ./gradlew :app:assembleRelease :backend:jar -PmamaBackendBaseUrl=https://api.mama-app.ru --console=plain
+          python3 .github/scripts/check-release-artifacts.py app/build/outputs/apk/release/app-release.apk backend/build/libs/*.jar
       - name: Release build has no test credits
         run: |
           ./gradlew :app:generateReleaseBuildConfig --console=plain
@@ -66,9 +95,60 @@ jobs:
           echo "checking $f"
           grep -q "PILOT_TEST_CREDITS = false" "$f" || { echo "::error::release build enables test credits"; cat "$f"; exit 1; }
           grep -q "TEST_MODE = false" "$f" || { echo "::error::release build enables test/OTP mode"; cat "$f"; exit 1; }
+          grep -q "TEST_MODE_ENABLED = false" "$f" || { echo "::error::release build enables the standalone test-mode lock"; cat "$f"; exit 1; }
           d=$(find app/build/generated -path '*debug*' -name BuildConfig.java | head -n 1)
           test -n "$d" && test -s "$d" || { echo "::error::debug BuildConfig missing"; exit 1; }
           grep -q "TEST_MODE = true" "$d" || { echo "::error::smoke-test APK is not in debug test mode"; exit 1; }
+          grep -q "TEST_MODE_ENABLED = true" "$d" || { echo "::error::debug field-test APK unexpectedly disables the test-mode lock"; exit 1; }
+      - name: Test-mode flag stays wired to BuildConfig (never a hardcoded const)
+        shell: bash
+        run: |
+          set -euo pipefail
+          p=app/src/main/kotlin/app/mama/billing/Payments.kt
+          grep -q 'app.mama.BuildConfig.TEST_MODE_ENABLED' "$p" || {
+            echo "::error::FeatureFlags.TEST_MODE_ENABLED must read BuildConfig.TEST_MODE_ENABLED"; exit 1; }
+          if grep -Eq 'const[[:space:]]+val[[:space:]]+TEST_MODE_ENABLED' "$p"; then
+            echo "::error::TEST_MODE_ENABLED must not be a hardcoded constant — a real pilot/release APK could ship test mode"; exit 1
+          fi
+      - name: Pilot build refuses to run without the stable keystore (no debug-signed user APK)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This job has no MAMA_PILOT_* keystore, so a pilot build MUST be refused at
+          # configuration (audit #9) rather than fall back to a debug-signed, non-updatable
+          # user APK. The build is expected to FAIL with the keystore-required message.
+          if ./gradlew :app:assemblePilot -PmamaBackendBaseUrl=https://api.mama-app.ru --console=plain > pilot-refusal.log 2>&1; then
+            echo "::error::assemblePilot succeeded without the stable pilot keystore (should be refused)"
+            exit 1
+          fi
+          grep -F 'stable pilot keystore is not configured' pilot-refusal.log
+          echo "Pilot build correctly refused without the stable keystore (audit #9)."
+      - name: Pilot variant never maps to the debug signing key (no debug fallback)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # signingReport lists each variant's signing config WITHOUT building an APK and
+          # without the "Pilot" task name that triggers the assemblePilot refusal. With no
+          # MAMA_PILOT_* keystore the shipping `pilot` variant must have NO signing config
+          # (Config: null) — proving the removed `else "debug"` fallback can never
+          # debug-sign a pilot APK via ANY task path, including the aggregate build/assemble
+          # that bypasses the explicit refusal (audit #9, re-audit).
+          ./gradlew :app:signingReport --console=plain > signing-report.log 2>&1 || { cat signing-report.log; exit 1; }
+          python3 - <<'PY'
+          import re, sys
+          text = open("signing-report.log").read()
+          blocks = re.split(r'(?m)^Variant:\s*', text)
+          bad = []
+          for b in blocks:
+              name = b.split('\n', 1)[0].strip().lower()
+              if name == "pilot":  # the shipping APK variant, not pilotUnitTest/pilotAndroidTest
+                  if "debug.keystore" in b or re.search(r'(?mi)^\s*Config:\s*debug\s*$', b):
+                      bad.append(b.strip())
+          if bad:
+              print("::error::the pilot APK variant maps to the debug signing key")
+              print(text); sys.exit(1)
+          print("OK: pilot variant has no debug signing config (unsigned without the stable keystore).")
+          PY
       - name: Name the APK after its version
         id: apk
         run: |
@@ -113,32 +193,21 @@ jobs:
             exit 1
           fi
           echo "MAMA backend-only SMS policy: PASS (APK has no SEND_SMS permission)"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MAMA-v${{ steps.apk.outputs.version }}
-          path: out/*
-      # The same file as a test-build pre-release, downloadable straight on the phone.
-      - name: Publish the test APK
-        if: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'claude/') }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          version="${{ steps.apk.outputs.version }}"
-          tag="test-v$version"
-          sum=$(cut -d ' ' -f 1 "out/MAMA-v$version.apk.sha256")
-          gh release delete "$tag" --yes --cleanup-tag || true
-          gh release create "$tag" "out/MAMA-v$version.apk" "out/MAMA-v$version.apk.sha256" --prerelease --target "$GITHUB_SHA" \
-            --title "MAMA $version (debug test build)" \
-            --notes "Debug test build of MAMA for field tests, not for production. versionName $version, versionCode ${{ steps.apk.outputs.code }}, commit $GITHUB_SHA. SHA-256 of MAMA-v$version.apk: $sum. Real payments are off."
 
   # The APK must actually open on Android, not just compile.
   launch:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 30, 32, 33]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -151,29 +220,14 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Build debug APK and launch test APK
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
-      - name: Launch on emulator (Android 14)
+      - name: Install and test device identity on Android API ${{ matrix.api }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ matrix.api }}
           target: google_apis
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           script: |
             .github/scripts/launch-check.sh
-            .github/scripts/screenshots.sh
             ./gradlew :app:connectedDebugAndroidTest --console=plain
-      # Screenshots of every screen for visual review: a "ui-screenshots"
-      # pre-release, replaced on every push to a claude/* branch.
-      - name: Publish UI screenshots
-        if: ${{ !cancelled() && startsWith(github.ref_name, 'claude/') }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ls shots/*.png > /dev/null 2>&1 || { echo 'no screenshots'; exit 0; }
-          pip install --quiet pillow
-          python3 .github/scripts/shots_to_jpg.py
-          gh release delete ui-screenshots --yes --cleanup-tag || true
-          # Compact JPGs for a quick look, and the same screens at full size (1080 × 2400 PNG) for close review.
-          gh release create ui-screenshots shots_jpg/*.jpg shots/*.png --prerelease --target "$GITHUB_SHA" \
-            --title "UI screenshots (CI)" --notes "Screens of MAMA $GITHUB_SHA rendered on an Android 14 emulator (Pixel 6), preview mode with sample data."

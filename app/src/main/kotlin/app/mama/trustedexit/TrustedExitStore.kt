@@ -40,7 +40,7 @@ class TrustedExitStore(context: Context) {
             issuedAtMs = prefs.getLong("issuedAtMs", 0),
             expiresAtMs = prefs.getLong("expiresAtMs", 0),
             attemptsLeft = prefs.getInt("attemptsLeft", 0),
-            delivery = runCatching { DeliveryStatus.valueOf(prefs.getString("delivery", "")!!) }.getOrDefault(DeliveryStatus.SMS_ACCEPTED),
+            delivery = runCatching { DeliveryStatus.valueOf(prefs.getString("delivery", "")!!) }.getOrDefault(DeliveryStatus.SMS_FAILED),
             lockedUntilMs = if (prefs.contains("lockedUntilMs")) prefs.getLong("lockedUntilMs", 0) else null,
         )
     }
@@ -61,54 +61,3 @@ class TrustedExitStore(context: Context) {
     fun clear() = prefs.edit().clear().apply()
 }
 
-/**
- * The simulated backend's challenge store on the device. It exists only
- * because there is no real server yet, and it is the one place a code hash
- * lives on the phone — NOT PRODUCTION SECURE: in production this is the
- * backend database, never on the device. The app itself never reads it; only
- * [FakeTrustedExitBackend] does. One slot, since there is one lock at a time.
- */
-class DeviceChallengeVault(context: Context) : ChallengeVault {
-    private val prefs = context.applicationContext
-        .createDeviceProtectedStorageContext()
-        .getSharedPreferences("mama_fake_exit_server_NOT_PRODUCTION_SECURE", Context.MODE_PRIVATE)
-
-    @Synchronized
-    private fun current(): ServerChallenge? {
-        val id = prefs.getString("challengeId", null) ?: return null
-        return ServerChallenge(
-            challengeId = id,
-            idempotencyKey = prefs.getString("idempotencyKey", "")!!,
-            kind = prefs.getString("kind", "END_SESSION")!!,
-            salt = prefs.getString("salt", "")!!,
-            hash = prefs.getString("hash", "")!!,
-            issuedAtMs = prefs.getLong("issuedAtMs", 0),
-            expiresAtMs = prefs.getLong("expiresAtMs", 0),
-            attemptsLeft = prefs.getInt("attemptsLeft", 0),
-            lockedUntilMs = if (prefs.contains("lockedUntilMs")) prefs.getLong("lockedUntilMs", 0) else null,
-        )
-    }
-
-    @Synchronized override fun byId(challengeId: String) = current()?.takeIf { it.challengeId == challengeId }
-    @Synchronized override fun byKey(idempotencyKey: String) = current()?.takeIf { it.idempotencyKey == idempotencyKey }
-
-    @Synchronized
-    override fun put(challenge: ServerChallenge) {
-        prefs.edit().apply {
-            putString("challengeId", challenge.challengeId)
-            putString("idempotencyKey", challenge.idempotencyKey)
-            putString("kind", challenge.kind)
-            putString("salt", challenge.salt)
-            putString("hash", challenge.hash)
-            putLong("issuedAtMs", challenge.issuedAtMs)
-            putLong("expiresAtMs", challenge.expiresAtMs)
-            putInt("attemptsLeft", challenge.attemptsLeft)
-            if (challenge.lockedUntilMs != null) putLong("lockedUntilMs", challenge.lockedUntilMs) else remove("lockedUntilMs")
-        }.apply()
-    }
-
-    @Synchronized
-    override fun remove(challengeId: String) {
-        if (current()?.challengeId == challengeId) prefs.edit().clear().apply()
-    }
-}

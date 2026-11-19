@@ -1,11 +1,15 @@
 package app.mama.backend.api
 
+import app.mama.backend.trustedexit.ContactVerificationDispatchMac
+import app.mama.backend.trustedexit.ContactVerificationDispatchService
+import app.mama.backend.trustedexit.DispatchOutcome
 import app.mama.backend.trustedexit.RequestOutcome
 import app.mama.backend.trustedexit.SecureTrustedExitService
 import app.mama.backend.trustedexit.VerifyOutcome
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.plugins.origin
+import io.ktor.server.request.receive
 import io.ktor.server.request.receiveNullable
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
@@ -74,6 +78,33 @@ fun Routing.trustedExitRoutes(service: SecureTrustedExitService?, trustedProxies
             VerifyOutcome.Expired -> call.respond(VerifyResponse("EXPIRED"))
             is VerifyOutcome.Locked -> call.respond(VerifyResponse("LOCKED", retryAtMs = r.retryAtMs))
             VerifyOutcome.Unknown -> call.respond(VerifyResponse("UNKNOWN"))
+        }
+    }
+}
+
+/**
+ * The private contact-verification dispatch endpoint (FastAPI -> Ktor). Registered
+ * ONLY when the dispatch service is configured (>= 32-byte secret + a real SMS
+ * provider), so a disabled worker exposes no route and answers 404 — a definite
+ * non-dispatch that FastAPI records as `failed`, never a blind send. The body is
+ * MAC-authenticated over its exact bytes; identity and bindings are the
+ * authenticated FastAPI caller's, never taken from an unauthenticated request.
+ */
+fun Routing.contactVerificationDispatchRoutes(service: ContactVerificationDispatchService?) {
+    if (service == null || !service.configured) return
+    post(ContactVerificationDispatchMac.PATH) {
+        val raw = runCatching { call.receive<ByteArray>() }.getOrNull()
+        if (raw == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("missing body"))
+            return@post
+        }
+        val macHex = call.request.headers[ContactVerificationDispatchMac.HEADER]
+        when (val outcome = service.dispatch(raw, macHex)) {
+            DispatchOutcome.Unauthorized ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized"))
+            is DispatchOutcome.BadRequest ->
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse(outcome.reason))
+            is DispatchOutcome.Status -> call.respond(DispatchResponse(outcome.status))
         }
     }
 }

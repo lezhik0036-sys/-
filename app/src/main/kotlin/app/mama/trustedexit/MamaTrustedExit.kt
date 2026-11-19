@@ -1,0 +1,165 @@
+package app.mama.trustedexit
+
+import android.content.Context
+import android.os.Build
+import app.mama.account.AccountSession
+import app.mama.account.KeystoreDeviceKeyProvider
+import app.mama.account.MamaAccount
+import app.mama.account.MamaAccountClient
+import app.mama.account.UrlConnectionAccountTransport
+
+/**
+ * App-wide composition root for the REAL, server-authoritative Trusted Exit
+ * client. Builds [HttpTrustedExitBackend] from the configured backend URL, the
+ * Keystore-protected device key, the account session (via [MamaAccount]), the
+ * persisted provisioned [ExitContext] and the durable [ExitRequestKeyStore].
+ *
+ * [configure] is light (no network, no Keystore) and safe from
+ * [android.app.Application.onCreate]. The backend is built LAZILY on first use
+ * ([backend]/[deferredBackend]), which does Keystore + network work and MUST run
+ * off the main thread — exactly where the Trusted Exit flow already calls it.
+ *
+ * Fail-closed: with no backend URL, or on a platform that cannot hold the device
+ * key (API < 33), [backend] is null and [deferredBackend] refuses every call.
+ * There is NO local OTP path here; the only exit is the server's.
+ */
+object MamaTrustedExit {
+    @Volatile private var appContext: Context? = null
+    @Volatile private var baseUrl: String = ""
+    @Volatile private var cached: HttpTrustedExitBackend? = null
+
+    fun configure(context: Context, backendBaseUrl: String) {
+        // A backend/account reconfiguration makes any old readiness obsolete.
+        TrustedExitReadinessGate.clear()
+        appContext = context.applicationContext
+        baseUrl = backendBaseUrl.trim()
+        cached = null
+    }
+
+    /** True only when a backend URL is set AND the platform can hold the device key. */
+    val isConfigured: Boolean
+        get() = baseUrl.isNotBlank() && KeystoreDeviceKeyProvider.isSupported(Build.VERSION.SDK_INT)
+
+    /**
+     * The real HTTPS backend, built on first use. Null when not configured or the
+     * device key is unavailable (fail-closed). Call OFF the main thread.
+     */
+    @Synchronized
+    fun backend(): HttpTrustedExitBackend? {
+        cached?.let { return it }
+        val ctx = appContext ?: return null
+        if (!isConfigured) return null
+        val deviceKey = KeystoreDeviceKeyProvider.loadOrCreate(ctx) ?: return null
+        val sessionSource = sessionSource() ?: return null
+        return HttpTrustedExitBackend(
+            transport = UrlConnectionAccountTransport(baseUrl),
+            deviceKey = deviceKey,
+            session = sessionSource,
+            context = FileExitContextStore(ctx),
+            requestKeys = SecureExitRequestKeyStore(ctx),
+        ).also { cached = it }
+    }
+
+    /**
+     * The provisioning client that builds the server-owned prerequisites over the
+     * `/v1/setup` routes and records the resulting [ExitContext]. Null when not
+     * configured (fail-closed). Call OFF the main thread.
+     */
+    fun setup(): HttpTrustedExitSetup? {
+        val ctx = appContext ?: return null
+        if (!isConfigured) return null
+        val sessionSource = sessionSource() ?: return null
+        return HttpTrustedExitSetup(
+            transport = UrlConnectionAccountTransport(baseUrl),
+            session = sessionSource,
+            context = FileExitContextStore(ctx)::set,
+        )
+    }
+
+    /** Session source for the Trusted Exit clients: the account client's bearer, or null. */
+    private fun sessionSource(): TrustedExitSessionSource? {
+        val accountClient = MamaAccount.client() ?: return null
+        return object : TrustedExitSessionSource {
+            override fun ensureSession(): AccountSession? =
+                (accountClient.ensureSession() as? MamaAccountClient.Result.Ok)?.session
+            override fun forgetSession() {
+                // All Trusted Exit 401 paths must revoke cached BRICK preflight
+                // approval as well as the stored bearer. Use the central
+                // account invalidation path, never clear only this client.
+                MamaAccount.forgetSession()
+            }
+        }
+    }
+
+    /**
+     * A backend safe to assign eagerly (e.g. in onCreate): it resolves the real
+     * HTTPS backend lazily on first call, which runs off the main thread in the
+     * Trusted Exit flow. Fail-closed until configured.
+     */
+    fun deferredBackend(): TrustedExitBackend = DeferredTrustedExitBackend(::backend)
+
+    /**
+     * The server's own readiness for the provisioned series — the authoritative
+     * BRICK preflight. Null = unknown/unconfigured (fail-closed). Call off the
+     * main thread. See [HttpTrustedExitBackend.serverReadiness].
+     */
+    fun serverReadiness(): ServerReadiness? = backend()?.serverReadiness()
+
+    /**
+     * Fetch the server readiness OFF the main thread and record it into
+     * [TrustedExitReadinessGate], so the main-thread lock-start gate can read a
+     * recent result. Call before a lock attempt (and/or periodically). A null or
+     * not-ready result records "not ready" — fail-closed. Returns the observation.
+     */
+    fun refreshReadiness(): ServerReadiness? {
+        // Invalidate old readiness BEFORE network I/O; a series/period change
+        // during the request also increments the generation so its late 200
+        // cannot grant a lock based on the previous context.
+        val ticket = TrustedExitReadinessGate.beginRefresh()
+        val r = serverReadiness()
+        TrustedExitReadinessGate.recordIfCurrent(ticket, r?.ready == true)
+        return r
+    }
+
+    /** The persisted provisioned-context store, for the setup/provisioning step to write. */
+    fun contextStore(context: Context): FileExitContextStore = FileExitContextStore(context)
+
+    /**
+     * The idempotent pilot driver the setup UI runs OFF the main thread to turn a
+     * user's choices into REAL server readiness: a fresh attempt provisions the
+     * series/contact/exact period and asks the server to verify the contact (real
+     * SMS, server-side); a retry/cold start with a persisted [ExitContext] never
+     * re-provisions and never re-sends — it only refreshes the exact-period
+     * readiness. Both paths record the result into [TrustedExitReadinessGate], so
+     * the main-thread lock-start gate ([TrustedExit.ready]) sees it. Null when not
+     * configured or the device key is unavailable (fail-closed): the UI then keeps
+     * BRICK out instead of starting a lock with no server way out. A no-SIM Wi-Fi
+     * device walks this exact HTTP flow; no telephony is used.
+     */
+    fun pilotController(): TrustedExitPilotController? {
+        val ctx = appContext ?: return null
+        val setup = setup() ?: return null
+        return TrustedExitPilotController.create(
+            context = FileExitContextStore(ctx),
+            orchestrator = TrustedExitPilotOrchestrator.create(setup, ::refreshReadiness),
+            refreshReadiness = ::refreshReadiness,
+        )
+    }
+}
+
+/**
+ * Wraps a lazily-built [TrustedExitBackend] so it can be assigned on the main
+ * thread while the real backend (Keystore + network) is constructed on first use,
+ * off the main thread. A null provider result is fail-closed: create reports
+ * not-configured, verify reports Unknown — never a local accept.
+ */
+class DeferredTrustedExitBackend(
+    private val provider: () -> TrustedExitBackend?,
+) : TrustedExitBackend {
+    override fun createChallenge(request: CreateChallengeRequest): CreateChallengeResult =
+        provider()?.createChallenge(request)
+            ?: CreateChallengeResult.Failed("trusted-exit-not-configured")
+
+    override fun verify(challengeId: String, enteredCode: String): VerifyResult =
+        provider()?.verify(challengeId, enteredCode) ?: VerifyResult.Unknown
+}

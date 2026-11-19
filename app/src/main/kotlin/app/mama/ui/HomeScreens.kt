@@ -546,6 +546,9 @@ internal fun MainActivity.settingsScreen(): Pair<View, Boolean> {
         }
         b.addView(kit.permissionCard(req.icon, req.title, req.why, status) { req.request(this) }, kit.gap(if (i == 0) 20 else 10))
     }
+    b.addView(d.text("Семья", Typo.HEADLINE), d.gap(34))
+    b.addView(d.text("Родительский мастер-аккаунт и привязка детского устройства (работает и по Wi-Fi, без SIM).", Typo.BODY, Palette.InkMuted), d.gap(4))
+    b.addView(d.actionRow(Icon.PEOPLE, "Семья и привязка устройств", "Подключить ребёнка или стать детским устройством") { openFamily() }, d.gap(16))
     if (FeatureFlags.TEST_MODE_ENABLED) {
         b.addView(d.noteCard("Тестовая версия: оплата не подключена и не проводится.", icon = Icon.FLASK), d.gap(18))
     }

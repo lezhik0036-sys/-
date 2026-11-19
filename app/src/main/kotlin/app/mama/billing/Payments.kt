@@ -65,10 +65,14 @@ object FeatureFlags {
     const val TEST_GRANTS_ENABLED = true
 
     /**
-     * Free 15-minute test mode, only while MAMA is being tested. Not a series,
-     * not FLEX, no payment and no Restart. TODO(release): decide whether to keep it.
+     * Free 15-minute test mode: the standalone "Тестовый режим" setup option.
+     * Follows the build type via [app.mama.BuildConfig.TEST_MODE_ENABLED] — true in
+     * debug (and the debug field-test APK), FALSE in the real-server pilot and in
+     * release, so a real-backend APK never offers the local test lock. It is a
+     * build-config flag, never a hardcoded constant; CI asserts it is false in the
+     * pilot/release BuildConfig and that this stays wired to BuildConfig.
      */
-    const val TEST_MODE_ENABLED = true
+    val TEST_MODE_ENABLED: Boolean get() = app.mama.BuildConfig.TEST_MODE_ENABLED
 
     /**
      * Internal MAMA balance and "Цена слова" (pilot). Internal only: no

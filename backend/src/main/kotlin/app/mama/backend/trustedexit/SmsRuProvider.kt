@@ -24,7 +24,7 @@ class SmsRuProvider(
     private val from: String? = System.getenv(ENV_SMS_SENDER),
     private val endpoint: String = "https://sms.ru/sms/send",
     private val transport: HttpTransport = JdkHttpTransport(),
-    private val message: (String) -> String = { code ->
+    private val message: (String, String?) -> String = { code, _ ->
         "MAMA: код доверенного выхода $code. Никому не пересылайте его, кроме человека, которому вы помогаете выйти из режима."
     },
 ) : SmsProvider {
@@ -33,7 +33,7 @@ class SmsRuProvider(
 
     override fun configured(): Boolean = !apiId.isNullOrBlank()
 
-    override fun send(phone: String, code: String): SmsResult {
+    override fun send(phone: String, code: String, confirmUrl: String?): SmsResult {
         if (apiId.isNullOrBlank()) {
             // Fail-closed: without a configured key nothing is sent and no code is created.
             log.error("SMS.RU api_id is not configured ($ENV_SMSRU_API_ID); refusing to send")
@@ -43,26 +43,28 @@ class SmsRuProvider(
         val form = buildMap {
             put("api_id", apiId)
             put("to", to)
-            put("msg", message(code))
+            put("msg", message(code, confirmUrl))
             put("json", "1")
             if (!from.isNullOrBlank()) put("from", from!!)
         }
         val reply = runCatching { transport.postForm(endpoint, form) }
             .getOrElse {
-                log.warn("SMS.RU request failed for ${mask(to)}: ${it.message}")
-                return SmsResult.Failed("sms provider request failed")
+                log.warn("SMS.RU request outcome unknown for ${mask(to)}")
+                return SmsResult.Failed("sms provider request failed", deliveryUncertain = true)
             }
-        return parse(reply, to)
+        return runCatching { parse(reply, to) }.getOrElse {
+            SmsResult.Failed("sms provider returned an invalid response", deliveryUncertain = true)
+        }
     }
 
     /** Maps the SMS.RU JSON reply to a provider result. Never logs the code. */
     private fun parse(reply: HttpReply, to: String): SmsResult {
         if (reply.status !in 200..299) {
             log.warn("SMS.RU HTTP ${reply.status} for ${mask(to)}")
-            return SmsResult.Failed("sms provider http ${reply.status}")
+            return SmsResult.Failed("sms provider http ${reply.status}", deliveryUncertain = true)
         }
         val json = runCatching { JsonParser.parseString(reply.body).asJsonObject }
-            .getOrElse { return SmsResult.Failed("sms provider returned non-JSON") }
+            .getOrElse { return SmsResult.Failed("sms provider returned non-JSON", deliveryUncertain = true) }
         val topOk = json.get("status")?.asString == "OK"
         // Per-recipient status lives under sms["<number>"].status, with its sms_id.
         val perSms = json.getAsJsonObject("sms")?.entrySet()?.firstOrNull()?.value?.asJsonObject
