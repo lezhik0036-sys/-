@@ -133,6 +133,8 @@ android {
             // TEST/DEBUG safety: cap every lock to 15 min, show the Trusted Exit TEST CODE,
             // run the readiness check. Never true in a release/production build.
             buildConfigField("boolean", "TEST_MODE", "true")
+            // Standalone "Тестовый режим" 15-min test lock: debug field-test APK only.
+            buildConfigField("boolean", "TEST_MODE_ENABLED", "true")
             buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
         release {
@@ -140,6 +142,8 @@ android {
             isMinifyEnabled = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
             buildConfigField("boolean", "TEST_MODE", "false")
+            // The standalone local test lock is NEVER offered in a real-backend build.
+            buildConfigField("boolean", "TEST_MODE_ENABLED", "false")
             buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
         // Real-server installable pilot for mass field testing. NO local OTP, no TEST
@@ -162,6 +166,8 @@ android {
             isDebuggable = false
             buildConfigField("boolean", "PILOT_TEST_CREDITS", "false")
             buildConfigField("boolean", "TEST_MODE", "false")
+            // No standalone local test lock in the real-server pilot APK.
+            buildConfigField("boolean", "TEST_MODE_ENABLED", "false")
             buildConfigField("String", "MAMA_BACKEND_BASE_URL", "\"$mamaBackendBaseUrl\"")
         }
 

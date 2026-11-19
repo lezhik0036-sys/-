@@ -95,9 +95,21 @@ jobs:
           echo "checking $f"
           grep -q "PILOT_TEST_CREDITS = false" "$f" || { echo "::error::release build enables test credits"; cat "$f"; exit 1; }
           grep -q "TEST_MODE = false" "$f" || { echo "::error::release build enables test/OTP mode"; cat "$f"; exit 1; }
+          grep -q "TEST_MODE_ENABLED = false" "$f" || { echo "::error::release build enables the standalone test-mode lock"; cat "$f"; exit 1; }
           d=$(find app/build/generated -path '*debug*' -name BuildConfig.java | head -n 1)
           test -n "$d" && test -s "$d" || { echo "::error::debug BuildConfig missing"; exit 1; }
           grep -q "TEST_MODE = true" "$d" || { echo "::error::smoke-test APK is not in debug test mode"; exit 1; }
+          grep -q "TEST_MODE_ENABLED = true" "$d" || { echo "::error::debug field-test APK unexpectedly disables the test-mode lock"; exit 1; }
+      - name: Test-mode flag stays wired to BuildConfig (never a hardcoded const)
+        shell: bash
+        run: |
+          set -euo pipefail
+          p=app/src/main/kotlin/app/mama/billing/Payments.kt
+          grep -q 'app.mama.BuildConfig.TEST_MODE_ENABLED' "$p" || {
+            echo "::error::FeatureFlags.TEST_MODE_ENABLED must read BuildConfig.TEST_MODE_ENABLED"; exit 1; }
+          if grep -Eq 'const[[:space:]]+val[[:space:]]+TEST_MODE_ENABLED' "$p"; then
+            echo "::error::TEST_MODE_ENABLED must not be a hardcoded constant — a real pilot/release APK could ship test mode"; exit 1
+          fi
       - name: Pilot build refuses to run without the stable keystore (no debug-signed user APK)
         shell: bash
         run: |

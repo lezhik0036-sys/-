@@ -185,4 +185,17 @@ class TestSafetyTest {
         assertNull("production (testMode=false) shows nothing", TestCodeSink.visibleCode(testMode = false, challengeId = "tec-1"))
         assertEquals("a test build shows it", "54321", TestCodeSink.visibleCode(testMode = true, challengeId = "tec-1"))
     }
+
+    // The standalone "Тестовый режим" 15-minute lock follows the build config and is
+    // never a hardcoded const, so a real pilot/release build (TEST_MODE_ENABLED=false)
+    // offers no local test lock. CI asserts the pilot/release BuildConfig is false; here
+    // we pin that the flag mirrors BuildConfig and stays ON in the debug field-test APK.
+    @Test
+    fun `the standalone test-mode flag follows the build config`() {
+        assertEquals(
+            app.mama.BuildConfig.TEST_MODE_ENABLED,
+            app.mama.billing.FeatureFlags.TEST_MODE_ENABLED,
+        )
+        assertTrue("debug field-test build keeps the local test lock", app.mama.billing.FeatureFlags.TEST_MODE_ENABLED)
+    }
 }
